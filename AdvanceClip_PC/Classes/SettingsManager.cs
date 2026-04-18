@@ -10,7 +10,7 @@ namespace AdvanceClip.Classes
         private bool _keepItemOnDragOut = true;
         public bool KeepItemOnDragOut { get => _keepItemOnDragOut; set => SetProperty(ref _keepItemOnDragOut, value); }
         
-        private string _geminiApiKey = "AIzaSyCPx9mkWXjOMnAo9RZx7T-LAzNOrAoYCCE";
+        private string _geminiApiKey = "";
         public string GeminiApiKey { get => _geminiApiKey; set => SetProperty(ref _geminiApiKey, value); }
 
         private int _mediumFormWidth = 360;
@@ -45,7 +45,7 @@ namespace AdvanceClip.Classes
         public bool EnableGlobalFirebaseSync { get => _enableGlobalFirebaseSync; set => SetProperty(ref _enableGlobalFirebaseSync, value); }
         
         private string _webClientPinToken = "55555";
-        public string WebClientPinToken { get => "55555"; set => SetProperty(ref _webClientPinToken, "55555"); }
+        public string WebClientPinToken { get => _webClientPinToken; set => SetProperty(ref _webClientPinToken, value); }
         
         private int _savedLocalPort = 0;
         public int SavedLocalPort { get => _savedLocalPort; set => SetProperty(ref _savedLocalPort, value); }
@@ -53,7 +53,7 @@ namespace AdvanceClip.Classes
         private System.Collections.ObjectModel.ObservableCollection<string> _customSnifferPaths = new System.Collections.ObjectModel.ObservableCollection<string>();
         public System.Collections.ObjectModel.ObservableCollection<string> CustomSnifferPaths { get => _customSnifferPaths; set => SetProperty(ref _customSnifferPaths, value); }
 
-        private string _customArchiveExtractionPath = @"E:\phone connect link\clipboard";
+        private string _customArchiveExtractionPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "AdvanceClip", "Extracted");
         public string CustomArchiveExtractionPath { get => _customArchiveExtractionPath; set => SetProperty(ref _customArchiveExtractionPath, value); }
         
         private string _deviceName = System.Environment.MachineName;

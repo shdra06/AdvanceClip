@@ -469,7 +469,7 @@ namespace AdvanceClip.Classes
                 }
 
                 string dateString = DateTime.Now.ToString("dd-MM-yyyy");
-                string uploadDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "Clipboard", sourceDevice, dateString);
+                string uploadDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "AdvanceClip", "Clipboard", sourceDevice, dateString);
                 Directory.CreateDirectory(uploadDir);
 
                 string encodedName = req.Headers["X-File-Name"] ?? req.QueryString["name"];
@@ -600,7 +600,7 @@ namespace AdvanceClip.Classes
                 
                 if (string.IsNullOrWhiteSpace(batchName)) batchName = "AdvanceClip_Mobile_Transfer";
 
-                string archiveDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "Synced", batchName);
+                string archiveDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "AdvanceClip", "Synced", batchName);
                 Directory.CreateDirectory(archiveDir);
 
                 string originalDateStr = req.Headers["X-Original-Date"];
@@ -710,7 +710,7 @@ namespace AdvanceClip.Classes
 
                 // Save to Downloads/Synced/Relay_{sender}/
                 string relayDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), 
-                    "Downloads", "Synced", $"Relay_{senderDevice.Replace(" ", "_")}");
+                    "Downloads", "AdvanceClip", "Relay", senderDevice.Replace(" ", "_"));
                 Directory.CreateDirectory(relayDir);
 
                 int counter = 1;
@@ -892,7 +892,7 @@ namespace AdvanceClip.Classes
                 }
 
                 // Merge all chunks in order
-                string archiveDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "Synced", batchName);
+                string archiveDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "AdvanceClip", "Synced", batchName);
                 Directory.CreateDirectory(archiveDir);
 
                 int counter = 1;

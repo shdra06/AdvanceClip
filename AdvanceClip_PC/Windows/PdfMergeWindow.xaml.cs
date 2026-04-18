@@ -66,7 +66,9 @@ namespace AdvanceClip.Windows
             MergeBtn.Content = "Merging...";
 
             string outputFileName = $"Merged_PDF_{DateTime.Now:yyyyMMdd_HHmmss}.pdf";
-            string outputPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), outputFileName);
+            string mergeDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "AdvanceClip", "Merged");
+            Directory.CreateDirectory(mergeDir);
+            string outputPath = Path.Combine(mergeDir, outputFileName);
 
             bool success = await System.Threading.Tasks.Task.Run(() =>
             {

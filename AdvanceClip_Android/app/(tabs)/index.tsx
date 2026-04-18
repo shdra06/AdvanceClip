@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, Text, TextInput, TouchableOpacity, FlatList, ActivityIndicator, KeyboardAvoidingView, Platform, Alert, AppState, AppStateStatus, Modal, ToastAndroid, NativeModules, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Sharing from 'expo-sharing';
@@ -31,6 +31,37 @@ type ClipItem = {
   IsPinned?: boolean;
   Timestamp?: number;
   CachedUri?: string;
+};
+
+// â•â•â• Organized Storage Paths â•â•â•
+const DOWNLOAD_BASE = `${(FileSystem as any).documentDirectory}AdvanceClip/Downloads/`;
+const SYNC_CACHE_BASE = `${(FileSystem as any).cacheDirectory}AdvanceClip/SyncCache/`;
+const CONVERTED_BASE = `${(FileSystem as any).documentDirectory}AdvanceClip/Converted/`;
+const IMAGE_CACHE_BASE = `${(FileSystem as any).cacheDirectory}AdvanceClip/ImageCache/`;
+
+/** User-initiated downloads: documentDirectory/AdvanceClip/Downloads/{subfolder}/{filename} */
+const getDownloadPath = async (subfolder: string, filename: string) => {
+  const dir = `${DOWNLOAD_BASE}${subfolder}/`;
+  await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => {});
+  return `${dir}${filename}`;
+};
+
+/** Auto-sync temp files: cacheDirectory/AdvanceClip/SyncCache/{filename} */
+const getSyncCachePath = async (filename: string) => {
+  await FileSystem.makeDirectoryAsync(SYNC_CACHE_BASE, { intermediates: true }).catch(() => {});
+  return `${SYNC_CACHE_BASE}${filename}`;
+};
+
+/** Conversion outputs: documentDirectory/AdvanceClip/Converted/{filename} */
+const getConvertedPath = async (filename: string) => {
+  await FileSystem.makeDirectoryAsync(CONVERTED_BASE, { intermediates: true }).catch(() => {});
+  return `${CONVERTED_BASE}${filename}`;
+};
+
+/** Image cache: cacheDirectory/AdvanceClip/ImageCache/{filename} */
+const getImageCachePath = async (filename: string) => {
+  await FileSystem.makeDirectoryAsync(IMAGE_CACHE_BASE, { intermediates: true }).catch(() => {});
+  return `${IMAGE_CACHE_BASE}${filename}`;
 };
 
 const fetchWithTimeout = async (url: string, options: any = {}, timeoutMs = 2500) => {
@@ -67,7 +98,7 @@ const getConnectionType = (device: any, myLocalIp: string): 'Local' | 'Cloud' | 
 
 const connectionColors: Record<string, string> = { Local: '#10B981', Cloud: '#F59E0B', P2P: '#06B6D4' };
 
-// ─── CachedImage: Downloads remote images to local cache for reliable rendering ───
+// â”€â”€â”€ CachedImage: Downloads remote images to local cache for reliable rendering â”€â”€â”€
 const safeHash = (s: string): string => {
   let h = 0;
   for (let i = 0; i < s.length; i++) {
@@ -83,17 +114,17 @@ const CachedImage = React.memo(({ imgUri, onPress }: { imgUri: string; onPress: 
   React.useEffect(() => {
     if (!imgUri) { setErrMsg('No URL'); return; }
 
-    // Local file:// or absolute path — use directly, no download needed
+    // Local file:// or absolute path â€” use directly, no download needed
     if (imgUri.startsWith('file://') || imgUri.startsWith('/')) {
       const uri = imgUri.startsWith('file://') ? imgUri : `file://${imgUri}`;
       setLocalUri(uri);
       return;
     }
 
-    // Remote http:// — download to stable cache file
+    // Remote http:// â€” download to stable cache file
     if (imgUri.startsWith('http')) {
       const fname = `img_${safeHash(imgUri)}.jpg`;
-      const cacheUri = (FileSystem as any).cacheDirectory + fname;
+      const cacheUri = IMAGE_CACHE_BASE + fname;
 
       (async () => {
         try {
@@ -172,10 +203,10 @@ export default function SyncScreen() {
   const lastSyncedImageTsRef = useRef<number>(0);
   // Track items THIS device has sent to prevent echo-back loops
   const sentContentFingerprintsRef = useRef<Set<string>>(new Set());
-  // Cross-channel dedup: fingerprint → timestamp. If local sync sees it first, Firebase skips auto-copy (and vice versa).
+  // Cross-channel dedup: fingerprint â†’ timestamp. If local sync sees it first, Firebase skips auto-copy (and vice versa).
   const recentSyncFingerprintsRef = useRef<Map<string, number>>(new Map());
 
-  // ═══ URL CACHE: Avoid redundant health checks on every poll cycle ═══
+  // â•â•â• URL CACHE: Avoid redundant health checks on every poll cycle â•â•â•
   const cachedPcUrlRef = useRef<string | null>(null);
   const cachedPcUrlTimestampRef = useRef<number>(0);
   const URL_CACHE_TTL = 30_000; // Re-validate every 30 seconds
@@ -220,7 +251,7 @@ export default function SyncScreen() {
            let rawData = c.Raw;
            if (c.Type === 'Pdf' || c.Type === 'Document' || c.Type === 'Archive') {
                const safeName = c.Title.replace(/[^a-zA-Z0-9.-]/g, '_');
-               rawData = (FileSystem as any).documentDirectory + safeName;
+               rawData = DOWNLOAD_BASE + safeName;
            }
            return {
                Title: c.Title,
@@ -345,7 +376,7 @@ export default function SyncScreen() {
                   },
                   body: blob2,
                 }, 15000);
-                if (Platform.OS === 'android') ToastAndroid.show(`📸 Screenshot sent to PC!`, ToastAndroid.SHORT);
+                if (Platform.OS === 'android') ToastAndroid.show(`ðŸ“¸ Screenshot sent to PC!`, ToastAndroid.SHORT);
             }
           } catch(e) {}
         }
@@ -408,12 +439,12 @@ export default function SyncScreen() {
                   const perm = await MediaLibrary.requestPermissionsAsync();
                   if (perm.status === 'granted') {
                       await Promise.all(batch.urls.map(async (url: string, idx: number) => {
-                          const localUri = `${(FileSystem as any).cacheDirectory}relayed_${Date.now()}_${idx}.jpg`;
+                          const localUri = `${SYNC_CACHE_BASE}relayed_${Date.now()}_${idx}.jpg`;
                           const dl = await FileSystem.downloadAsync(url, localUri, { headers: { 'X-Advance-Client': 'MobileCompanion' } });
                           const asset = await MediaLibrary.createAssetAsync(dl.uri);
                           await MediaLibrary.createAlbumAsync("AdvanceClip Extractions", asset, false);
                       }));
-                      ToastAndroid.show("Extraction successful: Saved to Native Gallery ✅", ToastAndroid.LONG);
+                      ToastAndroid.show("Extraction successful: Saved to Native Gallery âœ…", ToastAndroid.LONG);
                   }
                } catch (e) {
                   ToastAndroid.show("Failed to relay items to Gallery.", ToastAndroid.SHORT);
@@ -504,7 +535,7 @@ export default function SyncScreen() {
     if (item.PreviewUrl && item.PreviewUrl.startsWith('http')) return item.PreviewUrl;
     if (item.CachedUri && (item.CachedUri.startsWith('file://') || item.CachedUri.startsWith('/'))) return item.CachedUri;
 
-    // Relative URL — build base from known sources
+    // Relative URL â€” build base from known sources
     const relUrl = item.PreviewUrl || item.DownloadUrl || item.Raw || '';
     if (!relUrl) return '';
 
@@ -522,7 +553,7 @@ export default function SyncScreen() {
       if (baseUrl) return `${baseUrl}${relUrl.startsWith('/') ? relUrl : '/' + relUrl}`;
     }
 
-    // 2. Always fall back to pcLocalIp from settings — most reliable
+    // 2. Always fall back to pcLocalIp from settings â€” most reliable
     if (pcLocalIp) {
       const rawIp = pcLocalIp.trim().replace(/\/$/, '');
       const base = rawIp.startsWith('http') ? rawIp : `http://${rawIp.includes(':') ? rawIp : rawIp + ':8999'}`;
@@ -587,7 +618,7 @@ export default function SyncScreen() {
                    let rawData = c.Raw;
                    if (c.Type === 'Pdf' || c.Type === 'Document') {
                        const safeName = c.Title.replace(/[^a-zA-Z0-9.-]/g, '_');
-                       rawData = (FileSystem as any).documentDirectory + safeName;
+                       rawData = DOWNLOAD_BASE + safeName;
                    }
                    AdvanceOverlay.pushClipToNativeDB(rawData, c.SourceDeviceName || 'Cloud');
                    // Register so local sync won't duplicate
@@ -602,7 +633,7 @@ export default function SyncScreen() {
       }
     });
 
-    // Listen to Mesh Topology — store ALL online devices, with direct LAN fallback
+    // Listen to Mesh Topology â€” store ALL online devices, with direct LAN fallback
     const nodesRef = query(ref(database, 'active_devices'));
     const unsubscribeNodes = onValue(nodesRef, async (snapshot) => {
       let rawDevices: any[] = [];
@@ -615,7 +646,7 @@ export default function SyncScreen() {
           .filter(d => d.IsOnline && d.Timestamp && (now - d.Timestamp) < STALE_TTL);
       }
       
-      // Direct LAN probe fallback — always try pcLocalIp even if Firebase has no data
+      // Direct LAN probe fallback â€” always try pcLocalIp even if Firebase has no data
       const hasPc = rawDevices.some(d => d.DeviceType === 'PC');
       if (!hasPc && pcLocalIp) {
         try {
@@ -641,7 +672,7 @@ export default function SyncScreen() {
 
   useEffect(() => {
     const interval = setInterval(async () => {
-      // Use cached URL — no health check on every poll cycle
+      // Use cached URL â€” no health check on every poll cycle
       const targetUrl = await getCachedPcUrl();
 
       // Pass PC URL and device name to native service so background sync works even when RN is paused
@@ -673,7 +704,7 @@ export default function SyncScreen() {
                  sentContentFingerprintsRef.current.has(rawFingerprint);
                
                if (isOwnEcho) {
-                 // This item came from us — don't copy it back, just skip
+                 // This item came from us â€” don't copy it back, just skip
                } else if (latest.Type === 'Text' || latest.Type === 'Code' || latest.Type === 'Url') {
                  const latestRaw = latest.Raw;
                  if (latestRaw) {
@@ -689,7 +720,7 @@ export default function SyncScreen() {
                      }
                      setLastCopiedText(latestRaw); 
                      lastCopiedRef.current = latestRaw;
-                     if (Platform.OS === 'android') ToastAndroid.show(`📋 ${latestRaw.substring(0, 40)}...`, ToastAndroid.SHORT);
+                     if (Platform.OS === 'android') ToastAndroid.show(`ðŸ“‹ ${latestRaw.substring(0, 40)}...`, ToastAndroid.SHORT);
                    }
                  }
                } else if (latest.Type === 'Image' || latest.Type === 'ImageLink' || latest.Type === 'QRCode') {
@@ -704,16 +735,16 @@ export default function SyncScreen() {
                    }
                    
                    if (mediaUrl) {
-                     const localUri = `${(FileSystem as any).cacheDirectory}clip_sync_${Date.now()}.png`;
+                     const localUri = `${SYNC_CACHE_BASE}clip_sync_${Date.now()}.png`;
                      const { uri } = await FileSystem.downloadAsync(mediaUrl, localUri, { headers: { 'X-Advance-Client': 'MobileCompanion' } });
                      const b64 = await FileSystem.readAsStringAsync(uri, { encoding: (FileSystem as any).EncodingType.Base64 });
                      await Clipboard.setImageAsync(b64);
-                     if (Platform.OS === 'android') ToastAndroid.show(`🖼️ Screenshot synced from PC!`, ToastAndroid.SHORT);
+                     if (Platform.OS === 'android') ToastAndroid.show(`ðŸ–¼ï¸ Screenshot synced from PC!`, ToastAndroid.SHORT);
                    }
                  } catch (imgErr) {}
                } else if (latest.Type === 'Pdf' || latest.Type === 'Document' || latest.Type === 'File' || latest.Type === 'Video' || latest.Type === 'Audio' || latest.Type === 'Archive' || latest.Type === 'Presentation') {
-                 // Don't auto-download files — they'll appear as cards with download buttons
-                 if (Platform.OS === 'android') ToastAndroid.show(`📁 ${latest.Title} — tap to download`, ToastAndroid.SHORT);
+                 // Don't auto-download files â€” they'll appear as cards with download buttons
+                 if (Platform.OS === 'android') ToastAndroid.show(`ðŸ“ ${latest.Title} â€” tap to download`, ToastAndroid.SHORT);
                }
 
                // Push to overlay floating ball (only non-own items)
@@ -752,11 +783,11 @@ export default function SyncScreen() {
         // If poll failed, invalidate URL cache so next cycle re-resolves
         cachedPcUrlRef.current = null;
       }
-    }, 1000); // Poll every 1 second — URL is cached so this is lightweight
+    }, 1000); // Poll every 1 second â€” URL is cached so this is lightweight
     return () => clearInterval(interval);
   }, [isGlobalSyncEnabled, activeDevices, pcLocalIp]);
 
-  // ═══ DEVICE SELF-REGISTRATION: Register this Android device as active in Firebase mesh ═══
+  // â•â•â• DEVICE SELF-REGISTRATION: Register this Android device as active in Firebase mesh â•â•â•
   useEffect(() => {
     if (!deviceName) return;
     const myDeviceId = `Mobile_${deviceName.replace(/[^a-zA-Z0-9_]/g, '_')}`;
@@ -915,7 +946,7 @@ export default function SyncScreen() {
                                });
                             }
                             
-                            Platform.OS === 'android' ? ToastAndroid.show("Extracted Screenshot ✨", ToastAndroid.SHORT) : null;
+                            Platform.OS === 'android' ? ToastAndroid.show("Extracted Screenshot âœ¨", ToastAndroid.SHORT) : null;
                         }
                     } catch(e) {}
                     setIsSending(false);
@@ -935,7 +966,7 @@ export default function SyncScreen() {
             }
         });
 
-        // Periodic screenshot poll every 5s — more reliable than MediaLibrary.addListener on many Android builds
+        // Periodic screenshot poll every 5s â€” more reliable than MediaLibrary.addListener on many Android builds
         let screenshotPollInterval: ReturnType<typeof setInterval> | null = null;
         if (Platform.OS !== 'web') {
             screenshotPollInterval = setInterval(() => {
@@ -984,7 +1015,7 @@ export default function SyncScreen() {
                    } else if (latest.Type === 'Image' || latest.Type === 'ImageLink') {
                        const mediaUrl = getMediaUrl(latest);
                        if (mediaUrl) {
-                           const { uri } = await FileSystem.downloadAsync(mediaUrl, (FileSystem as any).cacheDirectory + 'clip_sync_global.png', { headers: { 'X-Advance-Client': 'MobileCompanion' } });
+                           const { uri } = await FileSystem.downloadAsync(mediaUrl, SYNC_CACHE_BASE + 'clip_sync_global.png', { headers: { 'X-Advance-Client': 'MobileCompanion' } });
                            const b64 = await FileSystem.readAsStringAsync(uri, { encoding: (FileSystem as any).EncodingType.Base64 });
                            await Clipboard.setImageAsync(b64);
                            Platform.OS === 'android' && ToastAndroid.show("Image Copied Natively", ToastAndroid.SHORT);
@@ -1012,7 +1043,7 @@ export default function SyncScreen() {
 
           // File Name normalizer
           const safeName = item.Title.replace(/[^a-zA-Z0-9.-]/g, '_');
-          const localUri = (FileSystem as any).documentDirectory + safeName;
+          const localUri = DOWNLOAD_BASE + safeName;
           const transferId = item.id || safeName;
           
           const fileInfo = await FileSystem.getInfoAsync(localUri);
@@ -1022,7 +1053,7 @@ export default function SyncScreen() {
             return;
           }
 
-          // Skip auto-download for APKs — user must manually trigger install
+          // Skip auto-download for APKs â€” user must manually trigger install
           const lowerTitle = (item.Title || '').toLowerCase();
           if (lowerTitle.endsWith('.apk')) return;
 
@@ -1034,10 +1065,10 @@ export default function SyncScreen() {
                 const sizeBytes = parseInt(sizeStr);
                 const isLocalRoute = !mediaUrl.includes('firebasestorage.googleapis.com');
                 
-                // Skip auto-download for files >100MB over cloud — leave DOWNLOAD button visible
+                // Skip auto-download for files >100MB over cloud â€” leave DOWNLOAD button visible
                 if (!isLocalRoute && sizeBytes > 100 * 1024 * 1024) { 
                   console.log("Global File > 100MB, skipped auto-download.");
-                  return;  // DON'T mark as downloaded — DOWNLOAD button stays visible
+                  return;  // DON'T mark as downloaded â€” DOWNLOAD button stays visible
                 }
              }
           } catch(e) { }
@@ -1093,7 +1124,7 @@ export default function SyncScreen() {
           finalRaw = `https://${payloadText}`;
       }
 
-      // Use cached URL — instant, no health check
+      // Use cached URL â€” instant, no health check
       const targetUrl = await getCachedPcUrl();
 
       // Register fingerprint to prevent echo-back
@@ -1118,7 +1149,7 @@ export default function SyncScreen() {
         cachedPcUrlRef.current = null;
       }
 
-      // SPEED: Firebase push is fire-and-forget — don't block the UI
+      // SPEED: Firebase push is fire-and-forget â€” don't block the UI
       if (!localSuccess && isGlobalSyncEnabled) {
           const newRef = push(ref(database, 'clipboard'));
           set(newRef, {
@@ -1210,7 +1241,7 @@ export default function SyncScreen() {
         const body = await res.json();
         if (body.downloadUrl) {
           const mergedUrl = body.downloadUrl.startsWith('http') ? body.downloadUrl : `${targetUrl}${body.downloadUrl}`;
-          const localUri = (FileSystem as any).documentDirectory + `merged_${Date.now()}.pdf`;
+          const localUri = CONVERTED_BASE + `merged_${Date.now()}.pdf`;
           await FileSystem.downloadAsync(mergedUrl, localUri, { headers: { 'X-Advance-Client': 'MobileCompanion' } });
           await Sharing.shareAsync(localUri, { mimeType: 'application/pdf', UTI: 'com.adobe.pdf', dialogTitle: 'Merged PDF' });
         } else {
@@ -1296,7 +1327,7 @@ export default function SyncScreen() {
         }
       }
 
-      if (Platform.OS === 'android') ToastAndroid.show('Force sync complete ✅', ToastAndroid.SHORT);
+      if (Platform.OS === 'android') ToastAndroid.show('Force sync complete âœ…', ToastAndroid.SHORT);
     } catch (e) {
       Alert.alert('Sync Error', 'Failed to force sync some items.');
     }
@@ -1407,7 +1438,7 @@ export default function SyncScreen() {
     try {
       // Re-hydrate the original physical extension natively so PC OS doesn't corrupt it
       const safeName = `sync_${Date.now()}_` + name.replace(/[^a-zA-Z0-9.-]/g, '_');
-      const hydratedPath = `${(FileSystem as any).cacheDirectory}${safeName}`;
+      const hydratedPath = `${SYNC_CACHE_BASE}${safeName}`;
       await FileSystem.copyAsync({ from: physicalPath, to: hydratedPath });
 
       if (targetDeviceOrGlobal === 'Global') {
@@ -1524,7 +1555,7 @@ export default function SyncScreen() {
                     <View style={{backgroundColor: connectionColors[connType] + '22', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 1}}>
                       <Text style={{color: connectionColors[connType], fontSize: 10, fontWeight: '700'}}>{connType}</Text>
                     </View>
-                    <Text style={{color: '#8A8F98', fontSize: 12}}>{connType === 'Local' ? 'Same network · Direct transfer' : 'Remote · Via tunnel'}</Text>
+                    <Text style={{color: '#8A8F98', fontSize: 12}}>{connType === 'Local' ? 'Same network Â· Direct transfer' : 'Remote Â· Via tunnel'}</Text>
                   </View>
                 </View>
               </TouchableOpacity>
@@ -1701,7 +1732,7 @@ export default function SyncScreen() {
                              </View>
                            );
 
-                           // CachedImageLoader — downloads http:// images to local cache on first render
+                           // CachedImageLoader â€” downloads http:// images to local cache on first render
                            return <CachedImage imgUri={imgUri} onPress={() => setExpandedImage(imgUri)} />;
                          }
                          return null;
@@ -1727,7 +1758,7 @@ export default function SyncScreen() {
                       )}
                     </View>
 
-                    {/* Actions Overlay — hidden during incoming heavy file transfer */}
+                    {/* Actions Overlay â€” hidden during incoming heavy file transfer */}
                     {activeOptionsId === item.id && !(isIncomingTransfer && isHeavyFile) && (
                     <View style={{ position: 'absolute', right: 10, top: 10, flexDirection: 'row', backgroundColor: 'rgba(20,24,36,0.9)', borderRadius: 12, padding: 8, gap: 8 }}>
                       {/* Pin Toggle Button */}
@@ -1804,7 +1835,7 @@ export default function SyncScreen() {
                       {/* PDF - Download then Open */}
                       {isPdf && (() => {
                         const safeName = (item.Title || `file_${Date.now()}`).replace(/[^a-zA-Z0-9.-]/g, '_');
-                        const localUri = (FileSystem as any).documentDirectory + safeName;
+                        const localUri = DOWNLOAD_BASE + safeName;
                         const dlId = item.id || safeName;
                         const prog = downloadProgress[dlId];
                         const dlNow = prog !== undefined && prog < 1;
@@ -1862,7 +1893,7 @@ export default function SyncScreen() {
                       {/* Word Doc - Download then Open */}
                       {isDoc && (() => {
                         const safeName = (item.Title || `file_${Date.now()}`).replace(/[^a-zA-Z0-9.-]/g, '_');
-                        const localUri = (FileSystem as any).documentDirectory + safeName;
+                        const localUri = DOWNLOAD_BASE + safeName;
                         const dlId = item.id || safeName;
                         const prog = downloadProgress[dlId];
                         const dlNow = prog !== undefined && prog < 1;
@@ -1922,7 +1953,7 @@ export default function SyncScreen() {
                         <TouchableOpacity onPress={async () => {
                            try {
                                const safeName = item.Title.replace(/[^a-zA-Z0-9.-]/g, '_') || `file_${Date.now()}`;
-                               const localUri = (FileSystem as any).documentDirectory + safeName;
+                               const localUri = DOWNLOAD_BASE + safeName;
                                const fileInfo = await FileSystem.getInfoAsync(localUri);
                                
                                if (!fileInfo.exists) {
@@ -1954,7 +1985,7 @@ export default function SyncScreen() {
                                if (uploadRes.status === 200) {
                                   // Download the converted PDF
                                   const pdfName = safeName.replace(/\.(docx?|doc)$/i, '.pdf');
-                                  const pdfUri = (FileSystem as any).documentDirectory + pdfName;
+                                  const pdfUri = CONVERTED_BASE + pdfName;
                                   const body = JSON.parse(uploadRes.body);
                                   if (body.downloadUrl) {
                                      const pdfUrl = body.downloadUrl.startsWith('http') ? body.downloadUrl : `${targetUrl}${body.downloadUrl}`;
@@ -1970,11 +2001,11 @@ export default function SyncScreen() {
                                Alert.alert("Conversion Error", "Could not connect to PC for conversion. Make sure your PC is reachable.");
                            }
                         }} style={[styles.actionBtnIcon, {backgroundColor: '#F59E0B', paddingHorizontal: 12, width: 'auto'}]}>
-                           <Text style={{color: '#FFF', fontSize: 11, fontWeight: '700'}}>→ PDF</Text>
+                           <Text style={{color: '#FFF', fontSize: 11, fontWeight: '700'}}>â†’ PDF</Text>
                         </TouchableOpacity>
                       )}
 
-                      {/* Image/HTML → PDF Conversion */}
+                      {/* Image/HTML â†’ PDF Conversion */}
                       {(item.Type === 'Image' || item.Type === 'ImageLink' || lowerTit.endsWith('.html') || lowerTit.endsWith('.htm')) && (
                         <TouchableOpacity onPress={async () => {
                            try {
@@ -1989,18 +2020,18 @@ export default function SyncScreen() {
                                   const body = await res.json();
                                   if (body.downloadUrl) {
                                      const pdfUrl = body.downloadUrl.startsWith('http') ? body.downloadUrl : `${targetUrl}${body.downloadUrl}`;
-                                     const localUri = (FileSystem as any).documentDirectory + safeName.replace(/\.[^.]+$/, '.pdf');
+                                     const localUri = DOWNLOAD_BASE + safeName.replace(/\.[^.]+$/, '.pdf');
                                      await FileSystem.downloadAsync(pdfUrl, localUri, { headers: { 'X-Advance-Client': 'MobileCompanion' } });
                                      await Sharing.shareAsync(localUri, { mimeType: 'application/pdf', UTI: 'com.adobe.pdf', dialogTitle: 'Converted PDF' });
                                   } else { if (Platform.OS === 'android') ToastAndroid.show('Converted! Check PC.', ToastAndroid.SHORT); }
                                } else { Alert.alert('Conversion Failed', 'PC could not convert this file.'); }
                            } catch(e) { Alert.alert('Error', 'Could not connect to PC for conversion.'); }
                         }} style={[styles.actionBtnIcon, {backgroundColor: '#F59E0B', paddingHorizontal: 12, width: 'auto'}]}>
-                           <Text style={{color: '#FFF', fontSize: 11, fontWeight: '700'}}>→ PDF</Text>
+                           <Text style={{color: '#FFF', fontSize: 11, fontWeight: '700'}}>â†’ PDF</Text>
                         </TouchableOpacity>
                       )}
 
-                      {/* PDF → Word Conversion */}
+                      {/* PDF â†’ Word Conversion */}
                       {isPdf && (
                         <TouchableOpacity onPress={async () => {
                            try {
@@ -2009,7 +2040,7 @@ export default function SyncScreen() {
                                if (activePc) { const opt = await resolveOptimalUrl(activePc); if (opt) targetUrl = opt; }
                                if (Platform.OS === 'android') ToastAndroid.show('Converting PDF to Word...', ToastAndroid.SHORT);
                                const safeName = (item.Title || `file_${Date.now()}`).replace(/[^a-zA-Z0-9.-]/g, '_');
-                               const localUri = (FileSystem as any).documentDirectory + safeName;
+                               const localUri = DOWNLOAD_BASE + safeName;
                                const fileInfo = await FileSystem.getInfoAsync(localUri);
                                if (!fileInfo.exists) {
                                   await FileSystem.downloadAsync(mediaUrl, localUri, { headers: { 'X-Advance-Client': 'MobileCompanion' } });
@@ -2022,14 +2053,14 @@ export default function SyncScreen() {
                                   const body = JSON.parse(uploadRes.body);
                                   if (body.downloadUrl) {
                                      const docUrl = body.downloadUrl.startsWith('http') ? body.downloadUrl : `${targetUrl}${body.downloadUrl}`;
-                                     const docUri = (FileSystem as any).documentDirectory + safeName.replace(/\.pdf$/i, '.docx');
+                                     const docUri = DOWNLOAD_BASE + safeName.replace(/\.pdf$/i, '.docx');
                                      await FileSystem.downloadAsync(docUrl, docUri, { headers: { 'X-Advance-Client': 'MobileCompanion' } });
                                      await Sharing.shareAsync(docUri, { mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', dialogTitle: 'Converted Word' });
                                   } else { if (Platform.OS === 'android') ToastAndroid.show('Converted! Check PC.', ToastAndroid.SHORT); }
                                } else { Alert.alert('Conversion Failed', 'PC could not convert this PDF.'); }
                            } catch(e) { Alert.alert('Error', 'Could not connect to PC.'); }
                         }} style={[styles.actionBtnIcon, {backgroundColor: '#3B82F6', paddingHorizontal: 12, width: 'auto'}]}>
-                           <Text style={{color: '#FFF', fontSize: 11, fontWeight: '700'}}>→ WORD</Text>
+                           <Text style={{color: '#FFF', fontSize: 11, fontWeight: '700'}}>â†’ WORD</Text>
                         </TouchableOpacity>
                       )}
 
@@ -2043,7 +2074,7 @@ export default function SyncScreen() {
                         if (!showFileActions) return null;
 
                         const safeName = (item.Title || `file_${Date.now()}`).replace(/[^a-zA-Z0-9.-]/g, '_');
-                        const localUri = (FileSystem as any).documentDirectory + safeName;
+                        const localUri = DOWNLOAD_BASE + safeName;
                         const downloadId = item.id || safeName;
                         const progress = downloadProgress[downloadId];
                         const isDownloadingNow = progress !== undefined && progress < 1;
@@ -2134,7 +2165,7 @@ export default function SyncScreen() {
                                     const p = await MediaLibrary.requestPermissionsAsync();
                                     if (p.status === 'granted') {
                                       await MediaLibrary.saveToLibraryAsync(uri);
-                                      if (Platform.OS === 'android') ToastAndroid.show('✅ Saved to Gallery!', ToastAndroid.SHORT);
+                                      if (Platform.OS === 'android') ToastAndroid.show('âœ… Saved to Gallery!', ToastAndroid.SHORT);
                                     }
                                   } else if (mimeType === 'application/pdf' || safeName.endsWith('.pdf')) {
                                     const contentUri = await FileSystem.getContentUriAsync(uri);
@@ -2197,7 +2228,7 @@ export default function SyncScreen() {
                 const mUrl = getMediaUrl(item);
                 if (mUrl.startsWith('http')) {
                   const safeName = (item.Title || `file_${Date.now()}`).replace(/[^a-zA-Z0-9.-]/g, '_');
-                  const localUri = (FileSystem as any).documentDirectory + safeName;
+                  const localUri = DOWNLOAD_BASE + safeName;
                   const fileInfo = await FileSystem.getInfoAsync(localUri);
                   let uri = localUri;
                   if (!fileInfo.exists) {
@@ -2274,7 +2305,7 @@ export default function SyncScreen() {
         <Modal visible={isForceSyncModalVisible} animationType="slide" transparent={true}>
           <View style={styles.modalOverlay}>
             <View style={[styles.modalContent, {maxHeight: '80%'}]}>
-              <Text style={styles.modalTitle}>⚡ Force Sync</Text>
+              <Text style={styles.modalTitle}>âš¡ Force Sync</Text>
               <Text style={styles.modalSubtitle}>Push {selectedItemIds.size} items to selected devices. This bypasses sync settings and forces delivery.</Text>
 
               {/* Send to All */}
@@ -2355,7 +2386,7 @@ export default function SyncScreen() {
                       if (Platform.OS === 'web') return;
                       try {
                           const safeName = `image_${Date.now()}.jpg`;
-                          const localUri = (FileSystem as any).documentDirectory + safeName;
+                          const localUri = DOWNLOAD_BASE + safeName;
                           const dl = await FileSystem.downloadAsync(expandedImage, localUri, { headers: { 'X-Advance-Client': 'MobileCompanion' } });
                           const perm = await MediaLibrary.requestPermissionsAsync();
                           if (perm.status === 'granted') {
@@ -2371,7 +2402,7 @@ export default function SyncScreen() {
                       if (Platform.OS === 'web') return;
                       try {
                           const safeName = `image_share_${Date.now()}.jpg`;
-                          const localUri = (FileSystem as any).cacheDirectory + safeName;
+                          const localUri = SYNC_CACHE_BASE + safeName;
                           const dl = await FileSystem.downloadAsync(expandedImage, localUri, { headers: { 'X-Advance-Client': 'MobileCompanion' } });
                           if (await Sharing.isAvailableAsync()) {
                               await Sharing.shareAsync(dl.uri);

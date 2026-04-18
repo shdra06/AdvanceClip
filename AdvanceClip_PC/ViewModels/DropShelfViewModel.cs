@@ -483,7 +483,7 @@ namespace AdvanceClip.ViewModels
                     if (AdvanceClip.Classes.SettingsManager.Current.EnableGlobalFirebaseSync)
                     {
                         var archPath = AdvanceClip.Classes.SettingsManager.Current.CustomArchiveExtractionPath;
-                        if (string.IsNullOrWhiteSpace(archPath)) archPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "AdvanceClip Archival");
+                        if (string.IsNullOrWhiteSpace(archPath)) archPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "AdvanceClip", "Extracted");
                         bool isGlobalDownload = file.StartsWith(archPath, StringComparison.OrdinalIgnoreCase);
 
                         if (!isGlobalDownload)
