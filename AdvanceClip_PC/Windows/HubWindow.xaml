@@ -1308,7 +1308,7 @@
                                                         <GradientStop Color="#38BDF8" Offset="1"/>
                                                     </LinearGradientBrush>
                                                 </Border.Background>
-                                                <ui:SymbolIcon Symbol="PanelTopContract24" Foreground="White" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                <ui:SymbolIcon Symbol="ResizeLarge24" Foreground="White" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                             </Border>
                                             <TextBlock Text="Bar Position" FontWeight="Bold" FontSize="14" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorPrimary}" VerticalAlignment="Center"/>
                                         </StackPanel>
