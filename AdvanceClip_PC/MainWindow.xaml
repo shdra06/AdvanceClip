@@ -219,7 +219,7 @@
                                               CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" 
                                               Visibility="{Binding PlacementTarget.DataContext.IsImagePreview, RelativeSource={RelativeSource AncestorType=ContextMenu}, Converter={StaticResource BooleanToVisibilityConverter}}" />
                                     <Separator />
-                                    <MenuItem Header="⚡ Force Send to Device" Click="ForceSendItem_Click" Tag="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                    <MenuItem Header="Force Send to Device" Click="ForceSendItem_Click" Tag="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                                     <Separator />
                                     <MenuItem Header="Delete Drop" 
                                               Command="{Binding PlacementTarget.Tag.RemoveItemCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" 

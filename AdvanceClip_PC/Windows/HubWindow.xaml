@@ -133,7 +133,7 @@
                     <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" Padding="0,0,16,0">
                         <StackPanel Margin="0,8,0,0">
 
-                            <!-- â•â•â• TOP ROW: 3 Stat Cards â•â•â• -->
+                            <!-- TOP ROW: 3 Stat Cards  -->
                             <Grid Margin="0,0,0,16">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
@@ -219,7 +219,7 @@
                                 </Border>
                             </Grid>
 
-                            <!-- â•â•â• BOTTOM ROW: 2 Feature Cards â•â•â• -->
+                            <!-- BOTTOM ROW: 2 Feature Cards  -->
                             <Grid Margin="0,0,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
@@ -481,11 +481,11 @@
                                             
                                             <!-- PDF Actions -->
                                             <ui:MenuItem Header="Open PDF" Icon="{ui:SymbolIcon Open24}" Command="{Binding PlacementTarget.Tag.OpenInBrowserCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" CommandParameter="{Binding}" Visibility="{Binding IsPdfPreview, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                            <ui:MenuItem Header="Convert PDF â†’ Word" Icon="{ui:SymbolIcon Document24}" Foreground="#3B82F6" Command="{Binding PlacementTarget.Tag.ConvertDocumentCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" CommandParameter="{Binding}" Visibility="{Binding IsPdfPreview, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                            <ui:MenuItem Header="Convert PDF to Word" Icon="{ui:SymbolIcon Document24}" Foreground="#3B82F6" Command="{Binding PlacementTarget.Tag.ConvertDocumentCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" CommandParameter="{Binding}" Visibility="{Binding IsPdfPreview, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                             <ui:MenuItem Header="Merge Selected PDFs" Icon="{ui:SymbolIcon DocumentCopy24}" Foreground="#EF4444" Command="{Binding PlacementTarget.Tag.MergeSelectedPdfsCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" Visibility="{Binding IsPdfPreview, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                             
                                             <!-- Document Actions -->
-                                            <ui:MenuItem Header="Convert Word â†’ PDF" Icon="{ui:SymbolIcon Document24}" Foreground="#3B82F6" Command="{Binding PlacementTarget.Tag.ConvertDocumentCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" CommandParameter="{Binding}" Visibility="{Binding IsDocPreview, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                            <ui:MenuItem Header="Convert Word to PDF" Icon="{ui:SymbolIcon Document24}" Foreground="#3B82F6" Command="{Binding PlacementTarget.Tag.ConvertDocumentCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" CommandParameter="{Binding}" Visibility="{Binding IsDocPreview, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                             
                                             <!-- Code Actions -->
                                             <ui:MenuItem Header="Run in Terminal" Icon="{ui:SymbolIcon Play24}" Foreground="#10B981" Command="{Binding PlacementTarget.Tag.LaunchTerminalCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" CommandParameter="{Binding}" Visibility="{Binding IsCodePreview, Converter={StaticResource BooleanToVisibilityConverter}}"/>
@@ -943,7 +943,7 @@
                                 </StackPanel>
                             </Border>
 
-                            <!-- â•â•â• ACTIVE DEVICES SECTION â•â•â• -->
+                            <!-- ACTIVE DEVICES SECTION -->
                             <StackPanel Orientation="Horizontal" Margin="0,10,0,14">
                                 <ui:SymbolIcon Symbol="People24" FontSize="18" Foreground="#8B5CF6" Margin="0,0,8,0"/>
                                 <TextBlock Text="Connected Devices" FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorPrimary}" VerticalAlignment="Center" />
@@ -967,7 +967,7 @@
                                         </ui:Button>
                                     </Grid>
 
-                                    <!-- â•â•â• 3-COLUMN DEVICE TOPOLOGY â•â•â• -->
+                                    <!--  3-COLUMN DEVICE TOPOLOGY -->
                                     <Grid Margin="0,0,0,4">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
@@ -1086,12 +1086,12 @@
                                     <!-- Empty State -->
                                     <StackPanel x:Name="NoDevicesPanel" HorizontalAlignment="Center" Margin="0,12,0,12" Visibility="Collapsed">
                                         <ui:SymbolIcon Symbol="PeopleSearch24" FontSize="32" Foreground="#25FFFFFF" HorizontalAlignment="Center" Margin="0,0,0,8"/>
-                                        <TextBlock Text="No devices found â€” hit Refresh" Foreground="#35FFFFFF" FontSize="12" HorizontalAlignment="Center"/>
+                                        <TextBlock Text="No devices found - hit Refresh" Foreground="#35FFFFFF" FontSize="12" HorizontalAlignment="Center"/>
                                     </StackPanel>
                                 </StackPanel>
                             </Border>
 
-                            <!-- â•â•â• DEVICE GROUPS â•â•â• -->
+                            <!-- DEVICE GROUPS -->
                             <StackPanel Orientation="Horizontal" Margin="0,24,0,14">
                                 <Border Width="10" Height="10" CornerRadius="5" Background="#F59E0B" Margin="0,0,8,0" VerticalAlignment="Center"/>
                                 <TextBlock Text="Device Groups" FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorPrimary}" VerticalAlignment="Center" />
@@ -1120,17 +1120,17 @@
                                                     <TextBlock Text="{Binding DeviceList}" FontSize="10" Foreground="#60FFFFFF" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
                                                 </StackPanel>
                                                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                                    <Button Content="âœï¸" Tag="{Binding Id}" Click="EditGroupBtn_Click" Padding="6,4" Margin="0,0,4,0" Cursor="Hand" Background="Transparent" Foreground="#F59E0B" BorderThickness="0" FontSize="12"/>
-                                                    <Button Content="ðŸ—‘ï¸" Tag="{Binding Id}" Click="DeleteGroupBtn_Click" Padding="6,4" Cursor="Hand" Background="Transparent" Foreground="#EF4444" BorderThickness="0" FontSize="12"/>
+                                                    <Button Content="Edit" Tag="{Binding Id}" Click="EditGroupBtn_Click" Padding="6,4" Margin="0,0,4,0" Cursor="Hand" Background="Transparent" Foreground="#F59E0B" BorderThickness="0" FontSize="12"/>
+                                                    <Button Content="Del" Tag="{Binding Id}" Click="DeleteGroupBtn_Click" Padding="6,4" Cursor="Hand" Background="Transparent" Foreground="#EF4444" BorderThickness="0" FontSize="12"/>
                                                 </StackPanel>
                                             </Grid>
                                         </Border>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
-                            <TextBlock x:Name="NoGroupsText" Text="No groups â€” create one to sync across devices" FontSize="10" Foreground="#25FFFFFF" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                            <TextBlock x:Name="NoGroupsText" Text="No groups - create one to sync across devices" FontSize="10" Foreground="#25FFFFFF" HorizontalAlignment="Center" Margin="0,4,0,0"/>
 
-                            <!-- â•â•â• LIVE NETWORK MONITOR â•â•â• -->
+                            <!-- LIVE NETWORK MONITOR -->
                             <StackPanel Orientation="Horizontal" Margin="0,24,0,14">
                                 <ui:SymbolIcon Symbol="DocumentText24" FontSize="18" Foreground="#F472B6" Margin="0,0,8,0"/>
                                 <TextBlock Text="Live Network Monitor" FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorPrimary}" VerticalAlignment="Center" />
@@ -1231,7 +1231,7 @@
                                 </Border.Background>
                             </Border>
 
-                            <!-- â•â•â• 2-COLUMN CARD GRID â•â•â• -->
+                            <!--  2-COLUMN CARD GRID -->
                             <Grid Margin="0,0,0,12">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
@@ -1281,7 +1281,7 @@
                                             <TextBlock Text="AI Extraction Key" FontWeight="Bold" FontSize="14" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorPrimary}" VerticalAlignment="Center"/>
                                         </StackPanel>
                                         <TextBlock Text="Required for Smart Text Extraction from images." Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorTertiary}" FontSize="11" Margin="0,0,0,10" TextWrapping="Wrap" LineHeight="16"/>
-                                        <ui:PasswordBox PasswordChar="â€¢" HorizontalAlignment="Stretch" Password="{Binding Source={x:Static settings:SettingsManager.Current}, Path=GeminiApiKey, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="AIzaSyA..." Background="#11FFFFFF" BorderThickness="1"/>
+                                        <ui:PasswordBox PasswordChar="*" HorizontalAlignment="Stretch" Password="{Binding Source={x:Static settings:SettingsManager.Current}, Path=GeminiApiKey, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="AIzaSyA..." Background="#11FFFFFF" BorderThickness="1"/>
                                     </StackPanel>
                                 </Border>
 
@@ -1383,7 +1383,7 @@
                                                 </Grid>
                                                 <Grid>
                                                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                                    <ui:Button Grid.Column="0" Content="âˆ’" Padding="4,1" CornerRadius="4" Appearance="Secondary" Click="ClipW_Minus" FontSize="14" FontWeight="Bold" Margin="0,0,4,0"/>
+                                                    <ui:Button Grid.Column="0" Content="-" Padding="4,1" CornerRadius="4" Appearance="Secondary" Click="ClipW_Minus" FontSize="14" FontWeight="Bold" Margin="0,0,4,0"/>
                                                     <Slider Grid.Column="1" Minimum="200" Maximum="500" Value="{Binding Source={x:Static settings:SettingsManager.Current}, Path=MediumFormWidth}" TickFrequency="25" IsSnapToTickEnabled="True" VerticalAlignment="Center"/>
                                                     <ui:Button Grid.Column="2" Content="+" Padding="4,1" CornerRadius="4" Appearance="Secondary" Click="ClipW_Plus" FontSize="14" FontWeight="Bold" Margin="4,0,0,0"/>
                                                 </Grid>
@@ -1398,7 +1398,7 @@
                                                 </Grid>
                                                 <Grid>
                                                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                                    <ui:Button Grid.Column="0" Content="âˆ’" Padding="4,1" CornerRadius="4" Appearance="Secondary" Click="ClipH_Minus" FontSize="14" FontWeight="Bold" Margin="0,0,4,0"/>
+                                                    <ui:Button Grid.Column="0" Content="-" Padding="4,1" CornerRadius="4" Appearance="Secondary" Click="ClipH_Minus" FontSize="14" FontWeight="Bold" Margin="0,0,4,0"/>
                                                     <Slider Grid.Column="1" Minimum="300" Maximum="700" Value="{Binding Source={x:Static settings:SettingsManager.Current}, Path=MediumFormHeight}" TickFrequency="25" IsSnapToTickEnabled="True" VerticalAlignment="Center"/>
                                                     <ui:Button Grid.Column="2" Content="+" Padding="4,1" CornerRadius="4" Appearance="Secondary" Click="ClipH_Plus" FontSize="14" FontWeight="Bold" Margin="4,0,0,0"/>
                                                 </Grid>
@@ -1455,7 +1455,7 @@
                                                 </Grid>
                                                 <Grid>
                                                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                                    <ui:Button Grid.Column="0" Content="âˆ’" Padding="4,1" CornerRadius="4" Appearance="Secondary" Click="DropW_Minus" FontSize="14" FontWeight="Bold" Margin="0,0,4,0"/>
+                                                    <ui:Button Grid.Column="0" Content="-" Padding="4,1" CornerRadius="4" Appearance="Secondary" Click="DropW_Minus" FontSize="14" FontWeight="Bold" Margin="0,0,4,0"/>
                                                     <Slider Grid.Column="1" Minimum="180" Maximum="400" Value="{Binding Source={x:Static settings:SettingsManager.Current}, Path=MiniFormWidth}" TickFrequency="20" IsSnapToTickEnabled="True" VerticalAlignment="Center"/>
                                                     <ui:Button Grid.Column="2" Content="+" Padding="4,1" CornerRadius="4" Appearance="Secondary" Click="DropW_Plus" FontSize="14" FontWeight="Bold" Margin="4,0,0,0"/>
                                                 </Grid>
@@ -1470,7 +1470,7 @@
                                                 </Grid>
                                                 <Grid>
                                                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                                    <ui:Button Grid.Column="0" Content="âˆ’" Padding="4,1" CornerRadius="4" Appearance="Secondary" Click="DropH_Minus" FontSize="14" FontWeight="Bold" Margin="0,0,4,0"/>
+                                                    <ui:Button Grid.Column="0" Content="-" Padding="4,1" CornerRadius="4" Appearance="Secondary" Click="DropH_Minus" FontSize="14" FontWeight="Bold" Margin="0,0,4,0"/>
                                                     <Slider Grid.Column="1" Minimum="100" Maximum="350" Value="{Binding Source={x:Static settings:SettingsManager.Current}, Path=MiniFormHeight}" TickFrequency="25" IsSnapToTickEnabled="True" VerticalAlignment="Center"/>
                                                     <ui:Button Grid.Column="2" Content="+" Padding="4,1" CornerRadius="4" Appearance="Secondary" Click="DropH_Plus" FontSize="14" FontWeight="Bold" Margin="4,0,0,0"/>
                                                 </Grid>

@@ -15,10 +15,10 @@
         <!-- Title bar drag region -->
         <Border Height="36" VerticalAlignment="Top" Background="Transparent" MouseLeftButtonDown="TitleBar_MouseDown">
             <Grid>
-                <TextBlock Text="⏱ Timer" FontSize="12" FontWeight="SemiBold" Opacity="0.5" VerticalAlignment="Center" Margin="16,0,0,0"
+                <TextBlock Text="Timer" FontSize="12" FontWeight="SemiBold" Opacity="0.5" VerticalAlignment="Center" Margin="16,0,0,0"
                            Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorSecondary}"/>
                 <Button HorizontalAlignment="Right" Margin="0,0,4,0" Padding="8" Background="Transparent" BorderBrush="Transparent" Click="Close_Click" Cursor="Hand">
-                    <TextBlock Text="✕" FontSize="12" Opacity="0.5" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorSecondary}"/>
+                    <TextBlock Text="X" FontSize="12" Opacity="0.5" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorSecondary}"/>
                 </Button>
             </Grid>
         </Border>
@@ -82,14 +82,14 @@
                             <GradientStop Color="#6366F1" Offset="1"/>
                         </LinearGradientBrush>
                     </Border.Background>
-                    <TextBlock Name="ActionText" Text="▶  Start" FontSize="14" FontWeight="SemiBold" 
+                    <TextBlock Name="ActionText" Text="Start" FontSize="14" FontWeight="SemiBold" 
                                Foreground="White" TextAlignment="Center"/>
                 </Border>
 
                 <!-- Reset button -->
                 <Border Name="ResetBtnBorder" Grid.Column="2" CornerRadius="24" Cursor="Hand" MouseLeftButtonDown="Reset_Click"
                         MinWidth="56" Padding="16,12" Background="#15FFFFFF" Opacity="0.6">
-                    <TextBlock Text="↻" FontSize="16" TextAlignment="Center"
+                    <TextBlock Text="Reset" FontSize="16" TextAlignment="Center"
                                Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorSecondary}"/>
                 </Border>
             </Grid>
