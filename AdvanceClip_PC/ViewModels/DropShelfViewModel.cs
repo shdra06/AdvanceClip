@@ -436,14 +436,16 @@ namespace AdvanceClip.ViewModels
 
                         if (forceClipboardSync)
                         {
-                            Application.Current.Dispatcher.Invoke(() =>
+                            Application.Current.Dispatcher.InvokeAsync(() =>
                             {
                                 try
                                 {
+                                    MainWindow._isWritingClipboard = true;
                                     var dropList = new System.Collections.Specialized.StringCollection { file };
                                     System.Windows.Clipboard.SetFileDropList(dropList);
                                 }
                                 catch { }
+                                finally { MainWindow._isWritingClipboard = false; }
                             });
                         }
                         continue;
@@ -488,7 +490,7 @@ namespace AdvanceClip.ViewModels
 
                         if (!isGlobalDownload)
                         {
-                            long fSize = new FileInfo(file).Length;
+                            long fSize = 0; try { fSize = new FileInfo(file).Length; } catch { }
                             var localServer = LocalServer;
                             
 
@@ -524,15 +526,17 @@ namespace AdvanceClip.ViewModels
                     
                     if (forceClipboardSync)
                     {
-                        Application.Current.Dispatcher.Invoke(() =>
+                        Application.Current.Dispatcher.InvokeAsync(() =>
                         {
                             try
                             {
+                                MainWindow._isWritingClipboard = true;
                                 var dropList = new System.Collections.Specialized.StringCollection();
                                 dropList.Add(file);
                                 System.Windows.Clipboard.SetFileDropList(dropList);
                             }
                             catch { }
+                            finally { MainWindow._isWritingClipboard = false; }
                         });
                     }
                 }
@@ -590,11 +594,12 @@ namespace AdvanceClip.ViewModels
                                 encoder.Save(fs);
                             }
 
-                            Application.Current.Dispatcher.Invoke(() => 
+                            Application.Current.Dispatcher.InvokeAsync(() => 
                             {
                                 var bitmapImage = new BitmapImage();
                                 bitmapImage.BeginInit();
                                 bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
+                                bitmapImage.DecodePixelWidth = 250; // Decode at thumbnail size, not full resolution
                                 bitmapImage.UriSource = new Uri(tempFile);
                                 bitmapImage.EndInit();
                                 bitmapImage.Freeze();
@@ -606,7 +611,13 @@ namespace AdvanceClip.ViewModels
                                 
                                 if (forceClipboardSync)
                                 {
-                                    try { System.Windows.Clipboard.SetImage(bitmapImage); } catch { }
+                                    try
+                                    {
+                                        MainWindow._isWritingClipboard = true;
+                                        System.Windows.Clipboard.SetImage(bitmapImage);
+                                    }
+                                    catch { }
+                                    finally { MainWindow._isWritingClipboard = false; }
                                 }
 
                                 // Upload image to Firebase ONLY if tunnel/mesh is available (zero quota)
@@ -817,7 +828,13 @@ namespace AdvanceClip.ViewModels
                             
                             if (capturedForceSync)
                             {
-                                try { System.Windows.Clipboard.SetText(item.RawContent); } catch { }
+                                try
+                                {
+                                    MainWindow._isWritingClipboard = true;
+                                    System.Windows.Clipboard.SetText(item.RawContent);
+                                }
+                                catch { }
+                                finally { MainWindow._isWritingClipboard = false; }
                             }
                             
                             OnPropertyChanged(nameof(ShelfVisibility));

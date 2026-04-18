@@ -189,12 +189,20 @@ namespace AdvanceClip
             }
             else if (msg == WM_CLIPBOARDUPDATE)
             {
-                // DEBOUNCE: Prevent rapid-fire clipboard processing that causes UI lag.
-                // Some apps (Office, browsers) fire multiple clipboard events in quick bursts.
+                // GUARD: Skip clipboard events triggered by our own writes
+                if (_isWritingClipboard)
+                {
+                    handled = true;
+                    return IntPtr.Zero;
+                }
+
+                // DEBOUNCE: Prevent rapid-fire clipboard processing.
+                // 150ms is enough to collapse burst events from Office/browsers
+                // while staying responsive for manual copy operations.
                 _clipboardDebounceTimer?.Stop();
                 _clipboardDebounceTimer = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Background)
                 {
-                    Interval = TimeSpan.FromMilliseconds(80)
+                    Interval = TimeSpan.FromMilliseconds(150)
                 };
                 _clipboardDebounceTimer.Tick += (s, ev) =>
                 {
@@ -229,6 +237,7 @@ namespace AdvanceClip
         private DateTime _spawnTime = DateTime.MinValue;
         private IntPtr _previousForegroundWindow = IntPtr.Zero;
         private System.Windows.Threading.DispatcherTimer? _clipboardDebounceTimer;
+        internal static bool _isWritingClipboard = false;
 
         private IntPtr GetTargetForegroundWindow()
         {
@@ -734,17 +743,21 @@ namespace AdvanceClip
                             dropEffect.Write(moveEffect, 0, moveEffect.Length);
                             dataObj.SetData("Preferred DropEffect", dropEffect);
 
+                            _isWritingClipboard = true;
                             for(int retry=0; retry<5; retry++) {
                                 try { System.Windows.Clipboard.SetDataObject(dataObj, true); break; }
                                 catch { System.Threading.Thread.Sleep(20); }
                             }
+                            _isWritingClipboard = false;
                         }
                         else if (!string.IsNullOrEmpty(clipboardObj.RawContent))
                         {
+                            _isWritingClipboard = true;
                             for(int retry=0; retry<5; retry++) {
                                 try { System.Windows.Clipboard.SetText(clipboardObj.RawContent); break; }
                                 catch { System.Threading.Thread.Sleep(20); }
                             }
+                            _isWritingClipboard = false;
                         }
                     }
                     catch { } 
