@@ -1,7 +1,13 @@
-import React, { useState } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, SafeAreaView, KeyboardAvoidingView, Platform, Alert, Switch, NativeModules, ScrollView } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, SafeAreaView, KeyboardAvoidingView, Platform, Alert, Switch, NativeModules, ScrollView, ActivityIndicator } from 'react-native';
 import { useSettings } from '../../context/SettingsContext';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as IntentLauncher from 'expo-intent-launcher';
+import Constants from 'expo-constants';
+
+const APP_VERSION = Constants.expoConfig?.version || '1.0.0';
+const VERSION_URL = 'https://raw.githubusercontent.com/shdra06/AdvanceClip/main/version.json';
 
 // Custom pure-JS slider row
 const StepSlider = ({ value, min, max, step, onValueChange, trackColor, thumbColor, label }: { value: number; min: number; max: number; step: number; onValueChange: (v: number) => void; trackColor: string; thumbColor: string; label: string }) => {
@@ -30,6 +36,14 @@ export default function SettingsScreen() {
   const [deviceNameInput, setDeviceNameInput] = useState(deviceName);
   const [floatingBallInput, setFloatingBallInput] = useState(isFloatingBallEnabled);
   const [defaultTargetInput, setDefaultTargetInput] = useState(defaultTargetDeviceName);
+
+  // ═══ Update System State ═══
+  const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error'>('idle');
+  const [updateProgress, setUpdateProgress] = useState(0);
+  const [latestVersion, setLatestVersion] = useState('');
+  const [changelog, setChangelog] = useState('');
+  const [downloadUrl, setDownloadUrl] = useState('');
+  const [downloadedApkUri, setDownloadedApkUri] = useState('');
 
   const { AdvanceOverlay } = NativeModules;
 
@@ -60,6 +74,150 @@ export default function SettingsScreen() {
       Alert.alert('Saved', 'Configuration preserved.');
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Failed to save settings.');
+    }
+  };
+
+  // ═══ Update Functions ═══
+  const checkForUpdate = useCallback(async () => {
+    try {
+      setUpdateStatus('checking');
+      const res = await fetch(`${VERSION_URL}?t=${Date.now()}`);
+      const data = await res.json();
+      const latest = data.android_version || '1.0.0';
+      const dl = data.android_download || '';
+      const log = data.changelog || 'Bug fixes and improvements';
+
+      setLatestVersion(latest);
+      setChangelog(log);
+      setDownloadUrl(dl);
+
+      // Simple semver compare
+      const currentParts = APP_VERSION.split('.').map(Number);
+      const latestParts = latest.split('.').map(Number);
+      let isNewer = false;
+      for (let i = 0; i < 3; i++) {
+        if ((latestParts[i] || 0) > (currentParts[i] || 0)) { isNewer = true; break; }
+        if ((latestParts[i] || 0) < (currentParts[i] || 0)) break;
+      }
+
+      if (isNewer && dl) {
+        setUpdateStatus('available');
+      } else {
+        setUpdateStatus('idle');
+        Alert.alert('✅ Up to Date', `You're on the latest version (v${APP_VERSION}).`);
+      }
+    } catch (e) {
+      setUpdateStatus('error');
+      Alert.alert('Error', 'Could not check for updates. Check your internet connection.');
+    }
+  }, []);
+
+  const downloadAndInstall = useCallback(async () => {
+    if (!downloadUrl) return;
+    try {
+      setUpdateStatus('downloading');
+      setUpdateProgress(0);
+
+      const apkUri = `${(FileSystem as any).cacheDirectory}AdvanceClip_v${latestVersion}.apk`;
+
+      // Delete old APK if exists
+      try { await FileSystem.deleteAsync(apkUri, { idempotent: true }); } catch {}
+
+      const downloadResumable = FileSystem.createDownloadResumable(
+        downloadUrl,
+        apkUri,
+        {},
+        (progress) => {
+          const pct = Math.round((progress.totalBytesWritten / progress.totalBytesExpectedToWrite) * 100);
+          setUpdateProgress(pct);
+        }
+      );
+
+      const result = await downloadResumable.downloadAsync();
+      if (!result?.uri) {
+        throw new Error('Download returned no URI');
+      }
+
+      setDownloadedApkUri(result.uri);
+      setUpdateStatus('ready');
+
+      // Auto-trigger install
+      await installApk(result.uri);
+
+    } catch (e: any) {
+      setUpdateStatus('error');
+      Alert.alert('Download Failed', e?.message || 'Could not download the update APK.');
+    }
+  }, [downloadUrl, latestVersion]);
+
+  const installApk = useCallback(async (uri?: string) => {
+    const apkPath = uri || downloadedApkUri;
+    if (!apkPath) return;
+
+    try {
+      // Get content:// URI for the APK (required for Android 7+)
+      const contentUri = await (FileSystem as any).getContentUriAsync(apkPath);
+
+      await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+        data: contentUri,
+        flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
+        type: 'application/vnd.android.package-archive',
+      });
+    } catch (e: any) {
+      // Fallback: try opening via Linking
+      try {
+        const { Linking } = require('react-native');
+        await Linking.openURL(downloadUrl);
+      } catch {
+        Alert.alert('Install Error', 'Could not open the APK. Please install it manually from your Downloads folder.');
+      }
+    }
+  }, [downloadedApkUri, downloadUrl]);
+
+  const getUpdateButtonContent = () => {
+    switch (updateStatus) {
+      case 'checking':
+        return (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <ActivityIndicator size="small" color="#FFF" />
+            <Text style={{ color: '#FFF', fontWeight: '700', fontSize: 13 }}>Checking...</Text>
+          </View>
+        );
+      case 'available':
+        return <Text style={{ color: '#FFF', fontWeight: '700', fontSize: 13 }}>Download v{latestVersion}</Text>;
+      case 'downloading':
+        return <Text style={{ color: '#FFF', fontWeight: '700', fontSize: 13 }}>Downloading... {updateProgress}%</Text>;
+      case 'ready':
+        return <Text style={{ color: '#FFF', fontWeight: '700', fontSize: 13 }}>Install Now</Text>;
+      case 'error':
+        return <Text style={{ color: '#FFF', fontWeight: '700', fontSize: 13 }}>Retry Check</Text>;
+      default:
+        return <Text style={{ color: '#FFF', fontWeight: '700', fontSize: 13 }}>Check Updates</Text>;
+    }
+  };
+
+  const handleUpdatePress = () => {
+    switch (updateStatus) {
+      case 'idle':
+      case 'error':
+        checkForUpdate();
+        break;
+      case 'available':
+        downloadAndInstall();
+        break;
+      case 'ready':
+        installApk();
+        break;
+    }
+  };
+
+  const getUpdateButtonColor = () => {
+    switch (updateStatus) {
+      case 'available': return '#F59E0B';
+      case 'downloading': return '#6366F1';
+      case 'ready': return '#10B981';
+      case 'error': return '#EF4444';
+      default: return '#10B981';
     }
   };
 
@@ -217,48 +375,85 @@ export default function SettingsScreen() {
 
             <View style={styles.inputContainer}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <View>
+                <View style={{ flex: 1 }}>
                   <Text style={styles.inputLabel}>AdvanceClip Mobile</Text>
-                  <Text style={[styles.helperText, { marginTop: 2 }]}>Current version: <Text style={{ color: '#8B5CF6', fontWeight: '700' }}>v1.0.0</Text></Text>
+                  <Text style={[styles.helperText, { marginTop: 2 }]}>
+                    Installed: <Text style={{ color: '#8B5CF6', fontWeight: '700' }}>v{APP_VERSION}</Text>
+                    {latestVersion && updateStatus === 'available' ? (
+                      <Text style={{ color: '#F59E0B' }}>  →  v{latestVersion}</Text>
+                    ) : null}
+                  </Text>
                 </View>
                 <TouchableOpacity
-                  style={{ backgroundColor: '#10B981', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 12 }}
-                  onPress={async () => {
-                    try {
-                      const res = await fetch(`https://raw.githubusercontent.com/shdra06/AdvanceClip/main/version.json?t=${Date.now()}`);
-                      const data = await res.json();
-                      const latest = data.android_version || '1.0.0';
-                      const current = '1.0.0';
-                      if (latest > current) {
-                        Alert.alert(
-                          `Update v${latest} Available`,
-                          `What's new:\n${data.changelog || 'Bug fixes and improvements'}\n\nDownload now?`,
-                          [
-                            { text: 'Cancel', style: 'cancel' },
-                            {
-                              text: 'Download & Install',
-                              onPress: async () => {
-                                try {
-                                  const { Linking } = require('react-native');
-                                  await Linking.openURL(data.android_download || 'https://github.com/shdra06/AdvanceClip/releases/latest');
-                                } catch (e) { Alert.alert('Error', 'Could not open download link.'); }
-                              }
-                            }
-                          ]
-                        );
-                      } else {
-                        Alert.alert('Up to Date', `You have the latest version (v${current}).`);
-                      }
-                    } catch (e) {
-                      Alert.alert('Error', 'Could not check for updates. Make sure you have internet.');
-                    }
+                  style={{
+                    backgroundColor: getUpdateButtonColor(),
+                    paddingHorizontal: 16,
+                    paddingVertical: 10,
+                    borderRadius: 12,
+                    minWidth: 130,
+                    alignItems: 'center',
                   }}
+                  onPress={handleUpdatePress}
+                  disabled={updateStatus === 'checking' || updateStatus === 'downloading'}
                 >
-                  <Text style={{ color: '#FFF', fontWeight: '700', fontSize: 13 }}>Check Updates</Text>
+                  {getUpdateButtonContent()}
                 </TouchableOpacity>
               </View>
-              <Text style={[styles.helperText, { marginTop: 10 }]}>
-                Tap to check for a newer APK on GitHub. If an update is available, tap "Download &amp; Install" to get it.
+
+              {/* Download Progress Bar */}
+              {updateStatus === 'downloading' && (
+                <View style={{ marginTop: 14 }}>
+                  <View style={{ height: 6, backgroundColor: '#2A2F3A', borderRadius: 3, overflow: 'hidden' }}>
+                    <View style={{
+                      width: `${updateProgress}%`,
+                      height: '100%',
+                      backgroundColor: '#6366F1',
+                      borderRadius: 3,
+                    }} />
+                  </View>
+                  <Text style={[styles.helperText, { textAlign: 'center', marginTop: 6, color: '#6366F1' }]}>
+                    Downloading APK... {updateProgress}%
+                  </Text>
+                </View>
+              )}
+
+              {/* Update Available Info */}
+              {updateStatus === 'available' && (
+                <View style={{
+                  marginTop: 12,
+                  backgroundColor: '#1A1D24',
+                  borderRadius: 12,
+                  padding: 14,
+                  borderWidth: 1,
+                  borderColor: '#F59E0B33',
+                }}>
+                  <Text style={{ color: '#F59E0B', fontWeight: '700', fontSize: 14, marginBottom: 4 }}>
+                    🎉 Update v{latestVersion} Available
+                  </Text>
+                  <Text style={{ color: '#8A8F98', fontSize: 12, lineHeight: 18 }}>
+                    {changelog}
+                  </Text>
+                </View>
+              )}
+
+              {/* Ready to Install */}
+              {updateStatus === 'ready' && (
+                <View style={{
+                  marginTop: 12,
+                  backgroundColor: '#1A1D24',
+                  borderRadius: 12,
+                  padding: 14,
+                  borderWidth: 1,
+                  borderColor: '#10B98133',
+                }}>
+                  <Text style={{ color: '#10B981', fontWeight: '700', fontSize: 14 }}>
+                    ✅ APK Downloaded — Tap "Install Now" to update
+                  </Text>
+                </View>
+              )}
+
+              <Text style={[styles.helperText, { marginTop: 12 }]}>
+                Downloads the latest APK from GitHub and opens the Android installer. Make sure "Install from Unknown Sources" is enabled for this app.
               </Text>
             </View>
           </View>
@@ -364,3 +559,4 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 });
+
