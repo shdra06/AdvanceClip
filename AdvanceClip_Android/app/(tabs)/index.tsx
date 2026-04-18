@@ -30,6 +30,7 @@ type ClipItem = {
   SourceDeviceType?: string;
   IsPinned?: boolean;
   Timestamp?: number;
+  CachedUri?: string;
 };
 
 const fetchWithTimeout = async (url: string, options: any = {}, timeoutMs = 2500) => {
