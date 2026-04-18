@@ -1021,9 +1021,10 @@ namespace AdvanceClip
         {
             try
             {
-                if (_hubWindowInstance == null)
+                if (_hubWindowInstance == null || !_hubWindowInstance.IsLoaded)
                 {
                     _hubWindowInstance = new Windows.HubWindow(_viewModel);
+                    _hubWindowInstance.Closed += (s, args) => _hubWindowInstance = null;
                     _hubWindowInstance.Show();
                 }
                 else
@@ -1036,12 +1037,11 @@ namespace AdvanceClip
                 _hubWindowInstance.Focus();
                 this.Hide();
             }
-            catch
+            catch (Exception ex)
             {
-                _hubWindowInstance = new Windows.HubWindow(_viewModel);
-                _hubWindowInstance.Show();
-                _hubWindowInstance.Activate();
-                this.Hide();
+                _hubWindowInstance = null;
+                AdvanceClip.Classes.Logger.LogAction("HUBWINDOW_FAIL", $"Failed to open HubWindow: {ex}");
+                AdvanceClip.Windows.ToastWindow.ShowToast($"Hub Error: {ex.Message}");
             }
         }
 

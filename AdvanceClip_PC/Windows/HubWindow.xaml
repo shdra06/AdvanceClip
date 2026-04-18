@@ -104,12 +104,12 @@
             <!-- Dynamic Navigation Framework -->
             <ui:NavigationView x:Name="RootNavigation" Grid.Row="0" PaneDisplayMode="Top" IsBackButtonVisible="Collapsed" WindowChrome.IsHitTestVisibleInChrome="True">
                 <ui:NavigationView.MenuItems>
-                    <ui:NavigationViewItem Content="Clipboard" Icon="{ui:SymbolIcon ClipboardTextEdit24}" Tag="History" IsActive="True" PreviewMouseLeftButtonDown="Nav_Click"/>
-                    <ui:NavigationViewItem Content="Dashboard" Icon="{ui:SymbolIcon DataBarHorizontal24}" Tag="Dashboard" PreviewMouseLeftButtonDown="Nav_Click"/>
-                    <ui:NavigationViewItem Content="Automations" Icon="{ui:SymbolIcon Apps24}" Tag="Automation" PreviewMouseLeftButtonDown="Nav_Click"/>
-                    <ui:NavigationViewItem Content="Network" Icon="{ui:SymbolIcon Earth24}" Tag="Network" PreviewMouseLeftButtonDown="Nav_Click"/>
+                    <ui:NavigationViewItem Content="Clipboard" Icon="{ui:SymbolIcon Clipboard24}" Tag="History" IsActive="True" PreviewMouseLeftButtonDown="Nav_Click"/>
+                    <ui:NavigationViewItem Content="Dashboard" Icon="{ui:SymbolIcon ChartMultiple24}" Tag="Dashboard" PreviewMouseLeftButtonDown="Nav_Click"/>
+                    <ui:NavigationViewItem Content="Automations" Icon="{ui:SymbolIcon Grid24}" Tag="Automation" PreviewMouseLeftButtonDown="Nav_Click"/>
+                    <ui:NavigationViewItem Content="Network" Icon="{ui:SymbolIcon Globe24}" Tag="Network" PreviewMouseLeftButtonDown="Nav_Click"/>
                     <ui:NavigationViewItem Content="Settings" Icon="{ui:SymbolIcon Settings24}" Tag="Settings" PreviewMouseLeftButtonDown="Nav_Click"/>
-                    <ui:NavigationViewItem Content="System Logs" Icon="{ui:SymbolIcon DocumentText24}" Tag="Logs" PreviewMouseLeftButtonDown="Nav_Click"/>
+                    <ui:NavigationViewItem Content="System Logs" Icon="{ui:SymbolIcon Document24}" Tag="Logs" PreviewMouseLeftButtonDown="Nav_Click"/>
                 </ui:NavigationView.MenuItems>
             </ui:NavigationView>
 
@@ -249,7 +249,7 @@
                                                             <GradientStop Color="#8B5CF6" Offset="1"/>
                                                         </LinearGradientBrush>
                                                     </Border.Background>
-                                                    <ui:SymbolIcon Symbol="Brain24" Foreground="White" FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    <ui:SymbolIcon Symbol="Lightbulb24" Foreground="White" FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                                 </Border>
                                                 <StackPanel VerticalAlignment="Center">
                                                     <TextBlock Text="Smart Suggestions" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorPrimary}" />
@@ -294,7 +294,7 @@
                                                             <GradientStop Color="#F59E0B" Offset="1"/>
                                                         </LinearGradientBrush>
                                                     </Border.Background>
-                                                    <ui:SymbolIcon Symbol="Flash24" Foreground="White" FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    <ui:SymbolIcon Symbol="Rocket24" Foreground="White" FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                                 </Border>
                                                 <StackPanel VerticalAlignment="Center">
                                                     <TextBlock Text="Quick Actions" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorPrimary}" />
@@ -350,7 +350,7 @@
                                     </StackPanel>
                                 </ui:Button>
                                 <ui:Button Appearance="Secondary" Padding="10,6" CornerRadius="10" ToolTip="Select All" Click="SelectAll_Click">
-                                    <ui:SymbolIcon Symbol="CheckboxChecked24" FontSize="14" />
+                                    <ui:SymbolIcon Symbol="CheckmarkCircle24" FontSize="14" />
                                 </ui:Button>
                             </StackPanel>
                         </Grid>
