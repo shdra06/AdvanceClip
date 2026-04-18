@@ -1040,8 +1040,11 @@ namespace AdvanceClip
             catch (Exception ex)
             {
                 _hubWindowInstance = null;
-                AdvanceClip.Classes.Logger.LogAction("HUBWINDOW_FAIL", $"Failed to open HubWindow: {ex}");
-                AdvanceClip.Windows.ToastWindow.ShowToast($"Hub Error: {ex.Message}");
+                var fullMsg = ex.ToString();
+                var inner = ex.InnerException;
+                while (inner != null) { fullMsg += "\n--- INNER: " + inner.Message; inner = inner.InnerException; }
+                AdvanceClip.Classes.Logger.LogAction("HUBWINDOW_FAIL", fullMsg);
+                AdvanceClip.Windows.ToastWindow.ShowToast($"Hub Error: {(ex.InnerException?.Message ?? ex.Message)}");
             }
         }
 

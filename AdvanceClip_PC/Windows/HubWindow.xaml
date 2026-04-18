@@ -104,12 +104,24 @@
             <!-- Dynamic Navigation Framework -->
             <ui:NavigationView x:Name="RootNavigation" Grid.Row="0" PaneDisplayMode="Top" IsBackButtonVisible="Collapsed" WindowChrome.IsHitTestVisibleInChrome="True">
                 <ui:NavigationView.MenuItems>
-                    <ui:NavigationViewItem Content="Clipboard" Icon="{ui:SymbolIcon Clipboard24}" Tag="History" IsActive="True" PreviewMouseLeftButtonDown="Nav_Click"/>
-                    <ui:NavigationViewItem Content="Dashboard" Icon="{ui:SymbolIcon ChartMultiple24}" Tag="Dashboard" PreviewMouseLeftButtonDown="Nav_Click"/>
-                    <ui:NavigationViewItem Content="Automations" Icon="{ui:SymbolIcon Grid24}" Tag="Automation" PreviewMouseLeftButtonDown="Nav_Click"/>
-                    <ui:NavigationViewItem Content="Network" Icon="{ui:SymbolIcon Globe24}" Tag="Network" PreviewMouseLeftButtonDown="Nav_Click"/>
-                    <ui:NavigationViewItem Content="Settings" Icon="{ui:SymbolIcon Settings24}" Tag="Settings" PreviewMouseLeftButtonDown="Nav_Click"/>
-                    <ui:NavigationViewItem Content="System Logs" Icon="{ui:SymbolIcon Document24}" Tag="Logs" PreviewMouseLeftButtonDown="Nav_Click"/>
+                    <ui:NavigationViewItem Content="Clipboard" Tag="History" IsActive="True" PreviewMouseLeftButtonDown="Nav_Click">
+                        <ui:NavigationViewItem.Icon><ui:SymbolIcon Symbol="Clipboard24"/></ui:NavigationViewItem.Icon>
+                    </ui:NavigationViewItem>
+                    <ui:NavigationViewItem Content="Dashboard" Tag="Dashboard" PreviewMouseLeftButtonDown="Nav_Click">
+                        <ui:NavigationViewItem.Icon><ui:SymbolIcon Symbol="ChartMultiple24"/></ui:NavigationViewItem.Icon>
+                    </ui:NavigationViewItem>
+                    <ui:NavigationViewItem Content="Automations" Tag="Automation" PreviewMouseLeftButtonDown="Nav_Click">
+                        <ui:NavigationViewItem.Icon><ui:SymbolIcon Symbol="Grid24"/></ui:NavigationViewItem.Icon>
+                    </ui:NavigationViewItem>
+                    <ui:NavigationViewItem Content="Network" Tag="Network" PreviewMouseLeftButtonDown="Nav_Click">
+                        <ui:NavigationViewItem.Icon><ui:SymbolIcon Symbol="Globe24"/></ui:NavigationViewItem.Icon>
+                    </ui:NavigationViewItem>
+                    <ui:NavigationViewItem Content="Settings" Tag="Settings" PreviewMouseLeftButtonDown="Nav_Click">
+                        <ui:NavigationViewItem.Icon><ui:SymbolIcon Symbol="Settings24"/></ui:NavigationViewItem.Icon>
+                    </ui:NavigationViewItem>
+                    <ui:NavigationViewItem Content="System Logs" Tag="Logs" PreviewMouseLeftButtonDown="Nav_Click">
+                        <ui:NavigationViewItem.Icon><ui:SymbolIcon Symbol="Document24"/></ui:NavigationViewItem.Icon>
+                    </ui:NavigationViewItem>
                 </ui:NavigationView.MenuItems>
             </ui:NavigationView>
 
@@ -364,7 +376,9 @@
                             </Border.Background>
                         </Border>
                         
-                        <ui:TextBox Grid.Row="2" x:Name="SearchBox" PlaceholderText="Search scripts, links, files, PDFs..." Icon="{ui:SymbolIcon Search24}" TextChanged="SearchBox_TextChanged" />
+                        <ui:TextBox Grid.Row="2" x:Name="SearchBox" PlaceholderText="Search scripts, links, files, PDFs..." TextChanged="SearchBox_TextChanged">
+                            <ui:TextBox.Icon><ui:SymbolIcon Symbol="Search24"/></ui:TextBox.Icon>
+                        </ui:TextBox>
                     </Grid>
                     
                     <!-- Filter Chips -->
