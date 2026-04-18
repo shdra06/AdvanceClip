@@ -1,0 +1,60 @@
+# ═══════════════════════════════════════════════════════════════
+#  AdvanceClip — Root .gitignore
+#  Structure:
+#    AdvanceClip_PC/       ← Windows desktop app (C# / WPF)
+#    AdvanceClip_Android/  ← Android companion (React Native + Kotlin)
+#    version.json          ← update manifest (COMMITTED)
+# ═══════════════════════════════════════════════════════════════
+
+# ─── Leftover old folder (node_modules still locked) ──────────
+AndroidCompanion/
+
+# ─── .NET / C# Build Artifacts ────────────────────────────────
+AdvanceClip_PC/bin/
+AdvanceClip_PC/obj/
+AdvanceClip_PC/*.zip
+AdvanceClip_PC/*_wpftmp.csproj*
+AdvanceClip_PC/.vs/
+AdvanceClip_PC/**/*.user
+AdvanceClip_PC/**/*.suo
+
+# ─── Published / Release Binaries (uploaded to GitHub Releases) ─
+AdvanceClip_PC/FINAL/
+FINAL/
+
+# ─── Android Build Artifacts ──────────────────────────────────
+AdvanceClip_Android/node_modules/
+AdvanceClip_Android/.expo/
+AdvanceClip_Android/android/build/
+AdvanceClip_Android/android/app/build/
+AdvanceClip_Android/android/.gradle/
+AdvanceClip_Android/android/.idea/
+AdvanceClip_Android/.idea/
+AdvanceClip_Android/dist/
+
+# ─── Android Sensitive / Local-only Files ─────────────────────
+AdvanceClip_Android/android/local.properties   # Contains local SDK path
+AdvanceClip_Android/android/app/debug.keystore # Debug signing key
+
+# ─── Python virtual env ───────────────────────────────────────
+.venv/
+__pycache__/
+*.pyc
+
+# ─── OS junk ──────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ─── IDE ──────────────────────────────────────────────────────
+.vscode/settings.json
+*.swp
+*.bak
+
+# ─── Logs & Temp ──────────────────────────────────────────────
+*.log
+*.tmp
+*.temp
+
+# ─── NuGet cache (auto-restored via dotnet restore) ───────────
+AdvanceClip_PC/.nuget/

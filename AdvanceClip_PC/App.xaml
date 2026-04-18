@@ -1,0 +1,142 @@
+<Application x:Class="AdvanceClip.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:mica="clr-namespace:MicaWPF.Styles;assembly=MicaWPF"
+             xmlns:local="clr-namespace:AdvanceClip">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ui:ThemesDictionary Theme="Dark"/>
+                <ui:ControlsDictionary />
+                <mica:ThemeDictionary Theme="Dark"/>
+                <mica:ControlsDictionary />
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- Premium UI Gradients — Muted, sophisticated darks -->
+            <LinearGradientBrush x:Key="PremiumGradientNetwork" StartPoint="0,0" EndPoint="1,1">
+                <GradientStop Color="#0C2D33" Offset="0" />
+                <GradientStop Color="#134E4A" Offset="0.5" />
+                <GradientStop Color="#0A2328" Offset="1" />
+            </LinearGradientBrush>
+            <LinearGradientBrush x:Key="PremiumGradientDocs" StartPoint="0,0" EndPoint="1,1">
+                <GradientStop Color="#3B1320" Offset="0" />
+                <GradientStop Color="#5C1D30" Offset="0.5" />
+                <GradientStop Color="#2D0F1A" Offset="1" />
+            </LinearGradientBrush>
+            <LinearGradientBrush x:Key="PremiumGradientAI" StartPoint="0,0" EndPoint="1,1">
+                <GradientStop Color="#1E1040" Offset="0" />
+                <GradientStop Color="#2E1A5E" Offset="0.5" />
+                <GradientStop Color="#180D35" Offset="1" />
+            </LinearGradientBrush>
+            <LinearGradientBrush x:Key="PremiumGradientMemory" StartPoint="0,0" EndPoint="1,1">
+                <GradientStop Color="#0D1B3E" Offset="0" />
+                <GradientStop Color="#162C5A" Offset="0.5" />
+                <GradientStop Color="#0A1530" Offset="1" />
+            </LinearGradientBrush>
+
+            <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+            <local:StringToVisibilityConverter x:Key="StringToVisibilityConverter"/>
+
+            <!-- Accent Solid Colors for borders/glows -->
+            <SolidColorBrush x:Key="AccentBlue" Color="#3B82F6" />
+            <SolidColorBrush x:Key="AccentRose" Color="#F43F5E" />
+            <SolidColorBrush x:Key="AccentTeal" Color="#14B8A6" />
+            <SolidColorBrush x:Key="AccentViolet" Color="#8B5CF6" />
+            <SolidColorBrush x:Key="AccentAmber" Color="#F59E0B" />
+            <SolidColorBrush x:Key="AccentEmerald" Color="#10B981" />
+
+            <!-- Unified Hover Elevation Card Animation Template -->
+            <Style x:Key="DashboardCardStyle" TargetType="Border">
+                <Setter Property="RenderTransformOrigin" Value="0.5,0.5" />
+                <Setter Property="RenderTransform">
+                    <Setter.Value>
+                        <ScaleTransform ScaleX="1" ScaleY="1" />
+                    </Setter.Value>
+                </Setter>
+                <Style.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Trigger.EnterActions>
+                            <BeginStoryboard>
+                                <Storyboard>
+                                    <DoubleAnimation Storyboard.TargetProperty="RenderTransform.ScaleX" To="1.02" Duration="0:0:0.2">
+                                        <DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseOut" /></DoubleAnimation.EasingFunction>
+                                    </DoubleAnimation>
+                                    <DoubleAnimation Storyboard.TargetProperty="RenderTransform.ScaleY" To="1.02" Duration="0:0:0.2">
+                                        <DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseOut" /></DoubleAnimation.EasingFunction>
+                                    </DoubleAnimation>
+                                </Storyboard>
+                            </BeginStoryboard>
+                        </Trigger.EnterActions>
+                        <Trigger.ExitActions>
+                            <BeginStoryboard>
+                                <Storyboard>
+                                    <DoubleAnimation Storyboard.TargetProperty="RenderTransform.ScaleX" To="1" Duration="0:0:0.25">
+                                        <DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseInOut" /></DoubleAnimation.EasingFunction>
+                                    </DoubleAnimation>
+                                    <DoubleAnimation Storyboard.TargetProperty="RenderTransform.ScaleY" To="1" Duration="0:0:0.25">
+                                        <DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseInOut" /></DoubleAnimation.EasingFunction>
+                                    </DoubleAnimation>
+                                </Storyboard>
+                            </BeginStoryboard>
+                        </Trigger.ExitActions>
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
+            <!-- Ultra-Slim Glass Scrollbar -->
+            <Style x:Key="SlimScrollBarThumb" TargetType="Thumb">
+                <Setter Property="OverridesDefaultStyle" Value="True" />
+                <Setter Property="IsTabStop" Value="False" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Thumb">
+                            <Border Background="#30FFFFFF" CornerRadius="2" Margin="0,2" />
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style x:Key="SlimScrollBarStyle" TargetType="ScrollBar">
+                <Setter Property="OverridesDefaultStyle" Value="True" />
+                <Setter Property="SnapsToDevicePixels" Value="True" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ScrollBar">
+                            <Grid Width="5" Background="Transparent" Margin="0,4,2,4">
+                                <Track Name="PART_Track" IsDirectionReversed="True">
+                                    <Track.Thumb>
+                                        <Thumb Style="{StaticResource SlimScrollBarThumb}" />
+                                    </Track.Thumb>
+                                </Track>
+                            </Grid>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="Orientation" Value="Horizontal">
+                                    <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+                <Style.Triggers>
+                    <Trigger Property="Orientation" Value="Horizontal">
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="ScrollBar">
+                                    <Grid Height="5" Background="Transparent" Margin="4,0,4,2">
+                                        <Track Name="PART_Track" IsDirectionReversed="False">
+                                            <Track.Thumb>
+                                                <Thumb Style="{StaticResource SlimScrollBarThumb}" />
+                                            </Track.Thumb>
+                                        </Track>
+                                    </Grid>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

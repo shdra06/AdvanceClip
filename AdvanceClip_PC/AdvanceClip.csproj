@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ApplicationIcon>Resources\AdvanceClipLogo.ico</ApplicationIcon>
+    <NoWarn>CS4014;CS0168;CS0162;CS0414;CS8632;CS0169</NoWarn>
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0</AssemblyVersion>
+    <FileVersion>1.0.0</FileVersion>
+  </PropertyGroup>
+
+  <!-- Prevent process crash from unobserved async Task exceptions (WebRTC I/O aborts) -->
+  <ItemGroup>
+    <RuntimeHostConfigurationOption Include="System.Threading.Tasks.TaskScheduler.ThrowUnobservedTaskExceptions" Value="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="FirebaseStorage.net" Version="1.0.3" />
+    <PackageReference Include="MaterialDesignThemes" Version="5.3.1" />
+    <PackageReference Include="MicaWPF" Version="6.3.2" />
+    <PackageReference Include="WPF-UI" Version="4.2.0" />
+    <PackageReference Include="WPF-UI.Tray" Version="4.2.0" />
+    <PackageReference Include="ZXing.Net.Bindings.Windows.Compatibility" Version="0.16.14" />
+    <PackageReference Include="PdfSharp" Version="6.1.1" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Resources\**\*.png" />
+    <Resource Include="Resources\**\*.ico" />
+  </ItemGroup>
+
+  <Target Name="ZipPayloads" BeforeTargets="BeforeBuild">
+    <Message Text="Zipping Scripts and WebClient into Native Embedded Resources..." Importance="high" />
+    <ZipDirectory SourceDirectory="Scripts" DestinationFile="Scripts.zip" Overwrite="true" />
+    <ZipDirectory SourceDirectory="Resources\WebClient" DestinationFile="WebClient.zip" Overwrite="true" />
+  </Target>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Scripts.zip" LogicalName="AdvanceClip.Scripts.zip" />
+    <EmbeddedResource Include="WebClient.zip" LogicalName="AdvanceClip.WebClient.zip" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,415 @@
+using System;
+using System.Net.Http;
+using System.Text;
+using System.Text.Json;
+using System.Threading.Tasks;
+using AdvanceClip.ViewModels;
+using System.Linq;
+using System.IO;
+using Firebase.Storage;
+
+namespace AdvanceClip.Classes
+{
+    public class FirebaseSyncManager
+    {
+        private static readonly HttpClient _client = new HttpClient();
+        private const string FIREBASE_URL = "https://advance-sync-default-rtdb.firebaseio.com/clipboard.json";
+        
+        // Public Cloudflare URL for constructing file download links
+        public static string CachedGlobalUrl { get; set; } = "";
+        
+        // Time-windowed dedup: track fingerprint → last push time (10s cooldown)
+        private static readonly Dictionary<string, long> _recentPushTimes = new();
+        private const int DEDUP_COOLDOWN_MS = 10_000; // 10 seconds — same content within this window is skipped
+        private const int AUTO_DELETE_TEXT_MS = 90_000; // 90 seconds for text items
+        private const int AUTO_DELETE_FILE_MS = 24 * 60 * 60_000; // 24 hours for file items (large files need time to download)
+
+        public static async Task PushToGlobalSync(ClipboardItem item)
+        {
+            if (!SettingsManager.Current.EnableGlobalFirebaseSync)
+                return;
+
+            // Time-windowed dedup: skip if same content was pushed within last 10 seconds
+            string fingerprint = $"{item.ItemType}::{(item.RawContent ?? "").Substring(0, Math.Min(200, (item.RawContent ?? "").Length))}";
+            long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            lock (_recentPushTimes)
+            {
+                if (_recentPushTimes.TryGetValue(fingerprint, out long lastPushTime))
+                {
+                    if (nowMs - lastPushTime < DEDUP_COOLDOWN_MS)
+                    {
+                        Logger.LogAction("FIREBASE SYNC", "Skipped rapid-fire duplicate (same content within 10s cooldown)");
+                        return;
+                    }
+                }
+                _recentPushTimes[fingerprint] = nowMs;
+                
+                // Clean old fingerprints (older than 60s)
+                var stale = _recentPushTimes.Where(kv => nowMs - kv.Value > 60_000).Select(kv => kv.Key).ToList();
+                foreach (var key in stale) _recentPushTimes.Remove(key);
+            }
+
+            // Safety: If no DeviceName is set, use the machine name so we can always filter self-echoes
+            string deviceName = SettingsManager.Current.DeviceName;
+            if (string.IsNullOrWhiteSpace(deviceName))
+            {
+                deviceName = Environment.MachineName;
+            }
+
+            try
+            {
+                // For files: construct a public Cloudflare download URL instead of embedding raw content
+                bool isFile = !string.IsNullOrEmpty(item.FilePath) && File.Exists(item.FilePath);
+                string downloadUrl = "";
+                string raw = item.RawContent ?? "";
+                
+                if (isFile && !string.IsNullOrEmpty(CachedGlobalUrl) && CachedGlobalUrl.Contains("trycloudflare.com"))
+                {
+                    // Build public download link: https://abc.trycloudflare.com/download?path=C%3A%5C...%5Cfile.apk
+                    downloadUrl = $"{CachedGlobalUrl}/download?path={Uri.EscapeDataString(item.FilePath)}";
+                    raw = downloadUrl; // Use full Cloudflare URL as Raw — works everywhere
+                    Logger.LogAction("FIREBASE SYNC", $"File '{item.FileName}' → public URL: {downloadUrl}");
+                }
+                else if (isFile)
+                {
+                    // No Cloudflare tunnel — set relative download URL for LAN clients
+                    // BUT keep Raw as original content (file path) so receivers see the filename, not a garbled URL
+                    downloadUrl = $"/download?path={Uri.EscapeDataString(item.FilePath)}";
+                    // raw stays as item.RawContent (the file path) — NOT overwritten
+                    Logger.LogAction("FIREBASE SYNC", $"File '{item.FileName}' → LAN only (no Cloudflare)");
+                }
+                
+                var payload = new
+                {
+                    Title = string.IsNullOrEmpty(item.FileName) ? (item.RawContent?.Length > 30 ? item.RawContent.Substring(0, 30) + "..." : item.RawContent) : item.FileName,
+                    Type = item.ItemType.ToString(),
+                    Raw = raw,
+                    PreviewUrl = isFile && downloadUrl != "" ? downloadUrl : "",
+                    DownloadUrl = downloadUrl,
+                    FileName = item.FileName ?? "",
+                    FileSize = isFile ? new FileInfo(item.FilePath).Length : 0,
+                    SenderUrl = CachedGlobalUrl ?? "", // Cloudflare URL so receivers can build download links
+                    Time = item.DateCopied.ToString("HH:mm:ss"),
+                    Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    SourceDeviceName = deviceName,
+                    SourceDeviceType = "PC"
+                };
+
+                string json = JsonSerializer.Serialize(payload);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                var response = await _client.PostAsync(FIREBASE_URL, content);
+                
+                if (response.IsSuccessStatusCode)
+                {
+                    Logger.LogAction("FIREBASE SYNC", $"Pushed item to global cloud as '{deviceName}'");
+                    
+                    // Auto-delete: 90s for text, 30min for files (need time to download large files)
+                    string responseBody = await response.Content.ReadAsStringAsync();
+                    try
+                    {
+                        var responseObj = JsonSerializer.Deserialize<Dictionary<string, string>>(responseBody);
+                        if (responseObj != null && responseObj.TryGetValue("name", out string? entryKey) && !string.IsNullOrEmpty(entryKey))
+                        {
+                            _ = Task.Run(async () =>
+                            {
+                                int deleteDelay = isFile ? AUTO_DELETE_FILE_MS : AUTO_DELETE_TEXT_MS;
+                                await Task.Delay(deleteDelay);
+                                try
+                                {
+                                    string deleteUrl = $"https://advance-sync-default-rtdb.firebaseio.com/clipboard/{entryKey}.json";
+                                    await _client.DeleteAsync(deleteUrl);
+                                    Logger.LogAction("FIREBASE CLEANUP", $"Auto-deleted entry '{entryKey}'");
+                                }
+                                catch { }
+                            });
+                        }
+                    }
+                    catch { }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogAction("FIREBASE ERROR", ex.Message);
+            }
+        }
+
+        public static async Task<string> UploadFileToStorageAsync(string filePath)
+        {
+            try
+            {
+                var fileName = Path.GetFileName(filePath);
+                var safeName = "archives/" + fileName + "_" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+                using var stream = File.OpenRead(filePath);
+                var task = new FirebaseStorage("advance-sync.firebasestorage.app")
+                    .Child(safeName)
+                    .PutAsync(stream);
+                    
+                var downloadUrl = await task;
+                return downloadUrl;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogAction("FIREBASE STORAGE", "Global blob upload aborted: " + ex.Message);
+                return "";
+            }
+        }
+
+        public static async Task PushTunnelUrl(string url, bool isOnline, string localIp = "")
+        {
+            try
+            {
+                var payload = new
+                {
+                    DeviceId = SettingsManager.Current.DeviceId,
+                    DeviceName = SettingsManager.Current.DeviceName,
+                    DeviceType = "PC",
+                    Url = localIp.Contains("http") ? localIp : url,
+                    LocalIp = localIp,
+                    GlobalUrl = url.Contains("trycloudflare.com") ? url : "",
+                    IsOnline = isOnline,
+                    Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                };
+
+                string json = JsonSerializer.Serialize(payload);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                // Use PUT to register or update our specific Device node
+                string tunnelNodeUrl = $"https://advance-sync-default-rtdb.firebaseio.com/active_devices/{SettingsManager.Current.DeviceId}.json";
+                var response = await _client.PutAsync(tunnelNodeUrl, content);
+                
+                if (response.IsSuccessStatusCode)
+                {
+                    Logger.LogAction("FIREBASE SYNC", $"Tunnel DNS updated: {url} [{isOnline}]");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogAction("FIREBASE ERROR", $"Tunnel DNS Failure: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Force-send clipboard items to specific target devices via Firebase forced_sync node.
+        /// Files of ANY size are supported — uses Cloudflare download URLs (no upload needed).
+        /// </summary>
+        public static async Task<int> ForceSendToDevices(List<ClipboardItem> items, List<string> targetDeviceIds)
+        {
+            int sent = 0;
+            string deviceName = SettingsManager.Current.DeviceName ?? Environment.MachineName;
+
+            foreach (var targetId in targetDeviceIds)
+            {
+                foreach (var item in items)
+                {
+                    try
+                    {
+                        bool isFile = !string.IsNullOrEmpty(item.FilePath) && File.Exists(item.FilePath);
+                        string downloadUrl = "";
+                        string raw = item.RawContent ?? "";
+
+                        if (isFile)
+                        {
+                            // Use Cloudflare URL (preferred — no size limit, instant)
+                            if (!string.IsNullOrEmpty(CachedGlobalUrl) && CachedGlobalUrl.Contains("trycloudflare.com"))
+                            {
+                                downloadUrl = $"{CachedGlobalUrl}/download?path={Uri.EscapeDataString(item.FilePath)}";
+                                raw = downloadUrl;
+                                long fileSize = new FileInfo(item.FilePath).Length;
+                                Logger.LogAction("FORCED SYNC", $"File '{item.FileName}' ({fileSize / (1024*1024)}MB) → Cloudflare URL");
+                            }
+                            else
+                            {
+                                // No Cloudflare — set relative download URL for LAN, keep Raw as file path
+                                long fileSize = new FileInfo(item.FilePath).Length;
+                                downloadUrl = $"/download?path={Uri.EscapeDataString(item.FilePath)}";
+                                // raw stays as original (file path) — NOT overwritten with useless relative URL
+                                Logger.LogAction("FORCED SYNC", $"File '{item.FileName}' ({fileSize / (1024*1024)}MB) → LAN only");
+                            }
+                        }
+
+                        var payload = new
+                        {
+                            Title = string.IsNullOrEmpty(item.FileName) ? (raw.Length > 30 ? raw.Substring(0, 30) + "..." : raw) : item.FileName,
+                            Type = item.ItemType.ToString(),
+                            Raw = raw,
+                            DownloadUrl = downloadUrl,
+                            FileName = item.FileName ?? "",
+                            FileSize = isFile ? new FileInfo(item.FilePath).Length : 0,
+                            SenderUrl = CachedGlobalUrl ?? "",
+                            ForcedBy = deviceName,
+                            ForcedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                            SourceDeviceName = deviceName,
+                            SourceDeviceType = "PC",
+                            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                        };
+
+                        string json = JsonSerializer.Serialize(payload);
+                        var content = new StringContent(json, Encoding.UTF8, "application/json");
+                        string url2 = $"https://advance-sync-default-rtdb.firebaseio.com/forced_sync/{targetId}.json";
+                        var response = await _client.PostAsync(url2, content);
+                        if (response.IsSuccessStatusCode) sent++;
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogAction("FORCED SYNC", $"Send error: {ex.Message}");
+                    }
+                }
+            }
+            return sent;
+        }
+
+        /// <summary>
+        /// Fetch all active devices from Firebase for the forced sync device picker.
+        /// </summary>
+        public static async Task<List<(string Id, string Name, string Type, bool IsOnline, string LocalIp)>> GetActiveDevices()
+        {
+            var devices = new List<(string Id, string Name, string Type, bool IsOnline, string LocalIp)>();
+            try
+            {
+                string url = "https://advance-sync-default-rtdb.firebaseio.com/active_devices.json";
+                var response = await _client.GetAsync(url);
+                if (response.IsSuccessStatusCode)
+                {
+                    var json = await response.Content.ReadAsStringAsync();
+                    if (!string.IsNullOrWhiteSpace(json) && json != "null")
+                    {
+                        using var doc = JsonDocument.Parse(json);
+                        string myId = SettingsManager.Current.DeviceId;
+                        foreach (var prop in doc.RootElement.EnumerateObject())
+                        {
+                            if (prop.Name == myId) continue; // Skip self
+                            string name = prop.Value.TryGetProperty("DeviceName", out var n) ? n.GetString() ?? "" : "";
+                            string type = prop.Value.TryGetProperty("DeviceType", out var dt) ? dt.GetString() ?? "" : "";
+                            bool online = prop.Value.TryGetProperty("IsOnline", out var on) && on.GetBoolean();
+                            string localIp = prop.Value.TryGetProperty("LocalIp", out var lip) ? lip.GetString() ?? "" : "";
+                            
+                            // TTL check: treat devices with heartbeat older than 2 minutes as offline
+                            if (online && prop.Value.TryGetProperty("Timestamp", out var ts))
+                            {
+                                long deviceTs = ts.GetInt64();
+                                long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                                if (nowMs - deviceTs > 120_000) online = false; // Stale — hasn't heartbeated in 2 min
+                            }
+                            
+                            devices.Add((prop.Name, name, type, online, localIp));
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogAction("FIREBASE", $"GetActiveDevices error: {ex.Message}");
+            }
+            return devices;
+        }
+        /// <summary>
+        /// Purge old GUID-based device entries from Firebase that were created by the old NewGuid() logic.
+        /// Removes entries that look like raw GUIDs (contain dashes and no underscores) and are stale.
+        /// </summary>
+        public static async Task CleanupStaleDevices()
+        {
+            try
+            {
+                string url = "https://advance-sync-default-rtdb.firebaseio.com/active_devices.json";
+                var response = await _client.GetAsync(url);
+                if (response.IsSuccessStatusCode)
+                {
+                    var json = await response.Content.ReadAsStringAsync();
+                    if (!string.IsNullOrWhiteSpace(json) && json != "null")
+                    {
+                        using var doc = JsonDocument.Parse(json);
+                        foreach (var prop in doc.RootElement.EnumerateObject())
+                        {
+                            // Old format: a raw GUID like "a1b2c3d4-e5f6-7890-..."
+                            // New format: "PC_MACHINENAME_USERNAME"
+                            if (prop.Name.Contains('-') && !prop.Name.StartsWith("PC_") && !prop.Name.StartsWith("Mobile_"))
+                            {
+                                // Delete stale GUID-based entry
+                                string deleteUrl = $"https://advance-sync-default-rtdb.firebaseio.com/active_devices/{prop.Name}.json";
+                                await _client.DeleteAsync(deleteUrl);
+                                Logger.LogAction("FIREBASE CLEANUP", $"Removed stale device: {prop.Name}");
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogAction("FIREBASE", $"CleanupStaleDevices error: {ex.Message}");
+            }
+        }
+
+        // ═══ Device Groups CRUD ═══
+
+        public static async Task<List<DeviceGroupInfo>> GetDeviceGroups()
+        {
+            var result = new List<DeviceGroupInfo>();
+            try
+            {
+                string url = "https://advance-sync-default-rtdb.firebaseio.com/device_groups.json";
+                var response = await _client.GetStringAsync(url);
+                if (!string.IsNullOrWhiteSpace(response) && response != "null")
+                {
+                    using var doc = JsonDocument.Parse(response);
+                    foreach (var prop in doc.RootElement.EnumerateObject())
+                    {
+                        var group = new DeviceGroupInfo { Id = prop.Name };
+                        if (prop.Value.TryGetProperty("name", out var nameProp))
+                            group.Name = nameProp.GetString() ?? "";
+                        if (prop.Value.TryGetProperty("deviceNames", out var devsProp) && devsProp.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (var dev in devsProp.EnumerateArray())
+                                group.DeviceNames.Add(dev.GetString() ?? "");
+                        }
+                        result.Add(group);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogAction("FIREBASE", $"GetDeviceGroups error: {ex.Message}");
+            }
+            return result;
+        }
+
+        public static async Task SaveDeviceGroup(string groupId, string name, List<string> deviceNames)
+        {
+            try
+            {
+                string url = $"https://advance-sync-default-rtdb.firebaseio.com/device_groups/{groupId}.json";
+                var payload = new { name, deviceNames };
+                var json = JsonSerializer.Serialize(payload);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+                await _client.PutAsync(url, content);
+                Logger.LogAction("FIREBASE", $"Saved group '{name}' with {deviceNames.Count} devices");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogAction("FIREBASE", $"SaveDeviceGroup error: {ex.Message}");
+            }
+        }
+
+        public static async Task DeleteDeviceGroup(string groupId)
+        {
+            try
+            {
+                string url = $"https://advance-sync-default-rtdb.firebaseio.com/device_groups/{groupId}.json";
+                await _client.DeleteAsync(url);
+                Logger.LogAction("FIREBASE", $"Deleted group {groupId}");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogAction("FIREBASE", $"DeleteDeviceGroup error: {ex.Message}");
+            }
+        }
+    }
+
+    public class DeviceGroupInfo
+    {
+        public string Id { get; set; } = "";
+        public string Name { get; set; } = "";
+        public List<string> DeviceNames { get; set; } = new();
+    }
+}

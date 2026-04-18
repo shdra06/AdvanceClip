@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AdvanceClip Web Engine</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+    <style>
+        :root {
+            --bg-base: #0B0F19;
+            --surface-color: rgba(22, 27, 34, 0.6);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --text-primary: #F3F4F6;
+            --text-secondary: #9CA3AF;
+            --accent-color: #3B82F6;
+            --accent-glow: rgba(59, 130, 246, 0.5);
+            --accent-hover: #2563EB;
+            --danger-color: #EF4444;
+            --border-radius: 16px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-base);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 24px 16px;
+            overflow-x: hidden;
+            background-image: radial-gradient(circle at top center, rgba(59, 130, 246, 0.15), transparent 50%),
+                              radial-gradient(circle at bottom left, rgba(16, 185, 129, 0.05), transparent 40%);
+            background-attachment: fixed;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        /* Glassmorphism Classes */
+        .glass-panel {
+            background: var(--surface-color);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+        }
+
+        @media (max-width: 768px) {
+            .glass-panel {
+                backdrop-filter: blur(4px);
+                -webkit-backdrop-filter: blur(4px);
+            }
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 32px;
+            padding: 20px 24px;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: linear-gradient(to right, #60A5FA, #34D399);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: #10B981;
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.8);
+            animation: pulse-green 2s infinite;
+        }
+
+        @keyframes pulse-green {
+            0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+
+        /* Input Area Layout */
+        .input-section {
+            padding: 20px;
+            margin-bottom: 32px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        textarea {
+            width: 100%;
+            height: 110px;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            border-radius: 12px;
+            padding: 16px;
+            resize: none;
+            font-size: 1rem;
+            transition: all 0.3s;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: var(--accent-color);
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+        }
+
+        .action-row {
+            display: flex;
+            gap: 12px;
+        }
+
+        button {
+            flex: 1;
+            padding: 14px;
+            border: none;
+            border-radius: 12px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-color), #2563EB);
+            color: white;
+            box-shadow: 0 4px 12px var(--accent-glow);
+        }
+
+        .btn-primary:active {
+            transform: scale(0.97);
+            box-shadow: 0 2px 6px var(--accent-glow);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-secondary:active, .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: scale(0.97);
+        }
+
+        input[type="file"] { display: none; }
+
+        /* Shelf Section */
+        h2 {
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            margin-bottom: 16px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            padding-left: 4px;
+        }
+
+        #shelf {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .clip-card {
+            padding: 16px;
+            display: flex;
+            gap: 16px;
+            align-items: center;
+            transition: transform 0.2s, border-color 0.2s, background 0.2s;
+            animation: slideIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .clip-card:hover {
+            transform: translateY(-2px);
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        .clip-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            object-fit: cover;
+            background: rgba(0, 0, 0, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            flex-shrink: 0;
+            border: 1px solid var(--border-color);
+        }
+
+        .clip-content {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .clip-title {
+            font-weight: 600;
+            font-size: 1.05rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+
+        .clip-meta {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .clip-meta strong {
+            color: #60A5FA;
+        }
+
+        .clip-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn-icon {
+            width: 40px;
+            height: 40px;
+            flex: 0 0 auto;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 0;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+
+        .btn-icon:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .btn-icon:active {
+            transform: scale(0.92);
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .btn-action {
+            background: var(--accent-color);
+            border-color: var(--accent-hover);
+            color: white;
+        }
+        
+        .btn-action:hover {
+            background: var(--accent-hover);
+        }
+
+        /* Toast Popup */
+        .toast {
+            position: fixed;
+            bottom: 32px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: rgba(22, 27, 34, 0.9);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border-color);
+            color: white;
+            padding: 14px 24px;
+            border-radius: 30px;
+            font-weight: 500;
+            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            pointer-events: none;
+            z-index: 1000;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .toast.show { transform: translateX(-50%) translateY(0); }
+
+        /* Lock Screen Overlay */
+        #authOverlay {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(11, 15, 25, 0.85);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.4s;
+        }
+
+        #authOverlay.hidden { opacity: 0; pointer-events: none; }
+
+        .auth-card {
+            background: rgba(22, 27, 34, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 24px;
+            padding: 40px 32px;
+            width: 90%;
+            max-width: 420px;
+            text-align: center;
+            box-shadow: 0 32px 64px rgba(0, 0, 0, 0.6);
+        }
+
+        .auth-card svg {
+            color: var(--accent-color);
+            margin-bottom: 24px;
+            filter: drop-shadow(0 0 12px var(--accent-glow));
+        }
+
+        .auth-card h2 {
+            color: white;
+            font-size: 1.6rem;
+            font-weight: 700;
+            margin-bottom: 12px;
+        }
+
+        .auth-card p {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            margin-bottom: 32px;
+            line-height: 1.5;
+        }
+
+        .pin-input {
+            background: rgba(0, 0, 0, 0.3);
+            border: 2px solid var(--border-color);
+            color: white;
+            font-size: 2.5rem;
+            text-align: center;
+            letter-spacing: 12px;
+            padding: 16px;
+            border-radius: 16px;
+            width: 100%;
+            margin-bottom: 32px;
+            font-weight: 700;
+            transition: all 0.3s;
+        }
+
+        .pin-input:focus {
+            outline: none;
+            border-color: var(--accent-color);
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+        }
+
+        @media screen and (min-width: 768px) {
+            .action-row { max-width: 400px; }
+        }
+    </style>
+</head>
+<body>
+    <div id="authOverlay">
+        <div class="auth-card">
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+            <h2>Secure Connection</h2>
+            <p>Enter the 5-Digit Global PIN shown on your AdvanceClip PC dashboard.</p>
+            <input type="password" id="pinInput" class="pin-input" maxlength="5" inputmode="numeric" placeholder="•••••">
+            <button class="btn-primary" onclick="verifyPin()" style="width: 100%; margin-top: 8px;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16c0 1.1.9 2 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/><path d="M14 3v5h5M16 13H8M16 17H8M10 9H8"/></svg>
+                Authenticate Session
+            </button>
+        </div>
+    </div>
+
+    <div class="container">
+        <header class="glass-panel">
+            <h1><div class="status-dot"></div> AdvanceClip<span style="font-weight: 400; color: var(--text-secondary);">Web</span></h1>
+            <div style="font-size: 0.85rem; color: var(--text-secondary); background: rgba(0,0,0,0.3); padding: 6px 12px; border-radius: 20px;" id="globalTunnelContainer">Encrypted Tunnel</div>
+        </header>
+
+        <div class="input-section glass-panel">
+            <textarea id="textInput" placeholder="Type or paste payload to beam directly to your PC..."></textarea>
+            <div class="action-row">
+                <button class="btn-primary" onclick="window.sendText()">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                    Send to PC
+                </button>
+                <button class="btn-secondary" onclick="document.getElementById('fileInput').click()">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                    Beam File
+                </button>
+                <input type="file" id="fileInput" multiple onchange="window.uploadFiles(this.files)">
+            </div>
+        </div>
+
+        <h2>Synchronized Workspace</h2>
+        <div id="shelf">
+            <div class="glass-panel" style="text-align: center; color: var(--text-secondary); padding: 32px; font-weight: 500;">Establishing zero-trust network linkage...</div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast">
+        <svg id="toastIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+        <span id="toastText">Action Completed</span>
+    </div>
+
+    <script>
+        // Icons
+        const ICON_COPY = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
+        const ICON_EXTERNAL = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>`;
+        const ICON_SHARE = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>`;
+        const ICON_DOWNLOAD = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`;
+
+        // Environment Detection
+        const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        const canWebShare = navigator.canShare || navigator.share;
+
+        function showToast(msg, isErr = false) {
+            const t = document.getElementById('toast');
+            document.getElementById('toastText').innerText = msg;
+            
+            const icon = document.getElementById('toastIcon');
+            if(isErr) {
+                icon.setAttribute("stroke", "#EF4444");
+                icon.innerHTML = `<circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line>`;
+            } else {
+                icon.setAttribute("stroke", "#10B981");
+                icon.innerHTML = `<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline>`;
+            }
+
+            t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), 3000);
+        }
+
+        window.showToast = showToast;
+
+        const authHeaders = () => {
+            return { 'Authorization': 'Bearer ' + (localStorage.getItem('advanceclip_pin') || '') };
+        };
+
+        window.verifyPin = function() {
+            const pin = document.getElementById('pinInput').value;
+            localStorage.setItem('advanceclip_pin', pin);
+            pollShelf();
+        }
+
+        window.sendText = async function() {
+            const tb = document.getElementById('textInput');
+            if(!tb.value.trim()) return;
+            const btn = document.querySelector('.btn-primary');
+            const og = btn.innerHTML;
+            btn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg> Beaming...`;
+            try {
+                const reqHeaders = authHeaders();
+                reqHeaders['Content-Type'] = 'text/plain';
+                const resp = await fetch('/api/sync_text', {
+                    method: 'POST',
+                    headers: reqHeaders,
+                    body: tb.value
+                });
+                if (resp.status === 401) { requireLogin(); return; }
+                tb.value = '';
+                showToast("Payload transmitted to PC!");
+                pollShelf();
+            } catch(e) { showToast("Connection isolated.", true); }
+            btn.innerHTML = og;
+        }
+
+        window.uploadFiles = async function(files) {
+            if(!files || files.length === 0) return;
+            showToast(`Initiating transfer of ${files.length} volume(s)...`);
+            for(let i=0; i<files.length; i++) {
+                const formData = new FormData();
+                formData.append('file', files[i]);
+                try {
+                    await fetch('/api/sync_file', { 
+                        method: 'POST', 
+                        headers: authHeaders(), 
+                        body: formData 
+                    });
+                } catch(e) { showToast(`Failed to transfer ${files[i].name}`, true); }
+            }
+            document.getElementById('fileInput').value = '';
+            showToast("Secure file transfer complete.");
+            pollShelf();
+        }
+
+        window.copyToClipboardFallback = async function(text) {
+            try {
+                await navigator.clipboard.writeText(text);
+                showToast("Value copied to system memory.");
+            } catch(e) {
+                const ta = document.createElement("textarea");
+                ta.value = text;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand("copy");
+                document.body.removeChild(ta);
+                showToast("Value copied via legacy hook.");
+            }
+        }
+
+        // ======================= SMART ACTIONS =======================
+
+        async function fetchAsPng(url) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.crossOrigin = 'Anonymous';
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0);
+                    canvas.toBlob((blob) => resolve(blob), 'image/png');
+                };
+                img.onerror = reject;
+                img.src = url;
+            });
+        }
+
+        window.copyImageNative = async function(url) {
+            try {
+                showToast("Reformatting image buffer...");
+                // All browsers require image/png strictly to bypass memory sandbox block
+                const pngBlob = await fetchAsPng(url); 
+                const item = new ClipboardItem({ 'image/png': pngBlob });
+                await navigator.clipboard.write([item]);
+                showToast("Image injected to clipboard natively!");
+            } catch (err) {
+                console.error("Native write failed", err);
+                showToast("Device restricts direct image mem copy. Please Use Download/Share.", true);
+            }
+        }
+
+        window.shareOrDownloadBlob = async function(title, url, forceMobileDownloadFallback = false) {
+            // If the user taps the explicit "PC Download" button on a Mobile device (because we render both for Image)
+            if (forceMobileDownloadFallback) {
+                showToast("Downloading to local storage...");
+                window.open(url, '_blank');
+                return;
+            }
+
+            try {
+                if (isMobileDevice && canWebShare) {
+                    showToast("Fetching encrypted volume for ShareSheet...");
+                    const response = await fetch(url);
+                    const blob = await response.blob();
+                    
+                    const file = new File([blob], title, { type: blob.type });
+                    
+                    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                        await navigator.share({
+                            title: title,
+                            text: 'Beamed from PC via AdvanceClip Engine',
+                            files: [file]
+                        });
+                        showToast("ShareSheet dispatched.");
+                    } else {
+                        throw new Error("Sandbox blocked native share payload.");
+                    }
+                } else {
+                    // PC explicitly enforces formal filesystem downloads since Web Share is limited there natively!
+                    showToast("Downloading to local environment...");
+                    window.open(url, '_blank');
+                }
+            } catch (err) {
+                console.warn(err);
+                // Fallback absolutely defaults to downloading
+                window.open(url, '_blank');
+            }
+        }
+
+        // ===============================================================
+
+        function getIcon(type, url) {
+            const p = localStorage.getItem('advanceclip_pin') || '';
+            const secureUrl = url ? (url.startsWith('http') ? url : `${url}&pin=${encodeURIComponent(p)}`) : '';
+            if(type === 'Image' || type === 'QRCode') return `<img src="${secureUrl}" loading="lazy" style="width:100%;height:100%;object-fit:cover;border-radius:10px;"/>`;
+            if(type === 'Text') return '📝';
+            if(type === 'Url') return '🔗';
+            if(type === 'Code') return '⌨️';
+            if(type === 'Archive') return '📦';
+            return '📄';
+        }
+
+        function requireLogin() {
+            document.getElementById('authOverlay').classList.remove('hidden');
+        }
+
+        async function pollShelf() {
+            if (!localStorage.getItem('advanceclip_pin')) {
+                requireLogin();
+                return;
+            }
+            try {
+                const response = await fetch('/api/sync', { headers: authHeaders() });
+                
+                const globalUrl = response.headers.get('X-Global-Url');
+                if (globalUrl) {
+                    const e = document.getElementById('globalTunnelContainer');
+                    if (e) e.innerHTML = `<span style="color:#10B981;">●</span> <a href="${globalUrl}" target="_blank" style="color:var(--text-secondary); text-decoration:none;">${globalUrl.replace('https://','')}</a>`;
+                }
+
+                if (response.status === 401) {
+                    requireLogin();
+                    return;
+                }
+                
+                document.getElementById('authOverlay').classList.add('hidden');
+                const items = await response.json();
+                
+                // Diff the new state against the old state to prevent destructive DOM reloading!
+                const currentHash = JSON.stringify(items);
+                if (window.lastItemsHash === currentHash) return;
+                window.lastItemsHash = currentHash;
+
+                const shelf = document.getElementById('shelf');
+                
+                if(!items || items.length === 0) {
+                    shelf.innerHTML = '<div class="glass-panel" style="text-align: center; color: var(--text-secondary); padding: 32px; font-weight: 500;">No blocks allocated in volatile memory.</div>';
+                    return;
+                }
+
+                let html = '';
+                const p = localStorage.getItem('advanceclip_pin');
+                
+                items.forEach(item => {
+                    const isQRCode = item.Type === 'QRCode';
+                    const isImage = item.Type === 'Image' || isQRCode;
+                    const isUrl = item.Type === 'Url';
+                    const isCode = item.Type === 'Code';
+                    const isFile = !isImage && !isUrl && !isCode && item.Type !== 'Text';
+                    const dlUrl = (isFile || isImage) ? (item.DownloadUrl.startsWith('http') ? item.DownloadUrl : `${item.DownloadUrl}&pin=${encodeURIComponent(p)}`) : '';
+
+                    let buttonsHtml = '';
+                    
+                    // Generate specialized Action Rows intelligently based on Environment & Type
+                    if (isQRCode) {
+                        const isQRUrl = item.Raw.toLowerCase().startsWith('http');
+                        if (isQRUrl) {
+                            buttonsHtml += `<button class="btn-icon" onclick="copyToClipboardFallback(\`${item.Raw.replace(/`/g, '\\`')}\`)" title="Copy Secret Link">${ICON_COPY}</button>`;
+                            buttonsHtml += `<button class="btn-icon btn-action" onclick="window.open('${item.Raw}', '_blank')" title="Execute QR Link">${ICON_EXTERNAL}</button>`;
+                        } else {
+                            buttonsHtml += `<button class="btn-icon btn-action" onclick="copyToClipboardFallback(\`${item.Raw.replace(/`/g, '\\`')}\`)" title="Copy QR Text">${ICON_COPY}</button>`;
+                        }
+                    } else if (isUrl) {
+                        buttonsHtml += `<button class="btn-icon" onclick="copyToClipboardFallback(\`${item.Raw.replace(/`/g, '\\`')}\`)" title="Copy Link">${ICON_COPY}</button>`;
+                        buttonsHtml += `<button class="btn-icon btn-action" onclick="window.open('${item.Raw}', '_blank')" title="Execute URL">${ICON_EXTERNAL}</button>`;
+                    } else if (isImage) {
+                        // Desktop gets Copy Image natively 
+                        buttonsHtml += `<button class="btn-icon" onclick="copyImageNative('${dlUrl}')" title="Copy Raw Image to PC Clipboard">${ICON_COPY}</button>`;
+                        // Phone gets Share Media natively natively
+                        if (isMobileDevice) buttonsHtml += `<button class="btn-icon btn-action" onclick="shareOrDownloadBlob('${item.Title}', '${dlUrl}')" title="Share via Native Menu">${ICON_SHARE}</button>`;
+                        // Everyone gets an explicit Download button
+                        buttonsHtml += `<button class="btn-icon" onclick="shareOrDownloadBlob('${item.Title}', '${dlUrl}', true)" title="Force Local Download">${ICON_DOWNLOAD}</button>`;
+                    } else if (isFile) {
+                        if (isMobileDevice) {
+                            buttonsHtml += `<button class="btn-icon btn-action" onclick="shareOrDownloadBlob('${item.Title}', '${dlUrl}')" title="Share Document">${ICON_SHARE}</button>`;
+                        }
+                        buttonsHtml += `<button class="btn-icon ${!isMobileDevice ? 'btn-action' : ''}" onclick="shareOrDownloadBlob('${item.Title}', '${dlUrl}', true)" title="Download Document to Local Storage">${ICON_DOWNLOAD}</button>`;
+                    } else {
+                        // Text / Code Default Options
+                        buttonsHtml += `<button class="btn-icon" onclick="copyToClipboardFallback(\`${item.Raw.replace(/`/g, '\\`')}\`)" title="Extract Block Memory">${ICON_COPY}</button>`;
+                    }
+
+                    html += `
+                        <div class="clip-card glass-panel">
+                            <div class="clip-icon">${getIcon(item.Type, item.PreviewUrl)}</div>
+                            <div class="clip-content">
+                                <div class="clip-title">${item.Title}</div>
+                                <div class="clip-meta"><strong>${item.Type}</strong> • ${item.Time}</div>
+                            </div>
+                            <div class="clip-actions">
+                                ${buttonsHtml}
+                            </div>
+                        </div>
+                    `;
+                });
+                shelf.innerHTML = html;
+            } catch(e) {
+                // Background poll fail tolerance
+            }
+        }
+
+        pollShelf();
+        // Adaptive polling: fast for LAN, slower for Cloudflare
+        const isCloudflare = window.location.hostname.includes('trycloudflare.com');
+        const pollInterval = isCloudflare ? 5000 : 2000;
+        setInterval(pollShelf, pollInterval);
+    </script>
+</body>
+</html>

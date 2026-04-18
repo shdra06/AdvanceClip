@@ -1,0 +1,650 @@
+<controls:MicaWindow x:Class="AdvanceClip.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:MicaWPF.Controls;assembly=MicaWPF"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml" xmlns:tray="http://schemas.lepo.co/wpfui/2022/xaml/tray"
+        xmlns:vm="clr-namespace:AdvanceClip.ViewModels"
+        xmlns:settings="clr-namespace:AdvanceClip.Classes"
+        Title="DropShelf" 
+        Width="{Binding Source={x:Static settings:SettingsManager.Current}, Path=MiniFormWidth}" 
+        Opacity="1"
+        MaxHeight="260" SizeToContent="Height" MinHeight="100" BorderThickness="0"
+        WindowStyle="None" ResizeMode="NoResize" Background="Transparent" SystemBackdropType="Acrylic"
+        ShowInTaskbar="False" Margin="0" Topmost="True" ShowActivated="False" Focusable="False"
+        AllowDrop="True" Drop="Window_Drop" DragEnter="Window_DragEnter" DragLeave="Window_DragLeave" PreviewDragOver="Window_PreviewDragOver"
+        Deactivated="Window_Deactivated"
+        TextOptions.TextRenderingMode="ClearType" TextOptions.TextFormattingMode="Ideal"
+        Loaded="MicaWindow_Loaded">
+
+    <WindowChrome.WindowChrome>
+        <WindowChrome GlassFrameThickness="-1" CornerRadius="8" CaptionHeight="0" UseAeroCaptionButtons="False" ResizeBorderThickness="0" />
+    </WindowChrome.WindowChrome>
+    <Grid Margin="0" MouseLeftButtonDown="Header_MouseLeftButtonDown" Background="#01000000">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <tray:NotifyIcon
+            FocusOnLeftClick="False"
+            Icon="pack://application:,,,/Resources/AdvanceClipLogo.ico"
+            MenuOnRightClick="True"
+            LeftClick="nIcon_LeftClick"
+            TooltipText="AdvanceClip">
+            <tray:NotifyIcon.Menu>
+                <ContextMenu>
+                    <MenuItem Header="Open Advance Hub" Click="OpenApp_Click" />
+                    <Separator />
+                    <MenuItem Header="Quit AdvanceClip" Click="NotifyIconQuit_Click" />
+                </ContextMenu>
+            </tray:NotifyIcon.Menu>
+        </tray:NotifyIcon>
+        
+        <Grid Grid.Row="0" Margin="12,12,12,8" Background="#01000000" MouseLeftButtonDown="Header_MouseLeftButtonDown">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            
+            <Border Grid.Column="0" Background="Transparent" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
+            
+            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+                
+                <ui:Button Name="ToggleExpandBtn" Focusable="False" Appearance="Secondary" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorSecondary}" Click="OpenApp_Click" ToolTip="Open Full Advance Hub" Margin="0,0,6,0" Padding="8,6" CornerRadius="8">
+                    <ui:Button.Icon><ui:SymbolIcon Symbol="Maximize24" /></ui:Button.Icon>
+                </ui:Button>
+                
+                <ui:Button Focusable="False" Appearance="Secondary" Click="ToggleGlobalSync_Click" ToolTip="Toggle Global Web Sync" Margin="0,0,6,0" Padding="8,6" CornerRadius="8">
+                    <ui:Button.Style>
+                        <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                            <Setter Property="Foreground" Value="{DynamicResource MicaWPF.Brushes.TextFillColorSecondary}"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Source={x:Static settings:SettingsManager.Current}, Path=EnableGlobalFirebaseSync}" Value="True">
+                                    <Setter Property="Foreground" Value="#10B981"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ui:Button.Style>
+                    <ui:Button.Icon><ui:SymbolIcon Symbol="Cloud24" Filled="True"/></ui:Button.Icon>
+                </ui:Button>
+
+                <ui:Button Focusable="False" Appearance="Secondary" Foreground="#EF4444" Click="Clear_Click" ToolTip="Clear Universal Memory Stack" Margin="0,0,6,0" Padding="8,6" CornerRadius="8">
+                    <ui:Button.Icon><ui:SymbolIcon Symbol="Delete24" /></ui:Button.Icon>
+                </ui:Button>
+                
+                <ui:Button Focusable="False" Appearance="Secondary" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorSecondary}" Click="CloseWindow_Click" ToolTip="Hide HUD" Padding="8,6" CornerRadius="8">
+                    <ui:Button.Icon><ui:SymbolIcon Symbol="Dismiss24" Filled="True"/></ui:Button.Icon>
+                </ui:Button>
+            </StackPanel>
+        </Grid>
+
+        <ListView Name="ShelfListView" Grid.Row="1" ItemsSource="{Binding DroppedItems}" Background="#01000000" BorderThickness="0" Margin="12,0,12,12"
+                  ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Hidden"
+                  ScrollViewer.CanContentScroll="False" VirtualizingPanel.ScrollUnit="Pixel"
+                  SelectionMode="Extended" MouseMove="ShelfListView_MouseMove" PreviewMouseLeftButtonDown="ShelfListView_PreviewMouseLeftButtonDown"
+                  PreviewMouseWheel="ShelfListView_PreviewMouseWheel"
+                  PreviewMouseLeftButtonUp="ShelfListView_PreviewMouseLeftButtonUp"
+                  MouseDoubleClick="ShelfListView_MouseDoubleClick" SelectionChanged="ShelfListView_SelectionChanged"
+                  HorizontalContentAlignment="Stretch"
+                  VirtualizingStackPanel.IsVirtualizing="True" VirtualizingStackPanel.VirtualizationMode="Recycling"
+                  VirtualizingPanel.CacheLengthUnit="Item" VirtualizingPanel.CacheLength="10,10"
+                  KeyDown="ShelfListView_KeyDown">
+            <ListView.ItemContainerStyle>
+                <Style TargetType="ListViewItem">
+                    <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                    <Setter Property="Background" Value="Transparent"/>
+                    <Setter Property="BorderBrush" Value="Transparent"/>
+                    <Setter Property="BorderThickness" Value="0"/>
+                    <Setter Property="Margin" Value="0"/>
+                    <Setter Property="Padding" Value="0"/>
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="{x:Type ListViewItem}">
+                                <Border Background="{TemplateBinding Background}" BorderThickness="0" BorderBrush="Transparent">
+                                    <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/>
+                                </Border>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </ListView.ItemContainerStyle>
+            <ListView.ItemTemplate>
+                <DataTemplate>
+                    <Border Name="CardBorder" BorderBrush="#15FFFFFF" BorderThickness="1" CornerRadius="14" Margin="4,2,4,4" Padding="12" RenderTransformOrigin="0.5,0.5">
+                        <Border.Background>
+                            <SolidColorBrush Color="#0AFFFFFF" />
+                        </Border.Background>
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
+                                <Setter Property="Opacity" Value="0" />
+                                <Style.Triggers>
+                                    <EventTrigger RoutedEvent="Loaded">
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.3">
+                                                    <DoubleAnimation.EasingFunction>
+                                                        <CubicEase EasingMode="EaseOut" />
+                                                    </DoubleAnimation.EasingFunction>
+                                                </DoubleAnimation>
+                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TransformGroup.Children)[0].(TranslateTransform.Y)" From="15" To="0" Duration="0:0:0.35">
+                                                    <DoubleAnimation.EasingFunction>
+                                                        <CubicEase EasingMode="EaseOut" />
+                                                    </DoubleAnimation.EasingFunction>
+                                                </DoubleAnimation>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </EventTrigger>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Trigger.EnterActions>
+                                            <BeginStoryboard>
+                                                <Storyboard>
+                                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TransformGroup.Children)[1].(ScaleTransform.ScaleX)" To="1.015" Duration="0:0:0.2">
+                                                        <DoubleAnimation.EasingFunction>
+                                                            <CubicEase EasingMode="EaseOut" />
+                                                        </DoubleAnimation.EasingFunction>
+                                                    </DoubleAnimation>
+                                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TransformGroup.Children)[1].(ScaleTransform.ScaleY)" To="1.015" Duration="0:0:0.2">
+                                                        <DoubleAnimation.EasingFunction>
+                                                            <CubicEase EasingMode="EaseOut" />
+                                                        </DoubleAnimation.EasingFunction>
+                                                    </DoubleAnimation>
+                                                </Storyboard>
+                                            </BeginStoryboard>
+                                        </Trigger.EnterActions>
+                                        <Trigger.ExitActions>
+                                            <BeginStoryboard>
+                                                <Storyboard>
+                                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TransformGroup.Children)[1].(ScaleTransform.ScaleX)" To="1" Duration="0:0:0.25">
+                                                        <DoubleAnimation.EasingFunction>
+                                                            <CubicEase EasingMode="EaseInOut" />
+                                                        </DoubleAnimation.EasingFunction>
+                                                    </DoubleAnimation>
+                                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TransformGroup.Children)[1].(ScaleTransform.ScaleY)" To="1" Duration="0:0:0.25">
+                                                        <DoubleAnimation.EasingFunction>
+                                                            <CubicEase EasingMode="EaseInOut" />
+                                                        </DoubleAnimation.EasingFunction>
+                                                    </DoubleAnimation>
+                                                </Storyboard>
+                                            </BeginStoryboard>
+                                        </Trigger.ExitActions>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <Border.RenderTransform>
+                            <TransformGroup>
+                                <TranslateTransform Y="15"/>
+                                <ScaleTransform ScaleX="1" ScaleY="1" />
+                            </TransformGroup>
+                        </Border.RenderTransform>
+                        <Border.Effect>
+                            <DropShadowEffect Color="Black" BlurRadius="15" Opacity="0.3" Direction="270" ShadowDepth="4" />
+                        </Border.Effect>
+
+                        <Grid Name="ItemGrid" HorizontalAlignment="Stretch" Background="Transparent" Tag="{Binding DataContext, ElementName=ShelfListView}">
+                            <Grid.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="Pin Drop" 
+                                              Command="{Binding PlacementTarget.Tag.TogglePinCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" 
+                                              CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                    <MenuItem Header="Open Link / Launch Editor" 
+                                              Command="{Binding PlacementTarget.Tag.OpenItemCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" 
+                                              CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                    <MenuItem Header="Run Code in VS Code Sandbox" 
+                                              Command="{Binding PlacementTarget.Tag.LaunchSandboxCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" 
+                                              CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" 
+                                              Visibility="{Binding PlacementTarget.DataContext.IsCodePreview, RelativeSource={RelativeSource AncestorType=ContextMenu}, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                    <MenuItem Header="Run directly in CMD Terminal" 
+                                              Command="{Binding PlacementTarget.Tag.LaunchTerminalCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" 
+                                              CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" 
+                                              Visibility="{Binding PlacementTarget.DataContext.IsCodePreview, RelativeSource={RelativeSource AncestorType=ContextMenu}, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                    <Separator />
+                                    <!-- Semantic Bound Additions -->
+                                    <MenuItem Header="Open PDF in Default Browser" 
+                                              Command="{Binding PlacementTarget.Tag.OpenInBrowserCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" 
+                                              CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" 
+                                              Visibility="{Binding PlacementTarget.DataContext.IsPdfPreview, RelativeSource={RelativeSource AncestorType=ContextMenu}, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                    <MenuItem Header="Convert Word to PDF File" 
+                                              Command="{Binding PlacementTarget.Tag.ConvertDocumentCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" 
+                                              CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" 
+                                              Visibility="{Binding PlacementTarget.DataContext.IsDocPreview, RelativeSource={RelativeSource AncestorType=ContextMenu}, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                    <MenuItem Header="Open URL in Microsoft Edge" 
+                                              Command="{Binding PlacementTarget.Tag.OpenInBrowserCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" 
+                                              CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" 
+                                              Visibility="{Binding PlacementTarget.DataContext.IsUrlPreview, RelativeSource={RelativeSource AncestorType=ContextMenu}, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                    <MenuItem Header="Extract Native Windows OCR Text" 
+                                              Command="{Binding PlacementTarget.Tag.ExtractTextCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" 
+                                              CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" 
+                                              Visibility="{Binding PlacementTarget.DataContext.IsImagePreview, RelativeSource={RelativeSource AncestorType=ContextMenu}, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                    <Separator />
+                                    <MenuItem Header="⚡ Force Send to Device" Click="ForceSendItem_Click" Tag="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                    <Separator />
+                                    <MenuItem Header="Delete Drop" 
+                                              Command="{Binding PlacementTarget.Tag.RemoveItemCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" 
+                                              CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" Foreground="#EF4444" />
+                                </ContextMenu>
+                            </Grid.ContextMenu>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+
+
+                            <!-- Inline Action Buttons (Hover triggers overlaying Slide) -->
+                            <Border Grid.Column="0" Grid.ColumnSpan="2" Grid.Row="0" Grid.RowSpan="2" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,4,4,0" Panel.ZIndex="5" CornerRadius="8" Padding="2">
+                                <Border.RenderTransform>
+                                    <TranslateTransform X="30" />
+                                </Border.RenderTransform>
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="Opacity" Value="0" />
+                                        <Setter Property="Background" Value="Transparent" />
+                                        <Setter Property="IsHitTestVisible" Value="False" />
+                                        <Style.Triggers>
+                                            <!-- Provide Glass Panel Background Behind Action Buttons specially for complex physical items avoiding graphic clashes -->
+                                            <DataTrigger Binding="{Binding ItemType}" Value="Document">
+                                                <Setter Property="Background" Value="#D0151515" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding ItemType}" Value="Archive">
+                                                <Setter Property="Background" Value="#D0151515" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding ItemType}" Value="Image">
+                                                <Setter Property="Background" Value="#D0151515" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding ItemType}" Value="QRCode">
+                                                <Setter Property="Background" Value="#D0151515" />
+                                            </DataTrigger>
+
+                                            <!-- Physical Overlay Flyout Logic -->
+                                            <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Border}}" Value="True">
+                                                <Setter Property="IsHitTestVisible" Value="True"/>
+                                                <DataTrigger.EnterActions>
+                                                    <BeginStoryboard>
+                                                        <Storyboard>
+                                                            <DoubleAnimation Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.15">
+                                                                <DoubleAnimation.EasingFunction><QuadraticEase EasingMode="EaseOut" /></DoubleAnimation.EasingFunction>
+                                                            </DoubleAnimation>
+                                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" To="0" Duration="0:0:0.25">
+                                                                <DoubleAnimation.EasingFunction><QuadraticEase EasingMode="EaseOut" /></DoubleAnimation.EasingFunction>
+                                                            </DoubleAnimation>
+                                                        </Storyboard>
+                                                    </BeginStoryboard>
+                                                </DataTrigger.EnterActions>
+                                                <DataTrigger.ExitActions>
+                                                    <BeginStoryboard>
+                                                        <Storyboard>
+                                                            <DoubleAnimation Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.2">
+                                                                <DoubleAnimation.EasingFunction><QuadraticEase EasingMode="EaseIn" /></DoubleAnimation.EasingFunction>
+                                                            </DoubleAnimation>
+                                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" To="30" Duration="0:0:0.2">
+                                                                <DoubleAnimation.EasingFunction><QuadraticEase EasingMode="EaseIn" /></DoubleAnimation.EasingFunction>
+                                                            </DoubleAnimation>
+                                                        </Storyboard>
+                                                    </BeginStoryboard>
+                                                </DataTrigger.ExitActions>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                
+                                <StackPanel Orientation="Horizontal" Background="Transparent" Margin="2,0,0,0">
+
+                                <!-- Smart Context Action Array -->
+                                <ui:Button Focusable="False" Appearance="Secondary" Foreground="{DynamicResource MicaWPF.Brushes.SystemAccentColorLight1}" PreviewMouseLeftButtonDown="SmartActionSpecific_Click" Margin="0,0,6,0">
+                                    <ui:Button.ToolTip>
+                                        <ToolTip Content="{Binding SmartActionName}" />
+                                    </ui:Button.ToolTip>
+                                    <ui:Button.Icon>
+                                        <ui:SymbolIcon>
+                                            <ui:SymbolIcon.Style>
+                                                <Style TargetType="ui:SymbolIcon">
+                                                    <Setter Property="Symbol" Value="Flash24"/>
+                                                    <Setter Property="Filled" Value="True"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding SmartActionType}" Value="CompileAndRun">
+                                                            <Setter Property="Symbol" Value="Play24"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding SmartActionType}" Value="OpenPDF">
+                                                            <Setter Property="Symbol" Value="Document24"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding SmartActionType}" Value="ConvertToPdf">
+                                                            <Setter Property="Symbol" Value="DocumentPdf24"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding SmartActionType}" Value="JoinMeeting">
+                                                            <Setter Property="Symbol" Value="Video24"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding SmartActionType}" Value="OpenBrowser">
+                                                            <Setter Property="Symbol" Value="Globe24"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding SmartActionType}" Value="SetTimer">
+                                                            <Setter Property="Symbol" Value="Clock24"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding SmartActionType}" Value="OpenMap">
+                                                            <Setter Property="Symbol" Value="Map24"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding SmartActionType}" Value="CopyQRText">
+                                                            <Setter Property="Symbol" Value="Copy24"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </ui:SymbolIcon.Style>
+                                        </ui:SymbolIcon>
+                                    </ui:Button.Icon>
+                                    <ui:Button.Style>
+                                        <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding HasSmartAction}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding SmartActionType}" Value="ConvertToPdf">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding SmartActionType}" Value="OpenPDF">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </ui:Button.Style>
+                                </ui:Button>
+
+
+                                <ui:Button Focusable="False" Appearance="Secondary" Foreground="#10B981" PreviewMouseLeftButtonDown="RunTerminalSpecific_Click" ToolTip="Run Script natively in Background Terminal" Margin="0,0,6,0">
+                                    <ui:Button.Icon><ui:SymbolIcon Symbol="Play24" Filled="True" /></ui:Button.Icon>
+                                    <ui:Button.Style>
+                                        <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding ItemType}" Value="Code">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </ui:Button.Style>
+                                </ui:Button>
+
+                                <!-- Specifically limit Opening visibility strictly to Images and Docs -->
+                                <ui:Button Focusable="False" Appearance="Secondary" Foreground="#60A5FA" PreviewMouseLeftButtonDown="OpenSpecific_Click" ToolTip="Open" Margin="0,0,6,0">
+                                    <ui:Button.Icon><ui:SymbolIcon Symbol="Open24" Filled="True" /></ui:Button.Icon>
+                                    <ui:Button.Style>
+                                        <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding ItemType}" Value="Image">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding ItemType}" Value="Document">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding ItemType}" Value="Archive">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </ui:Button.Style>
+                                </ui:Button>
+
+                                <ui:Button Focusable="False" Appearance="Secondary" Foreground="#F472B6" PreviewMouseLeftButtonDown="QuickLookSpecific_Click" ToolTip="Quick Look Media Preview" Margin="0,0,6,0">
+                                    <ui:Button.Icon><ui:SymbolIcon Symbol="Maximize24" Filled="True" /></ui:Button.Icon>
+                                    <ui:Button.Style>
+                                        <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding ItemType}" Value="Image">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding ItemType}" Value="QRCode">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </ui:Button.Style>
+                                </ui:Button>
+
+                                <!-- Dedicated Browser Open Button explicitly requested next to Pin -->
+                                <ui:Button Focusable="False" Appearance="Secondary" Foreground="#0EA5E9" PreviewMouseLeftButtonDown="OpenSpecific_Click" ToolTip="Open Address in Browser Window" Margin="0,0,6,0">
+                                    <ui:Button.Icon><ui:SymbolIcon Symbol="Globe24" Filled="True" /></ui:Button.Icon>
+                                    <ui:Button.Style>
+                                        <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding ItemType}" Value="Url">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </ui:Button.Style>
+                                </ui:Button>
+
+                                <ui:Button Focusable="False" Appearance="Secondary" PreviewMouseLeftButtonDown="PinSpecific_Click" ToolTip="Pin Item" Margin="0,0,6,0">
+                                    <ui:Button.Icon>
+                                        <ui:SymbolIcon>
+                                            <ui:SymbolIcon.Style>
+                                                <Style TargetType="ui:SymbolIcon">
+                                                    <Setter Property="Symbol" Value="Pin24"/>
+                                                    <Setter Property="Filled" Value="True"/>
+                                                    <Setter Property="Foreground" Value="{DynamicResource MicaWPF.Brushes.TextFillColorSecondary}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsPinned}" Value="True">
+                                                            <Setter Property="Foreground" Value="{DynamicResource MicaWPF.Brushes.SystemAccentColorLight1}"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </ui:SymbolIcon.Style>
+                                        </ui:SymbolIcon>
+                                    </ui:Button.Icon>
+                                </ui:Button>
+
+                                <!-- Delete individual button hidden inside the right click menu as per request -->
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Standard File Icon (Images, Zips) -->
+                            <Border Name="IconBorder" Grid.Row="0" Grid.Column="0" Margin="0,0,12,0"
+                                    CornerRadius="8" ClipToBounds="True">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ItemType}" Value="Text">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding ItemType}" Value="Url">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding ItemType}" Value="Code">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <Image Name="ItemIcon" Source="{Binding Icon}" Width="40" Height="40" Stretch="UniformToFill" RenderOptions.BitmapScalingMode="HighQuality" CacheMode="BitmapCache" />
+                            </Border>
+
+                            <!-- Semantic Icon Fallback -->
+                            <Border Name="SemanticIconBorder" Grid.Row="0" Grid.Column="0" Width="40" Height="40" Margin="0,0,12,0" Background="#0CFFFFFF" CornerRadius="10" BorderBrush="#14FFFFFF" BorderThickness="1">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ItemType}" Value="Code">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding ItemType}" Value="Archive">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding ItemType}" Value="Document">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding ItemType}" Value="Pdf">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding ItemType}" Value="Presentation">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding ItemType}" Value="Video">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding ItemType}" Value="Audio">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <ui:SymbolIcon FontSize="20" Filled="True">
+                                    <ui:SymbolIcon.Style>
+                                        <Style TargetType="ui:SymbolIcon">
+                                            <Setter Property="Symbol" Value="Document24" />
+                                            <Setter Property="Foreground" Value="#60A5FA" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding ItemType}" Value="Code">
+                                                    <Setter Property="Symbol" Value="Code24"/>
+                                                    <Setter Property="Foreground" Value="#10B981"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding ItemType}" Value="Archive">
+                                                    <Setter Property="Symbol" Value="FolderZip24"/>
+                                                    <Setter Property="Foreground" Value="#F59E0B"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsDocPreview}" Value="True">
+                                                    <Setter Property="Symbol" Value="Document24"/>
+                                                    <Setter Property="Foreground" Value="#3B82F6"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsPdfPreview}" Value="True">
+                                                    <Setter Property="Symbol" Value="DocumentPdf24"/>
+                                                    <Setter Property="Foreground" Value="#EF4444"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsUrlPreview}" Value="True">
+                                                    <Setter Property="Symbol" Value="Globe24"/>
+                                                    <Setter Property="Foreground" Value="#0EA5E9"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding ItemType}" Value="Presentation">
+                                                    <Setter Property="Symbol" Value="Document24"/>
+                                                    <Setter Property="Foreground" Value="#F97316"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding ItemType}" Value="Video">
+                                                    <Setter Property="Symbol" Value="VideoClip24"/>
+                                                    <Setter Property="Foreground" Value="#8B5CF6"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding ItemType}" Value="Audio">
+                                                    <Setter Property="Symbol" Value="MusicNote124"/>
+                                                    <Setter Property="Foreground" Value="#EC4899"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </ui:SymbolIcon.Style>
+                                </ui:SymbolIcon>
+                            </Border>
+
+                            <!-- The Text Body -->
+                            <StackPanel Grid.Row="0" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,0,4">
+                                <TextBlock Name="TitleText" 
+                                           Text="{Binding FileName}" Foreground="#E1E1E1" FontWeight="SemiBold" TextWrapping="Wrap" 
+                                           TextTrimming="CharacterEllipsis" MaxHeight="130" />
+                                
+                                <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                    <StackPanel.Style>
+                                        <Style TargetType="StackPanel">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding SourceDeviceName}" Value="Local">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </StackPanel.Style>
+                                    <ui:SymbolIcon FontSize="12" Foreground="#9CA3AF" Margin="0,0,4,0">
+                                        <ui:SymbolIcon.Style>
+                                            <Style TargetType="ui:SymbolIcon">
+                                                <Setter Property="Symbol" Value="Laptop24" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding SourceDeviceType}" Value="Mobile">
+                                                        <Setter Property="Symbol" Value="Phone24"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </ui:SymbolIcon.Style>
+                                    </ui:SymbolIcon>
+                                    <TextBlock Text="{Binding SourceDeviceName}" Foreground="#9CA3AF" FontSize="11" />
+                                </StackPanel>
+                            </StackPanel>
+
+                        </Grid>
+                    </Border>
+
+                    <DataTemplate.Triggers>
+                        <!-- Dynamic sizing for Large Images vs Standard Files -->
+                        <DataTrigger Binding="{Binding IsImagePreview}" Value="True">
+                             <Setter TargetName="ItemIcon" Property="Stretch" Value="Uniform" />
+                             <Setter TargetName="ItemIcon" Property="Height" Value="80" />
+                             <Setter TargetName="ItemIcon" Property="Width" Value="NaN" />
+                             <Setter TargetName="ItemIcon" Property="Grid.ColumnSpan" Value="2" />
+                             <Setter TargetName="ItemIcon" Property="HorizontalAlignment" Value="Center" />
+                             <Setter TargetName="ItemIcon" Property="Margin" Value="0,0,0,8" />
+                             <Setter TargetName="IconBorder" Property="Margin" Value="0,0,0,8" />
+                             <Setter TargetName="IconBorder" Property="Grid.ColumnSpan" Value="2" />
+                             <Setter TargetName="IconBorder" Property="HorizontalAlignment" Value="Center" />
+                             <Setter TargetName="IconBorder" Property="Background" Value="Transparent" />
+                             <Setter TargetName="IconBorder" Property="Padding" Value="0" />
+                             <Setter TargetName="TitleText" Property="Visibility" Value="Collapsed" />
+                        </DataTrigger>
+                        <!-- Apply Font Modifiers for Code Types -->
+                        <DataTrigger Binding="{Binding IsCodePreview}" Value="True">
+                             <Setter TargetName="TitleText" Property="FontFamily" Value="Consolas" />
+                             <Setter TargetName="TitleText" Property="Foreground" Value="#10B981" />
+                        </DataTrigger>
+                        
+                        <!-- Hover Effect on the Container -->
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="CardBorder" Property="Background" Value="#14FFFFFF"/>
+                            <Setter TargetName="CardBorder" Property="BorderBrush" Value="#2AFFFFFF"/>
+                        </Trigger>
+                    </DataTemplate.Triggers>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+
+        <!-- Floating Merge Selected PDFs Button -->
+        <ui:Button x:Name="MergeSelectedPdfsBtn" Grid.Row="1" Appearance="Primary" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,24" Padding="16,10" Panel.ZIndex="50" Visibility="Collapsed" Click="MergeSelectedPdfsBtn_Click">
+            <StackPanel Orientation="Horizontal">
+                <ui:SymbolIcon Symbol="DocumentCopy24" Margin="0,0,8,0" />
+                <TextBlock x:Name="MergeSelectedPdfsText" Text="Merge 2 PDFs" FontWeight="SemiBold" FontSize="14"/>
+            </StackPanel>
+            <ui:Button.Effect>
+                <DropShadowEffect Color="Black" BlurRadius="15" Opacity="0.4" Direction="270" ShadowDepth="4" />
+            </ui:Button.Effect>
+        </ui:Button>
+
+        <!-- Empty State -->
+        <StackPanel Name="EmptyStatePanel" Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <StackPanel.Style>
+                <Style TargetType="StackPanel">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding DroppedItems.Count}" Value="0">
+                            <Setter Property="Visibility" Value="Visible"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </StackPanel.Style>
+            <Border Width="64" Height="64" CornerRadius="16" HorizontalAlignment="Center" Margin="0,0,0,16">
+                <Border.Background>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop Color="#10FFFFFF" Offset="0"/>
+                        <GradientStop Color="#08FFFFFF" Offset="1"/>
+                    </LinearGradientBrush>
+                </Border.Background>
+                <ui:SymbolIcon Symbol="ClipboardPaste24" FontSize="28" Foreground="#40FFFFFF" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <TextBlock Text="Your clipboard is empty" Opacity="0.45" FontWeight="SemiBold" FontSize="14" TextAlignment="Center"/>
+            <TextBlock Text="Copy text, images, or files to get started" Opacity="0.28" FontSize="12" Margin="0,6,0,0" TextAlignment="Center"/>
+        </StackPanel>
+
+    </Grid>
+</controls:MicaWindow>
