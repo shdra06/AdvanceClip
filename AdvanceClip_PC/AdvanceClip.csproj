@@ -9,6 +9,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <ApplicationIcon>Resources\AdvanceClipLogo.ico</ApplicationIcon>
     <NoWarn>CS4014;CS0168;CS0162;CS0414;CS8632;CS0169</NoWarn>
     <Version>1.0.0</Version>
