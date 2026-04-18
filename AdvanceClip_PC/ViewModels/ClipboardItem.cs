@@ -688,50 +688,151 @@ namespace AdvanceClip.ViewModels
             {
                 if (!IsImagePreview || string.IsNullOrEmpty(FilePath)) return;
 
-                AdvanceClip.Windows.ToastWindow.ShowToast("Extracting Offline AI Table... Wait!");
+                AdvanceClip.Windows.ToastWindow.ShowToast("Extracting Table from Image... ⏳");
 
                 string finalJsonPayload = string.Empty;
 
                 await System.Threading.Tasks.Task.Run(async () => 
                 {
-                    // PHASE 1: Attempt offline local OpenCV + Pytesseract grid resolution
-                    var proc = new System.Diagnostics.Process {
-                        StartInfo = new System.Diagnostics.ProcessStartInfo {
-                            FileName = "python",
-                            Arguments = $"\"extract_matrix.py\" \"{FilePath}\"",
-                            WorkingDirectory = System.IO.Path.GetFullPath(System.IO.Path.Combine(AdvanceClip.Classes.RuntimeHost.ExecutionDir, "Scripts", "TableExtractor")),
-                            UseShellExecute = false,
-                            RedirectStandardOutput = true,
-                            CreateNoWindow = true
+                    // ═══ PHASE 1: Windows Native OCR + Smart Grid Detection ═══
+                    try
+                    {
+                        using (var stream = File.OpenRead(FilePath))
+                        {
+                            var decoder = await global::Windows.Graphics.Imaging.BitmapDecoder.CreateAsync(stream.AsRandomAccessStream());
+                            var softwareBitmap = await decoder.GetSoftwareBitmapAsync();
+                            
+                            var ocrEngine = global::Windows.Media.Ocr.OcrEngine.TryCreateFromLanguage(
+                                new global::Windows.Globalization.Language("en-US"));
+                            
+                            if (ocrEngine == null)
+                            {
+                                ocrEngine = global::Windows.Media.Ocr.OcrEngine.TryCreateFromUserProfileLanguages();
+                            }
+                            
+                            if (ocrEngine != null)
+                            {
+                                var ocrResult = await ocrEngine.RecognizeAsync(softwareBitmap);
+                                
+                                if (ocrResult != null && ocrResult.Lines.Count >= 2)
+                                {
+                                    // Collect all words with their bounding boxes
+                                    var allWords = new List<(string Text, double X, double Y, double W, double H)>();
+                                    foreach (var line in ocrResult.Lines)
+                                    {
+                                        foreach (var word in line.Words)
+                                        {
+                                            var rect = word.BoundingRect;
+                                            allWords.Add((word.Text, rect.X, rect.Y, rect.Width, rect.Height));
+                                        }
+                                    }
+                                    
+                                    if (allWords.Count >= 4) // Need at least 4 words for a table
+                                    {
+                                        // Group words into rows by Y-coordinate proximity
+                                        var sorted = allWords.OrderBy(w => w.Y).ToList();
+                                        var rows = new List<List<(string Text, double X, double Y)>>();
+                                        double rowThreshold = sorted.Average(w => w.H) * 0.7;
+                                        
+                                        var currentRow = new List<(string Text, double X, double Y)>();
+                                        double lastY = sorted[0].Y;
+                                        
+                                        foreach (var word in sorted)
+                                        {
+                                            if (Math.Abs(word.Y - lastY) > rowThreshold && currentRow.Count > 0)
+                                            {
+                                                rows.Add(currentRow.OrderBy(w => w.X).ToList());
+                                                currentRow = new List<(string Text, double X, double Y)>();
+                                            }
+                                            currentRow.Add((word.Text, word.X, word.Y));
+                                            lastY = word.Y;
+                                        }
+                                        if (currentRow.Count > 0)
+                                            rows.Add(currentRow.OrderBy(w => w.X).ToList());
+                                        
+                                        // Only treat as table if we have consistent column counts
+                                        if (rows.Count >= 2)
+                                        {
+                                            // Find the most common word count per row (= likely column count)
+                                            var countGroups = rows.GroupBy(r => r.Count).OrderByDescending(g => g.Count()).First();
+                                            int targetCols = countGroups.Key;
+                                            
+                                            if (targetCols >= 2)
+                                            {
+                                                // Merge words in rows that have more words than target columns
+                                                // by grouping nearby X-coordinates into column buckets
+                                                
+                                                // Calculate column boundaries from header/most-common row
+                                                var refRow = rows.FirstOrDefault(r => r.Count == targetCols) ?? rows[0];
+                                                var colBoundaries = refRow.Select(w => w.X).ToList();
+                                                
+                                                // Build the JSON payload
+                                                var jsonDict = new Dictionary<string, object>();
+                                                
+                                                for (int ri = 0; ri < rows.Count; ri++)
+                                                {
+                                                    var row = rows[ri];
+                                                    
+                                                    // Assign each word to its nearest column
+                                                    var columnBuckets = new string[targetCols];
+                                                    for (int c = 0; c < targetCols; c++) columnBuckets[c] = "";
+                                                    
+                                                    foreach (var word in row)
+                                                    {
+                                                        // Find nearest column boundary
+                                                        int bestCol = 0;
+                                                        double bestDist = double.MaxValue;
+                                                        for (int c = 0; c < colBoundaries.Count; c++)
+                                                        {
+                                                            double dist = Math.Abs(word.X - colBoundaries[c]);
+                                                            if (dist < bestDist)
+                                                            {
+                                                                bestDist = dist;
+                                                                bestCol = c;
+                                                            }
+                                                        }
+                                                        columnBuckets[bestCol] += (columnBuckets[bestCol].Length > 0 ? " " : "") + word.Text;
+                                                    }
+                                                    
+                                                    for (int ci = 0; ci < targetCols; ci++)
+                                                    {
+                                                        string key = $"({ri},{ci})";
+                                                        jsonDict[key] = new { text = columnBuckets[ci], conf = 0.85 };
+                                                    }
+                                                }
+                                                
+                                                finalJsonPayload = System.Text.Json.JsonSerializer.Serialize(jsonDict);
+                                                Classes.Logger.LogAction("TABLE_EXTRACT", $"Windows OCR detected {rows.Count}x{targetCols} table");
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
-                    };
-                    proc.Start();
-                    string pythonOutput = proc.StandardOutput.ReadToEnd().Trim();
-                    proc.WaitForExit();
-
-                    if (!string.IsNullOrWhiteSpace(pythonOutput) && pythonOutput.StartsWith("{"))
-                    {
-                        finalJsonPayload = pythonOutput;
-                        Console.WriteLine("[TELEMETRY] Local OpenCV extracted grid offline seamlessly.");
                     }
-                    else
+                    catch (Exception ocrEx)
                     {
-                        // PHASE 2: Fallback to Gemini LLM Contextual Grid Mapping
-                        System.Windows.Application.Current.Dispatcher.Invoke(() => 
-                            AdvanceClip.Windows.ToastWindow.ShowToast("Local CV Failed. Engaging Gemini AI Fallback!")
-                        );
-                        
+                        Classes.Logger.LogAction("TABLE_OCR_FAIL", ocrEx.Message);
+                    }
+
+                    // ═══ PHASE 2: Gemini AI Fallback (if OCR failed or detected no table) ═══
+                    if (string.IsNullOrWhiteSpace(finalJsonPayload) || !finalJsonPayload.StartsWith("{"))
+                    {
                         string apiKey = AdvanceClip.Classes.SettingsManager.Current.GeminiApiKey;
                         if (string.IsNullOrWhiteSpace(apiKey))
                         {
                             System.Windows.Application.Current.Dispatcher.Invoke(() => 
-                                AdvanceClip.Windows.ToastWindow.ShowToast("Gemini Fallback Missing API Key! Aborting.")
+                                AdvanceClip.Windows.ToastWindow.ShowToast("OCR couldn't detect table structure. Set Gemini API Key in Settings for AI fallback.")
                             );
                             return;
                         }
 
+                        System.Windows.Application.Current.Dispatcher.Invoke(() => 
+                            AdvanceClip.Windows.ToastWindow.ShowToast("OCR inconclusive. Using Gemini AI for table extraction...")
+                        );
+                        
                         finalJsonPayload = await AdvanceClip.Classes.GeminiEngine.ExtractFormattedTableFromImageAsync(FilePath, apiKey);
-                        Console.WriteLine("[TELEMETRY] Gemini Cloud fallback extracted matrix gracefully.");
+                        Classes.Logger.LogAction("TABLE_EXTRACT", "Gemini AI extracted table successfully");
                     }
                 });
 
@@ -743,12 +844,16 @@ namespace AdvanceClip.ViewModels
                         editor.Show();
                     });
                 }
+                else
+                {
+                    AdvanceClip.Windows.ToastWindow.ShowToast("No table structure detected in this image.");
+                }
             }
             catch (Exception ex)
             {
-                Console.WriteLine("[TELEMETRY] Engine Hybrid Fault: " + ex.Message);
+                Classes.Logger.LogAction("TABLE_EXTRACT_FAIL", ex.Message);
                 System.Windows.Application.Current.Dispatcher.Invoke(() => 
-                    AdvanceClip.Windows.ToastWindow.ShowToast("Extraction Failed. Check Logs.")
+                    AdvanceClip.Windows.ToastWindow.ShowToast($"Table Extraction Failed: {ex.Message}")
                 );
             }
         }

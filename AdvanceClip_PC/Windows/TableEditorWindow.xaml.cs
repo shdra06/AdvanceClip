@@ -117,11 +117,12 @@ namespace AdvanceClip.Windows
         {
             try
             {
-                var sbHtml = new System.Text.StringBuilder();
-                sbHtml.Append("<table style=\"border-collapse: collapse; width: 100%; border: 1px solid #ddd;\">\n");
-
                 int rows = _maxRow + 1;
                 int cols = _maxCol + 1;
+
+                // ═══ Build HTML table ═══
+                var sbHtml = new System.Text.StringBuilder();
+                sbHtml.Append("<table style=\"border-collapse: collapse; width: 100%; font-family: Calibri, Arial, sans-serif; font-size: 11pt;\">\n");
 
                 for (int i = 0; i < rows; i++)
                 {
@@ -130,7 +131,9 @@ namespace AdvanceClip.Windows
                     {
                         string cellVal = _gridBoxes[i, j].Text;
                         string tag = (i == 0) ? "th" : "td";
-                        string style = (i == 0) ? "border: 1px solid #000; padding: 8px; font-weight: bold; background-color: #f2f2f2;" : "border: 1px solid #ddd; padding: 8px;";
+                        string style = (i == 0) 
+                            ? "border: 1px solid #000; padding: 6px 10px; font-weight: bold; background-color: #D9E2F3; text-align: left;" 
+                            : "border: 1px solid #999; padding: 6px 10px; text-align: left;";
                         
                         sbHtml.Append($"<{tag} style=\"{style}\">");
                         sbHtml.Append(System.Net.WebUtility.HtmlEncode(cellVal));
@@ -140,39 +143,62 @@ namespace AdvanceClip.Windows
                 }
                 sbHtml.Append("</table>\n");
 
-                string rawHtml = sbHtml.ToString();
+                string fragment = sbHtml.ToString();
                 
-                // Construct the highly strict CF_HTML formatted sequence allowing Microsoft Word targeting natively
-                var sbFinal = new System.Text.StringBuilder();
-                string pre = "Version:0.9\r\nStartHTML:00000000\r\nEndHTML:00000000\r\nStartFragment:00000000\r\nEndFragment:00000000\r\n<html><body>\r\n<!--StartFragment-->\r\n";
-                string post = "\r\n<!--EndFragment-->\r\n</body>\r\n</html>";
+                // ═══ Build CF_HTML with correct byte offsets ═══
+                // The header has fixed-length placeholders that we'll fill in
+                string header = "Version:0.9\r\nStartHTML:SSSSSSSS\r\nEndHTML:EEEEEEEE\r\nStartFragment:FFFFFFFF\r\nEndFragment:GGGGGGGG\r\n";
+                string htmlStart = "<html><body>\r\n<!--StartFragment-->\r\n";
+                string htmlEnd = "\r\n<!--EndFragment-->\r\n</body></html>";
                 
-                sbFinal.Append(pre);
-                sbFinal.Append(rawHtml);
-                sbFinal.Append(post);
-
-                string textBlock = sbFinal.ToString();
-                byte[] totalBytes = System.Text.Encoding.UTF8.GetBytes(textBlock);
-
-                int startHtml = 0;
-                int startFrag = System.Text.Encoding.UTF8.GetByteCount(pre);
-                int endFrag = startFrag + System.Text.Encoding.UTF8.GetByteCount(rawHtml);
-                int endHtml = totalBytes.Length;
-
-                sbFinal.Replace("StartHTML:00000000", $"StartHTML:{startHtml:D8}");
-                sbFinal.Replace("EndHTML:00000000",   $"EndHTML:{endHtml:D8}");
-                sbFinal.Replace("StartFragment:00000000", $"StartFragment:{startFrag:D8}");
-                sbFinal.Replace("EndFragment:00000000",   $"EndFragment:{endFrag:D8}");
-
-                System.Windows.Clipboard.SetText(sbFinal.ToString(), TextDataFormat.Html);
-                AdvanceClip.Windows.ToastWindow.ShowToast("Matrix CF_HTML perfectly routed to OS Clipboard! (CTRL+V anywhere)");
+                // Calculate byte offsets (CF_HTML uses UTF-8 byte positions)
+                int headerLen = System.Text.Encoding.UTF8.GetByteCount(header);
+                int htmlStartLen = System.Text.Encoding.UTF8.GetByteCount(htmlStart);
+                int fragmentLen = System.Text.Encoding.UTF8.GetByteCount(fragment);
+                int htmlEndLen = System.Text.Encoding.UTF8.GetByteCount(htmlEnd);
                 
+                int startHtml = headerLen;
+                int startFragment = headerLen + htmlStartLen;
+                int endFragment = startFragment + fragmentLen;
+                int endHtml = endFragment + htmlEndLen;
+                
+                header = header.Replace("SSSSSSSS", startHtml.ToString("D8"));
+                header = header.Replace("EEEEEEEE", endHtml.ToString("D8"));
+                header = header.Replace("FFFFFFFF", startFragment.ToString("D8"));
+                header = header.Replace("GGGGGGGG", endFragment.ToString("D8"));
+                
+                string cfHtml = header + htmlStart + fragment + htmlEnd;
+                
+                // ═══ Build plain text TSV (tab-separated) as fallback ═══
+                var sbTsv = new System.Text.StringBuilder();
+                for (int i = 0; i < rows; i++)
+                {
+                    for (int j = 0; j < cols; j++)
+                    {
+                        if (j > 0) sbTsv.Append('\t');
+                        sbTsv.Append(_gridBoxes[i, j].Text);
+                    }
+                    sbTsv.Append('\n');
+                }
+                
+                // ═══ Set both formats on clipboard for maximum compatibility ═══
+                MainWindow._isWritingClipboard = true;
+                try
+                {
+                    var dataObj = new DataObject();
+                    dataObj.SetData(DataFormats.Html, cfHtml);
+                    dataObj.SetData(DataFormats.Text, sbTsv.ToString());
+                    Clipboard.SetDataObject(dataObj, true);
+                }
+                finally { MainWindow._isWritingClipboard = false; }
+                
+                AdvanceClip.Windows.ToastWindow.ShowToast("Table copied! Paste into Word with Ctrl+V 📋");
                 this.Close();
             }
             catch (Exception ex)
             {
-                AdvanceClip.Windows.ToastWindow.ShowToast($"Export fatal fault: {ex.Message}");
-                AdvanceClip.Classes.Logger.LogAction("MATRIX CF_HTML FATAL", ex.Message);
+                AdvanceClip.Windows.ToastWindow.ShowToast($"Export failed: {ex.Message}");
+                AdvanceClip.Classes.Logger.LogAction("TABLE_EXPORT_FAIL", ex.Message);
             }
         }
 
