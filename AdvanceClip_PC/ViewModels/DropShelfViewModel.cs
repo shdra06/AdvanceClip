@@ -210,8 +210,29 @@ namespace AdvanceClip.ViewModels
                 _deletedItemsHistory.Push(new System.Collections.Generic.List<ClipboardItem> { item });
                 DroppedItems.Remove(item);
                 OnPropertyChanged(nameof(ShelfVisibility));
-                if (item.IsPinned) SavePinnedItems();
+
+                // Cleanup: delete backing temp file to prevent %TEMP% bloat
+                CleanupTempFile(item.FilePath);
             }
+        }
+
+        /// <summary>
+        /// Deletes the backing file only if it resides inside the system temp directory.
+        /// User's real files (dragged from Explorer) are never touched.
+        /// </summary>
+        private void CleanupTempFile(string filePath)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath)) return;
+                string tempDir = Path.GetTempPath().TrimEnd(Path.DirectorySeparatorChar);
+                string fileDir = Path.GetDirectoryName(filePath)?.TrimEnd(Path.DirectorySeparatorChar) ?? "";
+                if (fileDir.StartsWith(tempDir, StringComparison.OrdinalIgnoreCase))
+                {
+                    File.Delete(filePath);
+                }
+            }
+            catch { /* Silently ignore - file may be locked */ }
         }
 
         public void TogglePin(ClipboardItem item)
