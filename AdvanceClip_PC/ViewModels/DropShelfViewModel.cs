@@ -537,12 +537,44 @@ namespace AdvanceClip.ViewModels
                                 _ = AdvanceClip.Classes.FirebaseSyncManager.PushToGlobalSync(syncItem);
                                 AdvanceClip.Windows.ToastWindow.ShowToast($"File ({fSize / (1024*1024)}MB) synced via Local Mesh \ud83d\udce1");
                             }
-                            // NO tunnel, NO mesh → file stays local. Use Force Send for Firebase upload.
+                            // NO tunnel, NO mesh → upload small/medium files directly to Firebase Storage
                             else
                             {
-                                // Only push text metadata (filename) to Firebase so other devices know it exists
-                                // but DON'T upload the actual file — that wastes Firebase quota
-                                // User can Force Send if they explicitly want to upload via Firebase Storage
+                                // Files under 25MB: upload to Firebase Storage for seamless cross-device sync
+                                if (fSize > 0 && fSize < 25 * 1024 * 1024)
+                                {
+                                    string capturedFile = file;
+                                    var capturedItem = item;
+                                    _ = System.Threading.Tasks.Task.Run(async () =>
+                                    {
+                                        try
+                                        {
+                                            AdvanceClip.Classes.Logger.LogAction("FILE SYNC", $"Uploading '{Path.GetFileName(capturedFile)}' ({fSize / 1024}KB) to Firebase Storage...");
+                                            string fbDownloadUrl = await AdvanceClip.Classes.FirebaseSyncManager.UploadFileToStorageAsync(capturedFile);
+                                            if (!string.IsNullOrEmpty(fbDownloadUrl))
+                                            {
+                                                var syncItem = capturedItem.CloneForSync(fbDownloadUrl);
+                                                await AdvanceClip.Classes.FirebaseSyncManager.PushToGlobalSync(syncItem);
+                                                Application.Current.Dispatcher.Invoke(() =>
+                                                    AdvanceClip.Windows.ToastWindow.ShowToast($"File synced via Firebase Storage \u2601\ufe0f"));
+                                                AdvanceClip.Classes.Logger.LogAction("FILE SYNC", $"Uploaded successfully: {fbDownloadUrl}");
+                                            }
+                                            else
+                                            {
+                                                AdvanceClip.Classes.Logger.LogAction("FILE SYNC", "Firebase Storage upload returned empty URL");
+                                            }
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            AdvanceClip.Classes.Logger.LogAction("FILE SYNC", $"Upload failed: {ex.Message}");
+                                        }
+                                    });
+                                }
+                                else
+                                {
+                                    // File too large for Firebase Storage — stays local
+                                    AdvanceClip.Classes.Logger.LogAction("FILE SYNC", $"File '{Path.GetFileName(file)}' ({fSize / (1024*1024)}MB) too large for Firebase Storage. Use Force Send or enable Cloudflare tunnel.");
+                                }
                             }
                         }
                     }
