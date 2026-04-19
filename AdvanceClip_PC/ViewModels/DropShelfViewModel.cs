@@ -19,6 +19,11 @@ namespace AdvanceClip.ViewModels
         public ObservableCollection<ClipboardItem> DroppedItems { get; } = new ObservableCollection<ClipboardItem>();
         private Stack<System.Collections.Generic.List<ClipboardItem>> _deletedItemsHistory = new Stack<System.Collections.Generic.List<ClipboardItem>>();
 
+        // Pre-compiled regex patterns for text classification — avoids recompilation on every clipboard event
+        private static readonly Regex _rxTerminal = new Regex(@"(PS C:\\|~\$|root@|npm run|npm install|git clone|git commit|sudo |apt-get|docker run)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex _rxCode = new Regex(@"(#include\s|<iostream>|<stdio\.h>|std::|printf\(|public class |private void |int main\(\)|using namespace |def\s+\w+\(|import\s+(os|sys|java|React)|class\s+[A-Z]\w*|Console\.WriteLine|=>\s*\{|\{""|\[\{""|<\/?(html|div|span|script|style|body|head)|function\s+\w+\(|console\.log\(|require\()", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex _rxUtmClean = new Regex(@"(?<=&|\?)(utm_source|utm_medium|utm_campaign|utm_term|utm_content|gclid|fbclid|_gl|msclkid|mc_eid|ig_shid)=[^&]*&?", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
         private int _currentMode = 0; // 0=Mini, 1=Medium, 2=Full
         public int CurrentMode
         {
@@ -758,8 +763,7 @@ namespace AdvanceClip.ViewModels
 
                         if (Uri.TryCreate(capturedText, UriKind.Absolute, out Uri? uriResult) && (uriResult.Scheme == Uri.UriSchemeHttp || uriResult.Scheme == Uri.UriSchemeHttps))
                         {
-                            string cleanUrl = Regex.Replace(capturedText, @"(?<=&|\?)(utm_source|utm_medium|utm_campaign|utm_term|utm_content|gclid|fbclid|_gl|msclkid|mc_eid|ig_shid)=[^&]*&?", string.Empty, RegexOptions.IgnoreCase);
-                            cleanUrl = cleanUrl.TrimEnd('?', '&');
+                            string cleanUrl = _rxUtmClean.Replace(capturedText, string.Empty).TrimEnd('?', '&');
                             
                             item.RawContent = cleanUrl;
                             item.ItemType = ClipboardItemType.Url;
@@ -768,9 +772,9 @@ namespace AdvanceClip.ViewModels
                         }
                         else
                         {
-                            bool isTerminal = Regex.IsMatch(capturedText, @"(PS C:\\|~\$|root@|npm run|npm install|git clone|git commit|sudo |apt-get|docker run)", RegexOptions.IgnoreCase);
+                            bool isTerminal = _rxTerminal.IsMatch(capturedText);
                             
-                            bool isCode = Regex.IsMatch(capturedText, @"(#include\s|<iostream>|<stdio\.h>|std::|printf\(|public class |private void |int main\(\)|using namespace |def\s+\w+\(|import\s+(os|sys|java|React)|class\s+[A-Z]\w*|Console\.WriteLine|=>\s*\{|\{""|\[\{""|<\/?(html|div|span|script|style|body|head)|function\s+\w+\(|console\.log\(|require\()", RegexOptions.IgnoreCase);
+                            bool isCode = _rxCode.IsMatch(capturedText);
                             
                             if (isTerminal || isCode)
                             {

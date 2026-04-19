@@ -31,7 +31,7 @@ namespace AdvanceClip.Windows
             InitializeComponent();
 
             _timer = new DispatcherTimer();
-            _timer.Interval = TimeSpan.FromMilliseconds(16);
+            _timer.Interval = TimeSpan.FromMilliseconds(500); // 2fps is plenty — taskbar rarely moves
             _timer.Tick += (s, e) => UpdatePosition();
             _timer.Start();
 

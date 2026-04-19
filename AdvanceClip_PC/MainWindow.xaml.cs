@@ -22,6 +22,8 @@ namespace AdvanceClip
         private bool _didDragOut = false;
         private double _lockedBottomEdge = 0;
         private bool _isEdgeLocked = false;
+        private Windows.TaskbarWindow? _taskbarWidget;
+        private System.Windows.Threading.DispatcherTimer? _clipboardDebounceTimer;
 
         [DllImport("user32.dll", SetLastError = true)]
         private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, int dwExtraInfo);
@@ -161,6 +163,16 @@ namespace AdvanceClip
                     });
                 });
             }
+
+            // Launch the taskbar-embedded widget
+            try
+            {
+                _taskbarWidget = new Windows.TaskbarWindow();
+            }
+            catch (Exception ex)
+            {
+                Classes.Logger.LogAction("WIDGET_FAIL", $"Failed to create taskbar widget: {ex.Message}");
+            }
         }
 
         protected override void OnClosed(EventArgs e)
@@ -196,28 +208,30 @@ namespace AdvanceClip
                     return IntPtr.Zero;
                 }
 
-                // DEBOUNCE: Prevent rapid-fire clipboard processing.
-                // 150ms is enough to collapse burst events from Office/browsers
-                // while staying responsive for manual copy operations.
-                _clipboardDebounceTimer?.Stop();
-                _clipboardDebounceTimer = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Background)
+                // DEBOUNCE: Reuse a single timer to avoid GC pressure.
+                // 100ms collapses burst events while staying responsive.
+                if (_clipboardDebounceTimer == null)
                 {
-                    Interval = TimeSpan.FromMilliseconds(150)
-                };
-                _clipboardDebounceTimer.Tick += (s, ev) =>
-                {
-                    _clipboardDebounceTimer.Stop();
-                    try
+                    _clipboardDebounceTimer = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Background)
                     {
-                        IDataObject data = Clipboard.GetDataObject();
-                        if (data != null)
+                        Interval = TimeSpan.FromMilliseconds(100)
+                    };
+                    _clipboardDebounceTimer.Tick += (s, ev) =>
+                    {
+                        _clipboardDebounceTimer.Stop();
+                        try
                         {
-                            var vm = (DropShelfViewModel)DataContext;
-                            vm.HandleDrop(data, false);
+                            IDataObject data = Clipboard.GetDataObject();
+                            if (data != null)
+                            {
+                                var vm = (DropShelfViewModel)DataContext;
+                                vm.HandleDrop(data, false);
+                            }
                         }
-                    }
-                    catch { }
-                };
+                        catch { }
+                    };
+                }
+                _clipboardDebounceTimer.Stop();
                 _clipboardDebounceTimer.Start();
                 
                 handled = true;
@@ -236,7 +250,6 @@ namespace AdvanceClip
         private bool _isPersistentMode = false;
         private DateTime _spawnTime = DateTime.MinValue;
         private IntPtr _previousForegroundWindow = IntPtr.Zero;
-        private System.Windows.Threading.DispatcherTimer? _clipboardDebounceTimer;
         internal static bool _isWritingClipboard = false;
 
         private IntPtr GetTargetForegroundWindow()
