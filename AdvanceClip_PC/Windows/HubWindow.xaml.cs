@@ -42,14 +42,34 @@ namespace AdvanceClip.Windows
                 double parentWidth = UpdateProgressPanel.ActualWidth - 24; // minus padding
                 UpdateProgressBar.Width = Math.Max(0, parentWidth * pct / 100.0);
             });
-            _updateManager.UpdateCheckCompleted += (hasUpdate) => Dispatcher.Invoke(() =>
+            _updateManager.UpdateCheckCompleted += (hasUpdate) => Dispatcher.Invoke(async () =>
             {
                 if (hasUpdate)
                 {
                     LatestVersionText.Text = $"→ v{_updateManager.LatestVersion} available!";
                     ChangelogText.Text = _updateManager.Changelog;
                     ChangelogPanel.Visibility = Visibility.Visible;
-                    UpdateBtn.Content = "Download Update";
+                    UpdateBtn.Content = "Downloading...";
+                    UpdateBtn.IsEnabled = false;
+                    UpdateProgressPanel.Visibility = Visibility.Visible;
+
+                    // Auto-download immediately
+                    bool success = await _updateManager.DownloadAndApplyUpdateAsync();
+                    if (success)
+                    {
+                        UpdateBtn.Content = "Restarting...";
+                        UpdateStatusText.Text = "✅ Update downloaded! Restarting now...";
+                        UpdatePctText.Text = "100%";
+
+                        // Auto-apply after a brief moment so user sees the status
+                        await Task.Delay(1500);
+                        _updateManager.ApplyUpdateAndRestart();
+                    }
+                    else
+                    {
+                        UpdateBtn.Content = "Retry Download";
+                        UpdateBtn.IsEnabled = true;
+                    }
                 }
                 else
                 {
@@ -662,14 +682,15 @@ namespace AdvanceClip.Windows
         {
             string btnContent = UpdateBtn.Content?.ToString() ?? "";
 
-            if (btnContent == "Restart Now")
+            if (btnContent.Contains("Restart"))
             {
                 _updateManager.ApplyUpdateAndRestart();
                 return;
             }
 
-            if (btnContent == "Download Update")
+            if (btnContent.Contains("Retry"))
             {
+                // Retry: re-download + auto-apply
                 UpdateBtn.IsEnabled = false;
                 UpdateBtn.Content = "Downloading...";
                 UpdateProgressPanel.Visibility = Visibility.Visible;
@@ -677,11 +698,10 @@ namespace AdvanceClip.Windows
                 bool success = await _updateManager.DownloadAndApplyUpdateAsync();
                 if (success)
                 {
-                    UpdateBtn.Content = "Restart Now";
-                    UpdateBtn.IsEnabled = true;
-                    // Flash green
-                    UpdateStatusText.Text = "✅ Download complete! Click Restart Now to apply.";
-                    UpdatePctText.Text = "100%";
+                    UpdateBtn.Content = "Restarting...";
+                    UpdateStatusText.Text = "✅ Update downloaded! Restarting now...";
+                    await Task.Delay(1500);
+                    _updateManager.ApplyUpdateAndRestart();
                 }
                 else
                 {
@@ -691,7 +711,7 @@ namespace AdvanceClip.Windows
                 return;
             }
 
-            // Default: Check for updates
+            // Default: Check for updates (auto-download triggers via UpdateCheckCompleted)
             UpdateBtn.Content = "Checking...";
             UpdateBtn.IsEnabled = false;
             UpdateProgressPanel.Visibility = Visibility.Visible;

@@ -102,6 +102,8 @@ export default function SettingsScreen() {
 
       if (isNewer && dl) {
         setUpdateStatus('available');
+        // Auto-trigger download + install immediately
+        autoDownloadAndInstall(dl, latest);
       } else {
         setUpdateStatus('idle');
         Alert.alert('✅ Up to Date', `You're on the latest version (v${APP_VERSION}).`);
@@ -111,6 +113,37 @@ export default function SettingsScreen() {
       Alert.alert('Error', 'Could not check for updates. Check your internet connection.');
     }
   }, []);
+
+  const autoDownloadAndInstall = async (url: string, version: string) => {
+    if (!url) return;
+    try {
+      setUpdateStatus('downloading');
+      setUpdateProgress(0);
+
+      const apkUri = `${(FileSystem as any).cacheDirectory}AdvanceClip_v${version}.apk`;
+      try { await FileSystem.deleteAsync(apkUri, { idempotent: true }); } catch {}
+
+      const downloadResumable = FileSystem.createDownloadResumable(
+        url,
+        apkUri,
+        {},
+        (progress) => {
+          const pct = Math.round((progress.totalBytesWritten / progress.totalBytesExpectedToWrite) * 100);
+          setUpdateProgress(pct);
+        }
+      );
+
+      const result = await downloadResumable.downloadAsync();
+      if (!result?.uri) throw new Error('Download returned no URI');
+
+      setDownloadedApkUri(result.uri);
+      setUpdateStatus('ready');
+      await installApk(result.uri);
+    } catch (e: any) {
+      setUpdateStatus('error');
+      Alert.alert('Download Failed', e?.message || 'Could not download the update APK.');
+    }
+  };
 
   const downloadAndInstall = useCallback(async () => {
     if (!downloadUrl) return;
