@@ -1,7 +1,7 @@
 {
-  "pc_version": "1.0.0",
+  "pc_version": "1.1.0",
   "android_version": "1.0.0",
-  "changelog": "Initial release: Clipboard sync, file transfer, timer, floating ball, global sync via Cloudflare",
+  "changelog": "v1.1.0: Fix clipboard lag, taskbar widget, auto file sync via Firebase Storage, XAML crash fixes",
   "pc_download": "https://github.com/shdra06/AdvanceClip/releases/latest/download/AdvanceClip.exe",
   "android_download": "https://github.com/shdra06/AdvanceClip/releases/latest/download/AdvanceClip_Mobile.apk"
 }
