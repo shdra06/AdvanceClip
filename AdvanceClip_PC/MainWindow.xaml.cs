@@ -221,11 +221,69 @@ namespace AdvanceClip
                         _clipboardDebounceTimer.Stop();
                         try
                         {
+                            // PERF: Clipboard.GetDataObject() is a COM call that MUST run on the STA UI thread.
+                            // Extract the minimum data here, then offload ALL processing to a background thread.
                             IDataObject data = Clipboard.GetDataObject();
-                            if (data != null)
+                            if (data == null) return;
+
+                            // Snapshot all data now while we're on the STA thread — IDataObject can't cross threads
+                            string[] files = null;
+                            string text = null;
+                            System.Windows.Media.Imaging.BitmapSource bitmap = null;
+
+                            try
                             {
-                                var vm = (DropShelfViewModel)DataContext;
-                                vm.HandleDrop(data, false);
+                                if (data.GetDataPresent(DataFormats.FileDrop))
+                                    files = data.GetData(DataFormats.FileDrop) as string[];
+                                if ((files == null || files.Length == 0) && data.GetDataPresent("FileNameW"))
+                                    files = data.GetData("FileNameW") as string[];
+                            }
+                            catch { }
+
+                            if (files == null || files.Length == 0)
+                            {
+                                try
+                                {
+                                    if (data.GetDataPresent(DataFormats.Bitmap) || data.GetDataPresent(typeof(System.Windows.Media.Imaging.BitmapSource)))
+                                    {
+                                        bitmap = data.GetData(typeof(System.Windows.Media.Imaging.BitmapSource)) as System.Windows.Media.Imaging.BitmapSource;
+                                        if (bitmap != null && bitmap.CanFreeze) bitmap.Freeze(); // Make thread-safe
+                                    }
+                                }
+                                catch { }
+
+                                if (bitmap == null)
+                                {
+                                    try
+                                    {
+                                        if (data.GetDataPresent(DataFormats.UnicodeText))
+                                            text = data.GetData(DataFormats.UnicodeText) as string;
+                                        if (string.IsNullOrEmpty(text) && data.GetDataPresent(DataFormats.Text))
+                                            text = data.GetData(DataFormats.Text) as string;
+                                    }
+                                    catch { }
+                                }
+                            }
+
+                            // Now dispatch to background — no more COM calls needed
+                            var vm = (DropShelfViewModel)DataContext;
+                            if (files != null && files.Length > 0)
+                            {
+                                var dataObj = new System.Windows.DataObject(DataFormats.FileDrop, files);
+                                System.Threading.Tasks.Task.Run(() =>
+                                    Application.Current.Dispatcher.InvokeAsync(() => vm.HandleDrop(dataObj, false)));
+                            }
+                            else if (bitmap != null)
+                            {
+                                var dataObj = new System.Windows.DataObject(typeof(System.Windows.Media.Imaging.BitmapSource), bitmap);
+                                System.Threading.Tasks.Task.Run(() =>
+                                    Application.Current.Dispatcher.InvokeAsync(() => vm.HandleDrop(dataObj, false)));
+                            }
+                            else if (!string.IsNullOrWhiteSpace(text))
+                            {
+                                var dataObj = new System.Windows.DataObject(DataFormats.UnicodeText, text);
+                                System.Threading.Tasks.Task.Run(() =>
+                                    Application.Current.Dispatcher.InvokeAsync(() => vm.HandleDrop(dataObj, false)));
                             }
                         }
                         catch { }
