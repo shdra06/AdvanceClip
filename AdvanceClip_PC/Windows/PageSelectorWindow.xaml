@@ -1,0 +1,89 @@
+<controls:MicaWindow x:Class="AdvanceClip.Windows.PageSelectorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:MicaWPF.Controls;assembly=MicaWPF"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="Select Pages" Height="520" Width="520"
+        WindowStartupLocation="CenterOwner"
+        SystemBackdropType="Mica" Background="Transparent" Topmost="True">
+    
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="32" ResizeBorderThickness="6" CornerRadius="8" GlassFrameThickness="-1" />
+    </WindowChrome.WindowChrome>
+
+    <Grid Margin="16,8,16,16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,8" Orientation="Horizontal" WindowChrome.IsHitTestVisibleInChrome="False">
+            <ui:SymbolIcon Symbol="Grid24" Foreground="#3B82F6" FontSize="22" Margin="0,0,10,0" />
+            <TextBlock x:Name="HeaderText" Text="Select Pages" FontSize="17" FontWeight="SemiBold" 
+                       Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorPrimary}" VerticalAlignment="Center"/>
+        </StackPanel>
+
+        <!-- Info bar -->
+        <Border Grid.Row="1" Background="#10FFFFFF" CornerRadius="6" Padding="12,8" Margin="0,0,0,8">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock x:Name="SelectionInfo" Text="0 of 0 pages selected" FontSize="13" 
+                           Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorSecondary}" VerticalAlignment="Center"/>
+                <TextBlock Text="  •  " Opacity="0.4" VerticalAlignment="Center"/>
+                <TextBlock Text="Click pages to toggle • Shift-click for range" FontSize="11" 
+                           Opacity="0.5" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorTertiary}" VerticalAlignment="Center"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Quick actions -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,8">
+            <ui:Button Content="Select All" Appearance="Transparent" FontSize="12" Padding="10,4" Margin="0,0,6,0" Click="SelectAll_Click"/>
+            <ui:Button Content="Deselect All" Appearance="Transparent" FontSize="12" Padding="10,4" Margin="0,0,6,0" Click="DeselectAll_Click"/>
+            <ui:Button Content="Odd Pages" Appearance="Transparent" FontSize="12" Padding="10,4" Margin="0,0,6,0" Click="SelectOdd_Click"/>
+            <ui:Button Content="Even Pages" Appearance="Transparent" FontSize="12" Padding="10,4" Margin="0,0,6,0" Click="SelectEven_Click"/>
+            <TextBlock Text="|" Opacity="0.2" VerticalAlignment="Center" Margin="4,0"/>
+            <TextBlock Text="Range:" FontSize="12" VerticalAlignment="Center" Opacity="0.6" Margin="4,0,4,0"
+                       Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorSecondary}"/>
+            <TextBox x:Name="RangeInput" Width="120" FontSize="12" VerticalContentAlignment="Center"
+                     Background="#0AFFFFFF" BorderBrush="#18FFFFFF" Padding="6,4"
+                     ToolTip="e.g. 1-5, 8, 10-12" KeyDown="RangeInput_KeyDown"/>
+            <ui:Button Content="Apply" Appearance="Transparent" FontSize="12" Padding="8,4" Margin="4,0,0,0" Click="ApplyRange_Click"/>
+        </StackPanel>
+
+        <!-- Page grid with column headers -->
+        <Border Grid.Row="3" Background="#08FFFFFF" BorderBrush="#12FFFFFF" BorderThickness="1" CornerRadius="8" Padding="8">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    
+                    <!-- Column select buttons -->
+                    <WrapPanel x:Name="ColumnHeaders" Grid.Row="0" Margin="0,0,0,4" />
+                    
+                    <!-- Page number grid -->
+                    <WrapPanel x:Name="PageGrid" Grid.Row="1" />
+                </Grid>
+            </ScrollViewer>
+        </Border>
+
+        <!-- Row select sidebar label -->
+        <TextBlock Grid.Row="4" Text="Click a row number on the left to toggle entire row" FontSize="11" 
+                   Opacity="0.4" Margin="0,6,0,0" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorTertiary}"/>
+
+        <!-- Footer buttons -->
+        <Grid Grid.Row="5" Margin="0,12,0,0">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <ui:Button Content="Cancel" Appearance="Secondary" Margin="0,0,12,0" Padding="20,8" Click="Cancel_Click" />
+                <ui:Button x:Name="ConfirmBtn" Content="Confirm Selection" Appearance="Primary" Padding="20,8" Click="Confirm_Click">
+                    <ui:Button.Icon><ui:SymbolIcon Symbol="Checkmark24" /></ui:Button.Icon>
+                </ui:Button>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</controls:MicaWindow>

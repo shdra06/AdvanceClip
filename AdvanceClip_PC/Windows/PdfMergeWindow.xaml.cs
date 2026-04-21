@@ -9,43 +9,110 @@ using AdvanceClip.ViewModels;
 using MicaWPF.Controls;
 using PdfSharp.Pdf;
 using PdfSharp.Pdf.IO;
+using Microsoft.Win32;
 
 namespace AdvanceClip.Windows
 {
     public partial class PdfMergeWindow : MicaWindow
     {
-        public ObservableCollection<ClipboardItem> PdfItems { get; set; }
+        public ObservableCollection<PdfMergeItem> MergeItems { get; set; }
         private DropShelfViewModel _viewModel;
 
         public PdfMergeWindow(List<ClipboardItem> pdfsToMerge, DropShelfViewModel vm)
         {
             InitializeComponent();
             _viewModel = vm;
-            PdfItems = new ObservableCollection<ClipboardItem>(pdfsToMerge);
-            PdfItemsList.ItemsSource = PdfItems;
+            MergeItems = new ObservableCollection<PdfMergeItem>(
+                pdfsToMerge.Select(p => new PdfMergeItem(p.FilePath))
+            );
+            PdfItemsList.ItemsSource = MergeItems;
+            UpdateSummary();
+        }
+
+        private void UpdateSummary()
+        {
+            int totalFiles = MergeItems.Count;
+            int validFiles = MergeItems.Count(m => m.IsValid);
+            int totalPages = MergeItems.Where(m => m.IsValid).Sum(m => m.GetSelectedPageIndices().Count);
+            int totalAllPages = MergeItems.Where(m => m.IsValid).Sum(m => m.TotalPages);
+
+            SummaryText.Text = totalPages == totalAllPages
+                ? $"📄 {validFiles} PDFs • {totalPages} total pages to merge"
+                : $"📄 {validFiles} PDFs • {totalPages} of {totalAllPages} pages selected";
+
+            if (totalFiles > validFiles)
+                SummaryText.Text += $" • ⚠ {totalFiles - validFiles} unreadable";
         }
 
         private void MoveUp_Click(object sender, RoutedEventArgs e)
         {
-            if (sender is FrameworkElement fe && fe.Tag is ClipboardItem item)
+            if (sender is FrameworkElement fe && fe.Tag is PdfMergeItem item)
             {
-                int index = PdfItems.IndexOf(item);
+                int index = MergeItems.IndexOf(item);
                 if (index > 0)
                 {
-                    PdfItems.Move(index, index - 1);
+                    MergeItems.Move(index, index - 1);
                 }
             }
         }
 
         private void MoveDown_Click(object sender, RoutedEventArgs e)
         {
-            if (sender is FrameworkElement fe && fe.Tag is ClipboardItem item)
+            if (sender is FrameworkElement fe && fe.Tag is PdfMergeItem item)
             {
-                int index = PdfItems.IndexOf(item);
-                if (index >= 0 && index < PdfItems.Count - 1)
+                int index = MergeItems.IndexOf(item);
+                if (index >= 0 && index < MergeItems.Count - 1)
                 {
-                    PdfItems.Move(index, index + 1);
+                    MergeItems.Move(index, index + 1);
                 }
+            }
+        }
+
+        private void Remove_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is FrameworkElement fe && fe.Tag is PdfMergeItem item)
+            {
+                MergeItems.Remove(item);
+                UpdateSummary();
+            }
+        }
+
+        private void SelectPages_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is FrameworkElement fe && fe.Tag is PdfMergeItem item)
+            {
+                if (!item.IsValid)
+                {
+                    MessageBox.Show($"Cannot open this PDF:\n{item.Error}", "PDF Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                var selector = new PageSelectorWindow(item);
+                selector.Owner = this;
+                selector.ShowDialog();
+                
+                // Refresh the list to show updated page selection
+                PdfItemsList.Items.Refresh();
+                UpdateSummary();
+            }
+        }
+
+        private void AddPdf_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new OpenFileDialog
+            {
+                Filter = "PDF Files|*.pdf",
+                Multiselect = true,
+                Title = "Add PDFs to Merge"
+            };
+
+            if (dlg.ShowDialog() == true)
+            {
+                foreach (string file in dlg.FileNames)
+                {
+                    MergeItems.Add(new PdfMergeItem(file));
+                }
+                UpdateSummary();
             }
         }
 
@@ -56,9 +123,12 @@ namespace AdvanceClip.Windows
 
         private async void Merge_Click(object sender, RoutedEventArgs e)
         {
-            if (PdfItems.Count < 2)
+            var validItems = MergeItems.Where(m => m.IsValid).ToList();
+            int totalSelectedPages = validItems.Sum(m => m.GetSelectedPageIndices().Count);
+
+            if (totalSelectedPages < 1)
             {
-                MessageBox.Show("Please select at least 2 PDFs to merge.", "Merge Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("No pages selected to merge.", "Merge Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -76,21 +146,58 @@ namespace AdvanceClip.Windows
                 {
                     using (PdfDocument outputDocument = new PdfDocument())
                     {
-                        foreach (var item in PdfItems)
+                        int mergedPages = 0;
+                        var failedFiles = new List<string>();
+
+                        foreach (var item in validItems)
                         {
-                            if (string.IsNullOrEmpty(item.FilePath) || !File.Exists(item.FilePath)) continue;
-                            
-                            using (PdfDocument inputDocument = PdfReader.Open(item.FilePath, PdfDocumentOpenMode.Import))
+                            try
                             {
-                                int count = inputDocument.PageCount;
-                                for (int idx = 0; idx < count; idx++)
+                                var pageIndices = item.GetSelectedPageIndices();
+                                if (pageIndices.Count == 0) continue;
+
+                                using (PdfDocument inputDocument = PdfReader.Open(item.FilePath, PdfDocumentOpenMode.Import))
                                 {
-                                    PdfPage page = inputDocument.Pages[idx];
-                                    outputDocument.AddPage(page);
+                                    foreach (int idx in pageIndices)
+                                    {
+                                        if (idx >= 0 && idx < inputDocument.PageCount)
+                                        {
+                                            PdfPage page = inputDocument.Pages[idx];
+                                            outputDocument.AddPage(page);
+                                            mergedPages++;
+                                        }
+                                    }
                                 }
                             }
+                            catch (Exception fileEx)
+                            {
+                                failedFiles.Add($"{item.FileName}: {fileEx.Message}");
+                                AdvanceClip.Classes.Logger.LogAction("PDF MERGE", $"Skipped '{item.FileName}': {fileEx.Message}");
+                            }
                         }
+
+                        if (mergedPages == 0)
+                        {
+                            string allErrors = failedFiles.Count > 0 
+                                ? string.Join("\n", failedFiles) 
+                                : "No valid pages found.";
+                            Application.Current.Dispatcher.Invoke(() =>
+                            {
+                                MessageBox.Show($"Could not merge:\n\n{allErrors}", "Merge Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                            });
+                            return false;
+                        }
+
                         outputDocument.Save(outputPath);
+
+                        if (failedFiles.Count > 0)
+                        {
+                            string skipped = string.Join("\n", failedFiles);
+                            Application.Current.Dispatcher.Invoke(() =>
+                            {
+                                MessageBox.Show($"Merged {mergedPages} pages. Some files were skipped:\n\n{skipped}", "Partial Merge", MessageBoxButton.OK, MessageBoxImage.Warning);
+                            });
+                        }
                     }
                     return true;
                 }
@@ -111,10 +218,7 @@ namespace AdvanceClip.Windows
                 {
                     var dataObj = new DataObject();
                     dataObj.SetData(DataFormats.FileDrop, new string[] { outputPath });
-                    
-                    // Directly mimic a Drop payload to Add the file
                     _viewModel.HandleDrop(dataObj, true);
-                    
                     ToastWindow.ShowToast("PDFs Merged Successfully! 📄");
                 });
                 this.Close();

@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:controls="clr-namespace:MicaWPF.Controls;assembly=MicaWPF"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-        Title="PDF Merge" Height="500" Width="600"
+        Title="PDF Merge" Height="550" Width="700"
         WindowStartupLocation="CenterScreen"
         SystemBackdropType="Mica" Background="Transparent" Topmost="True">
     
@@ -15,18 +15,24 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <StackPanel Grid.Row="0" Margin="0,0,0,16" Orientation="Horizontal" WindowChrome.IsHitTestVisibleInChrome="False">
+        <StackPanel Grid.Row="0" Margin="0,0,0,12" Orientation="Horizontal" WindowChrome.IsHitTestVisibleInChrome="False">
             <ui:SymbolIcon Symbol="DocumentPdf24" Foreground="#EF4444" FontSize="24" Margin="0,0,12,0" />
             <TextBlock Text="Merge PDFs" FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorPrimary}" VerticalAlignment="Center"/>
         </StackPanel>
 
-        <TextBlock Grid.Row="1" Text="Arrange the selected PDFs in the exact order you want them merged. Drag items or use buttons." FontSize="13" Opacity="0.7" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorSecondary}" Margin="0,0,0,12" TextWrapping="Wrap" />
+        <TextBlock Grid.Row="1" Text="Arrange PDFs in merge order. Use 'Select Pages' to pick specific pages from each file." FontSize="13" Opacity="0.7" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorSecondary}" Margin="0,0,0,8" TextWrapping="Wrap" />
 
-        <Border Grid.Row="2" Background="#08FFFFFF" BorderBrush="#12FFFFFF" BorderThickness="1" CornerRadius="8" Padding="2">
+        <!-- Summary bar -->
+        <Border Grid.Row="2" Background="#10FFFFFF" CornerRadius="6" Padding="12,8" Margin="0,0,0,8">
+            <TextBlock x:Name="SummaryText" Text="" FontSize="12" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorSecondary}"/>
+        </Border>
+
+        <Border Grid.Row="3" Background="#08FFFFFF" BorderBrush="#12FFFFFF" BorderThickness="1" CornerRadius="8" Padding="2">
             <ListBox x:Name="PdfItemsList" Background="Transparent" BorderThickness="0" Margin="4"
                      ScrollViewer.VerticalScrollBarVisibility="Auto" AllowDrop="True">
                 <ListBox.ItemContainerStyle>
@@ -62,24 +68,51 @@
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             
-                            <!-- Index/Icon -->
-                            <Border Grid.Column="0" Width="36" Height="36" CornerRadius="4" Background="#11FFFFFF" Margin="0,0,12,0">
-                                <ui:SymbolIcon Symbol="DocumentPdf24" Foreground="#EF4444" FontSize="20" />
-                            </Border>
+                            <!-- PDF Icon with page count badge -->
+                            <Grid Grid.Column="0" Width="44" Height="44" Margin="0,0,12,0">
+                                <Border CornerRadius="4" Background="#11FFFFFF">
+                                    <ui:SymbolIcon Symbol="DocumentPdf24" Foreground="#EF4444" FontSize="20" />
+                                </Border>
+                                <!-- Page count badge -->
+                                <Border CornerRadius="8" Background="#3B82F6" HorizontalAlignment="Right" VerticalAlignment="Bottom" 
+                                        Margin="0,0,-4,-4" Padding="4,1" MinWidth="22">
+                                    <TextBlock Text="{Binding TotalPages}" FontSize="10" FontWeight="Bold" Foreground="White" 
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                            </Grid>
 
                             <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0">
-                                <TextBlock Text="{Binding FileName}" FontSize="14" FontWeight="Medium" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorPrimary}" TextTrimming="CharacterEllipsis"/>
-                                <TextBlock Text="{Binding FormattedSize}" FontSize="11" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorTertiary}" Margin="0,2,0,0"/>
+                                <TextBlock Text="{Binding FileName}" FontSize="14" FontWeight="Medium" 
+                                           Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorPrimary}" TextTrimming="CharacterEllipsis" MaxWidth="300"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
+                                    <TextBlock Text="{Binding FileSize}" FontSize="11" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorTertiary}"/>
+                                    <TextBlock Text="  •  " Opacity="0.4" FontSize="11"/>
+                                    <TextBlock Text="{Binding PageInfo}" FontSize="11" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorSecondary}"/>
+                                </StackPanel>
                             </StackPanel>
 
-                            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                            <!-- Select Pages button -->
+                            <ui:Button Grid.Column="2" Appearance="Transparent" Tag="{Binding}" Click="SelectPages_Click" 
+                                       ToolTip="Select specific pages" Margin="0,0,8,0" Padding="8,4" FontSize="12">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Grid24" FontSize="14" Margin="0,0,4,0"/>
+                                    <TextBlock Text="Pages" FontSize="12"/>
+                                </StackPanel>
+                            </ui:Button>
+
+                            <!-- Move buttons -->
+                            <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
                                 <ui:Button Appearance="Transparent" Tag="{Binding}" Click="MoveUp_Click" ToolTip="Move Up" Margin="0,0,4,0">
                                     <ui:Button.Icon><ui:SymbolIcon Symbol="ChevronUp24" /></ui:Button.Icon>
                                 </ui:Button>
-                                <ui:Button Appearance="Transparent" Tag="{Binding}" Click="MoveDown_Click" ToolTip="Move Down">
+                                <ui:Button Appearance="Transparent" Tag="{Binding}" Click="MoveDown_Click" ToolTip="Move Down" Margin="0,0,4,0">
                                     <ui:Button.Icon><ui:SymbolIcon Symbol="ChevronDown24" /></ui:Button.Icon>
+                                </ui:Button>
+                                <ui:Button Appearance="Transparent" Tag="{Binding}" Click="Remove_Click" ToolTip="Remove" Foreground="#EF4444">
+                                    <ui:Button.Icon><ui:SymbolIcon Symbol="Delete24" /></ui:Button.Icon>
                                 </ui:Button>
                             </StackPanel>
                         </Grid>
@@ -88,7 +121,12 @@
             </ListBox>
         </Border>
 
-        <Grid Grid.Row="3" Margin="0,16,0,0">
+        <Grid Grid.Row="4" Margin="0,16,0,0">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
+                <ui:Button Content="Add PDF" Appearance="Transparent" Padding="12,8" Click="AddPdf_Click">
+                    <ui:Button.Icon><ui:SymbolIcon Symbol="Add24" /></ui:Button.Icon>
+                </ui:Button>
+            </StackPanel>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                 <ui:Button Content="Cancel" Appearance="Secondary" Margin="0,0,12,0" Padding="20,8" Click="Cancel_Click" />
                 <ui:Button x:Name="MergeBtn" Content="Merge PDFs" Appearance="Primary" Padding="20,8" Click="Merge_Click">
