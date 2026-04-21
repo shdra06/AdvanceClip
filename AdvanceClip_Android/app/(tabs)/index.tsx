@@ -1684,11 +1684,25 @@ export default function SyncScreen() {
         <View style={styles.feedContainer}>
           {isRefreshing && clips.length === 0 ? (
             <ActivityIndicator size="large" color="#4A62EB" style={{marginTop: 50}} />
-          ) : clips.length === 0 || clips.filter(c => (c.IsPinned || (c.Timestamp || 0) >= localWipeTimestamp) && (!c.id || !localDeletedIds.has(c.id)) && (c.Raw || c.Title)).length === 0 ? (
+          ) : clips.length === 0 || clips.filter(c => {
+            const isVisible = (c.IsPinned || (c.Timestamp || 0) >= localWipeTimestamp) && (!c.id || !localDeletedIds.has(c.id)) && (c.Raw || c.Title);
+            if (!isVisible) return false;
+            if ((c.Type === 'Image' || c.Type === 'ImageLink') && !c.Raw && !c.CachedUri) return false;
+            if (!c.Raw && !c.Title) return false;
+            return true;
+          }).length === 0 ? (
             <Text style={styles.emptyText}>No clips synced yet.</Text>
           ) : (
             <FlatList
-              data={clips.filter(c => (c.IsPinned || (c.Timestamp || 0) >= localWipeTimestamp) && (!c.id || !localDeletedIds.has(c.id)) && (c.Raw || c.Title))}
+              data={clips.filter(c => {
+                // Base visibility filter
+                const isVisible = (c.IsPinned || (c.Timestamp || 0) >= localWipeTimestamp) && (!c.id || !localDeletedIds.has(c.id)) && (c.Raw || c.Title);
+                if (!isVisible) return false;
+                // Auto-remove broken image/file items — these show as blank slim boxes
+                if ((c.Type === 'Image' || c.Type === 'ImageLink') && !c.Raw && !c.CachedUri) return false;
+                if (!c.Raw && !c.Title) return false;
+                return true;
+              })}
               keyExtractor={(item, index) => item.id ? item.id : index.toString()}
               showsVerticalScrollIndicator={false}
               renderItem={({ item }) => {

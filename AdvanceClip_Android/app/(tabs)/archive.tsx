@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, ActivityIndicator, Dimensions, Modal, Alert, ScrollView, Image, Platform, FlatList, ToastAndroid, Linking, TextInput } from 'react-native';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import * as Sharing from 'expo-sharing';
@@ -38,7 +38,7 @@ export default function ConnectScreen() {
   // Media state
   const [mediaAssets, setMediaAssets] = useState<any[]>([]);
   const [isScanning, setIsScanning] = useState(false);
-  const [activeTab, setActiveTab] = useState<'Images'|'Videos'|'PDFs'|'Docs'|'All'>('All');
+  const [activeTab, setActiveTab] = useState<'Images'|'Videos'|'PDFs'|'Docs'|'All'>('PDFs');
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('All');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [enlargedPreview, setEnlargedPreview] = useState<any>(null);

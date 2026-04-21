@@ -18,10 +18,14 @@ const MAPPING = {
   'paperplane.fill': 'send',
   'chevron.left.forwardslash.chevron.right': 'code',
   'chevron.right': 'chevron-right',
+  'chevron.down': 'keyboard-arrow-down',
+  'chevron.up': 'keyboard-arrow-up',
   'photo': 'image',
+  'photo.fill': 'image',
   'link': 'link',
   'globe': 'public',
   'doc.richtext': 'description',
+  'doc.text.fill': 'article',
   'qrcode': 'qr-code',
   'doc.text': 'article',
   'doc.on.doc': 'content-copy',
@@ -47,9 +51,16 @@ const MAPPING = {
   'curlybraces': 'code',
   'network': 'wifi',
   'xmark': 'close',
+  'xmark.circle.fill': 'cancel',
   'square.and.arrow.up': 'share',
   'play.rectangle.fill': 'play-arrow',
-  'checkmark': 'check'
+  'checkmark': 'check',
+  'folder': 'folder',
+  'folder.fill': 'folder',
+  'magnifyingglass': 'search',
+  'pencil': 'edit',
+  'hammer.fill': 'build',
+  'antenna.radiowaves.left.and.right': 'cell-tower',
 } as IconMapping;
 
 /**
