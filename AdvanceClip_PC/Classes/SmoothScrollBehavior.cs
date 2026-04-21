@@ -2,17 +2,16 @@ using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Media.Animation;
+using System.Windows.Media;
 
 namespace AdvanceClip.Classes
 {
     /// <summary>
-    /// Attached behavior that provides smooth, fluid scrolling for any ScrollViewer.
-    /// Replaces WPF's default discrete line-by-line scrolling with momentum-based animation.
+    /// Smooth scrolling via frame-based interpolation. No WPF animations — 
+    /// just lerps the scroll offset toward the target each render frame.
     /// </summary>
     public static class SmoothScrollBehavior
     {
-        // Attached property to enable smooth scrolling
         public static readonly DependencyProperty IsEnabledProperty =
             DependencyProperty.RegisterAttached(
                 "IsEnabled",
@@ -23,126 +22,95 @@ namespace AdvanceClip.Classes
         public static bool GetIsEnabled(DependencyObject obj) => (bool)obj.GetValue(IsEnabledProperty);
         public static void SetIsEnabled(DependencyObject obj, bool value) => obj.SetValue(IsEnabledProperty, value);
 
-        // Track target offset for cumulative scrolling
-        private static readonly DependencyProperty TargetVerticalOffsetProperty =
-            DependencyProperty.RegisterAttached(
-                "TargetVerticalOffset",
-                typeof(double),
-                typeof(SmoothScrollBehavior),
-                new PropertyMetadata(0.0));
+        private static readonly DependencyProperty ScrollDataProperty =
+            DependencyProperty.RegisterAttached("ScrollData", typeof(ScrollData), typeof(SmoothScrollBehavior));
 
-        // Animatable proxy property for ScrollViewer.VerticalOffset (which isn't directly animatable)
-        private static readonly DependencyProperty AnimatedVerticalOffsetProperty =
-            DependencyProperty.RegisterAttached(
-                "AnimatedVerticalOffset",
-                typeof(double),
-                typeof(SmoothScrollBehavior),
-                new PropertyMetadata(0.0, OnAnimatedVerticalOffsetChanged));
+        private const double SCROLL_SPEED = 90.0;   // Pixels per wheel notch
+        private const double LERP_FACTOR = 0.15;     // 0-1: lower = smoother/slower, higher = snappier
 
-        private static void OnAnimatedVerticalOffsetChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+        private class ScrollData
         {
-            if (d is ScrollViewer sv)
-            {
-                sv.ScrollToVerticalOffset((double)e.NewValue);
-            }
+            public double TargetOffset;
+            public bool IsScrolling;
         }
-
-        // Scroll sensitivity: pixels per mouse wheel notch (lower = smoother, less per scroll)
-        private const double SCROLL_AMOUNT = 80.0;
-        // Animation duration in milliseconds
-        private const int ANIMATION_DURATION_MS = 300;
 
         private static void OnIsEnabledChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
         {
-            if (d is ScrollViewer scrollViewer)
+            if (d is ScrollViewer sv)
             {
                 if ((bool)e.NewValue)
                 {
-                    scrollViewer.PreviewMouseWheel += OnPreviewMouseWheel;
-                    scrollViewer.ScrollChanged += OnScrollChanged;
+                    sv.PreviewMouseWheel += OnMouseWheel;
+                    sv.Loaded += OnLoaded;
                 }
                 else
                 {
-                    scrollViewer.PreviewMouseWheel -= OnPreviewMouseWheel;
-                    scrollViewer.ScrollChanged -= OnScrollChanged;
+                    sv.PreviewMouseWheel -= OnMouseWheel;
+                    sv.Loaded -= OnLoaded;
                 }
             }
         }
 
-        private static void OnScrollChanged(object sender, ScrollChangedEventArgs e)
+        private static void OnLoaded(object sender, RoutedEventArgs e)
         {
-            // Keep target in sync when scroll changes externally (e.g. content resize)
-            if (sender is ScrollViewer sv && e.ExtentHeightChange != 0)
+            if (sender is ScrollViewer sv)
             {
-                sv.SetValue(TargetVerticalOffsetProperty, sv.VerticalOffset);
+                var data = new ScrollData { TargetOffset = sv.VerticalOffset, IsScrolling = false };
+                sv.SetValue(ScrollDataProperty, data);
             }
         }
 
-        private static void OnPreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        private static void OnMouseWheel(object sender, MouseWheelEventArgs e)
         {
-            if (sender is ScrollViewer scrollViewer)
+            if (sender is ScrollViewer sv)
             {
                 e.Handled = true;
 
-                double currentTarget = (double)scrollViewer.GetValue(TargetVerticalOffsetProperty);
-
-                // If target is way off from actual (e.g. first scroll), sync it
-                if (Math.Abs(currentTarget - scrollViewer.VerticalOffset) > scrollViewer.ViewportHeight)
+                var data = sv.GetValue(ScrollDataProperty) as ScrollData;
+                if (data == null)
                 {
-                    currentTarget = scrollViewer.VerticalOffset;
+                    data = new ScrollData { TargetOffset = sv.VerticalOffset };
+                    sv.SetValue(ScrollDataProperty, data);
                 }
 
-                // Calculate new target: accumulate delta for responsive feel
-                double delta = -e.Delta / 120.0 * SCROLL_AMOUNT;
-                double newTarget = currentTarget + delta;
+                // Accumulate scroll delta
+                double delta = -(e.Delta / 120.0) * SCROLL_SPEED;
+                data.TargetOffset += delta;
 
-                // Clamp to valid range
-                newTarget = Math.Max(0, Math.Min(newTarget, scrollViewer.ScrollableHeight));
+                // Clamp
+                data.TargetOffset = Math.Max(0, Math.Min(data.TargetOffset, sv.ScrollableHeight));
 
-                scrollViewer.SetValue(TargetVerticalOffsetProperty, newTarget);
-
-                // Animate from current position to target
-                var animation = new DoubleAnimation
+                // Start render loop if not already running
+                if (!data.IsScrolling)
                 {
-                    From = scrollViewer.VerticalOffset,
-                    To = newTarget,
-                    Duration = TimeSpan.FromMilliseconds(ANIMATION_DURATION_MS),
-                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
-                    FillBehavior = FillBehavior.Stop
-                };
-
-                // When animation completes, set the final position
-                animation.Completed += (s, _) =>
-                {
-                    scrollViewer.ScrollToVerticalOffset(newTarget);
-                    scrollViewer.SetValue(AnimatedVerticalOffsetProperty, newTarget);
-                };
-
-                scrollViewer.BeginAnimation(AnimatedVerticalOffsetProperty, animation, HandoffBehavior.SnapshotAndReplace);
+                    data.IsScrolling = true;
+                    CompositionTarget.Rendering += CreateHandler(sv, data);
+                }
             }
         }
 
-        /// <summary>
-        /// Apply smooth scrolling globally to all ScrollViewers in the visual tree of a window.
-        /// Call this once from a window's Loaded event.
-        /// </summary>
-        public static void ApplyToAll(DependencyObject root)
+        private static EventHandler CreateHandler(ScrollViewer sv, ScrollData data)
         {
-            ApplyToVisualTree(root);
-        }
-
-        private static void ApplyToVisualTree(DependencyObject parent)
-        {
-            int childCount = System.Windows.Media.VisualTreeHelper.GetChildrenCount(parent);
-            for (int i = 0; i < childCount; i++)
+            EventHandler handler = null;
+            handler = (s, e) =>
             {
-                var child = System.Windows.Media.VisualTreeHelper.GetChild(parent, i);
-                if (child is ScrollViewer sv)
+                double current = sv.VerticalOffset;
+                double diff = data.TargetOffset - current;
+
+                if (Math.Abs(diff) < 0.5)
                 {
-                    SetIsEnabled(sv, true);
+                    // Close enough — snap and stop
+                    sv.ScrollToVerticalOffset(data.TargetOffset);
+                    data.IsScrolling = false;
+                    CompositionTarget.Rendering -= handler;
+                    return;
                 }
-                ApplyToVisualTree(child);
-            }
+
+                // Lerp toward target
+                double next = current + diff * LERP_FACTOR;
+                sv.ScrollToVerticalOffset(next);
+            };
+            return handler;
         }
     }
 }
