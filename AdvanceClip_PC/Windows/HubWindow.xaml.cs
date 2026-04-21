@@ -84,14 +84,7 @@ namespace AdvanceClip.Windows
                 }
             });
 
-            // ═══ AUTO-UPDATE: Check silently on startup after 5s delay ═══
-            _ = Task.Run(async () =>
-            {
-                await Task.Delay(5000); // Let the app fully initialize first
-                Logger.LogAction("AUTO-UPDATE", "Running silent startup update check...");
-                await _updateManager.CheckForUpdateAsync();
-                // If update exists → UpdateCheckCompleted fires → auto-download → auto-install → auto-restart
-            });
+            // No auto-update at startup — manual only via the button
         }
 
         private void DroppedItems_CollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
@@ -758,7 +751,7 @@ namespace AdvanceClip.Windows
                 return;
             }
 
-            // Default: Check for updates (auto-download triggers via UpdateCheckCompleted)
+            // Default: Check for updates (UpdateCheckCompleted event handles the UI)
             UpdateBtn.Content = "Checking...";
             UpdateBtn.IsEnabled = false;
             UpdateProgressPanel.Visibility = Visibility.Visible;
@@ -766,12 +759,7 @@ namespace AdvanceClip.Windows
             LatestVersionText.Text = "";
 
             await _updateManager.CheckForUpdateAsync();
-
-            if (!_updateManager.IsUpdateAvailable)
-            {
-                UpdateBtn.IsEnabled = true;
-                UpdateBtn.Content = "Check Again";
-            }
+            // UpdateCheckCompleted event handler above will update the button
         }
     } // end HubWindow class
 
