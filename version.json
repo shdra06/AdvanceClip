@@ -1,7 +1,7 @@
 {
   "pc_version": "1.7.1",
-  "pc_download": "https://github.com/shdra06/AdvanceClip/releases/download/v1.7.1/AdvanceClip.exe",
-  "android_version": "1.7.1",
-  "android_download": "https://github.com/shdra06/AdvanceClip/releases/download/v1.7.1/AdvanceClip_Mobile.apk",
-  "changelog": "v1.7.1: Performance hotfix — eliminated UI freezes on copy/paste (async buffered logger, non-blocking clipboard handler, async paste retries). Fixed Cloudflare tunnel verification (5 attempts, 12s timeout). Removed auto-update at startup (manual only). Fixed Check for Updates button race condition. Reduced heartbeat/log spam. Android: Fixed missing icons, PDFs first, screenshot detection, blank box cleanup, modular refactor."
+  "pc_download": "https://github.com/shdra06/AdvanceClip/releases/download/v1.7.2/AdvanceClip.exe",
+  "android_version": "1.7.2",
+  "android_download": "https://github.com/shdra06/AdvanceClip/releases/download/v1.7.2/AdvanceClip_Mobile.apk",
+  "changelog": "v1.7.2: Fixed device click crash (4 missing icons), simplified LAN connection pipeline, added chunked uploads for 1GB+ files over Cloudflare, compact category tabs, null URL guard on file uploads."
 }
