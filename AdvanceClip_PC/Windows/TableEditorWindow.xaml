@@ -3,46 +3,67 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:mica="clr-namespace:MicaWPF.Controls;assembly=MicaWPF"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-        Title="AI Table Extractor Review" Height="600" Width="900" 
-        WindowStartupLocation="CenterScreen">
+        Title="Table Extractor" Height="600" Width="950" MinWidth="500" MinHeight="400"
+        WindowStartupLocation="CenterScreen"
+        SystemBackdropType="Mica" Background="Transparent"
+        SizeChanged="Window_SizeChanged">
     <Grid Margin="24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <TextBlock Grid.Row="0" Text="Hybrid Advanced Table Review" FontSize="28" FontWeight="SemiBold" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorPrimary}" />
-        <TextBlock Grid.Row="1" Text="AI Confidence heat map active. Review yellow/orange cells for optical inconsistencies before exporting into Microsoft Word CF_HTML targets." FontSize="14" Opacity="0.7" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorSecondary}" Margin="0,4,0,24" TextWrapping="Wrap" />
+        <TextBlock Grid.Row="0" Text="Table Extractor" FontSize="24" FontWeight="SemiBold" 
+                   Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorPrimary}" />
+        <TextBlock Grid.Row="1" Text="Extracted table data. Edit cells directly, then export in your preferred format." 
+                   FontSize="13" Opacity="0.7" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorSecondary}" 
+                   Margin="0,4,0,16" TextWrapping="Wrap" />
 
-        <Border Grid.Row="2" Background="#0CFFFFFF" BorderBrush="#12FFFFFF" BorderThickness="1" CornerRadius="8" Padding="16">
+        <!-- Toolbar -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,12">
+            <ui:Button Content="Copy as Word Table" Appearance="Primary" Padding="14,8" Click="ExportHtml_Click" Margin="0,0,8,0">
+                <ui:Button.Icon><ui:SymbolIcon Symbol="Table24" /></ui:Button.Icon>
+            </ui:Button>
+            <ui:Button Content="Copy as CSV" Appearance="Secondary" Padding="14,8" Click="ExportCsv_Click" Margin="0,0,8,0">
+                <ui:Button.Icon><ui:SymbolIcon Symbol="DocumentText24" /></ui:Button.Icon>
+            </ui:Button>
+            <ui:Button Content="Copy as TSV" Appearance="Transparent" Padding="14,8" Click="ExportTsv_Click" Margin="0,0,8,0"/>
+            <TextBlock Text="|" Opacity="0.2" VerticalAlignment="Center" Margin="4,0"/>
+            <ui:Button Content="Add Row" Appearance="Transparent" Padding="10,6" Click="AddRow_Click" Margin="4,0"/>
+            <ui:Button Content="Add Column" Appearance="Transparent" Padding="10,6" Click="AddCol_Click" Margin="0,0,4,0"/>
+            <ui:Button Content="Delete Row" Appearance="Transparent" Padding="10,6" Click="DelRow_Click" Foreground="#EF4444"/>
+            <ui:Button Content="Delete Column" Appearance="Transparent" Padding="10,6" Click="DelCol_Click" Foreground="#EF4444"/>
+        </StackPanel>
+
+        <!-- Table container -->
+        <Border Grid.Row="3" Background="#0CFFFFFF" BorderBrush="#12FFFFFF" BorderThickness="1" CornerRadius="8" Padding="0">
             <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-                <Grid x:Name="MatrixContainer">
-                    <!-- The engine natively drops the Grid array here -->
+                <Grid x:Name="TableGrid">
+                    <!-- Dynamically built -->
                 </Grid>
             </ScrollViewer>
         </Border>
 
-        <Grid Grid.Row="3" Margin="0,24,0,0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
-            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <Ellipse Width="12" Height="12" Fill="#3310B981" Stroke="#10B981" StrokeThickness="1" Margin="0,0,8,0"/>
-                <TextBlock Text="High Confidence" Margin="0,0,16,0" Opacity="0.8"/>
-                <Ellipse Width="12" Height="12" Fill="#33EAB308" Stroke="#EAB308" StrokeThickness="1" Margin="0,0,8,0"/>
-                <TextBlock Text="Medium Certainty" Margin="0,0,16,0" Opacity="0.8"/>
-                <Ellipse Width="12" Height="12" Fill="#33EF4444" Stroke="#EF4444" StrokeThickness="1" Margin="0,0,8,0"/>
-                <TextBlock Text="Low Confidence" Opacity="0.8"/>
-            </StackPanel>
+        <!-- Info bar -->
+        <StackPanel Grid.Row="4" Orientation="Horizontal" Margin="0,12,0,0">
+            <TextBlock x:Name="InfoText" Text="" FontSize="12" Opacity="0.6" 
+                       Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorTertiary}"/>
+        </StackPanel>
 
-            <ui:Button Grid.Column="1" Content="Confirm &amp; Export Native Word Table" Appearance="Primary" Padding="24,12" Click="Export_Click">
-                <ui:Button.Icon>
-                    <ui:SymbolIcon Symbol="Table24" />
-                </ui:Button.Icon>
-            </ui:Button>
+        <!-- Confidence legend -->
+        <Grid Grid.Row="5" Margin="0,8,0,0">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <Ellipse Width="10" Height="10" Fill="#3310B981" Stroke="#10B981" StrokeThickness="1" Margin="0,0,6,0"/>
+                <TextBlock Text="High" Margin="0,0,12,0" Opacity="0.7" FontSize="11"/>
+                <Ellipse Width="10" Height="10" Fill="#33EAB308" Stroke="#EAB308" StrokeThickness="1" Margin="0,0,6,0"/>
+                <TextBlock Text="Medium" Margin="0,0,12,0" Opacity="0.7" FontSize="11"/>
+                <Ellipse Width="10" Height="10" Fill="#33EF4444" Stroke="#EF4444" StrokeThickness="1" Margin="0,0,6,0"/>
+                <TextBlock Text="Low" Opacity="0.7" FontSize="11"/>
+            </StackPanel>
         </Grid>
     </Grid>
 </mica:MicaWindow>

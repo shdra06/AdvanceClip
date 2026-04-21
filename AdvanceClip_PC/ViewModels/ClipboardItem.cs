@@ -868,13 +868,19 @@ namespace AdvanceClip.ViewModels
                         var result = reader.Decode(bmp);
                         if (result != null && !string.IsNullOrWhiteSpace(result.Text)) {
                             System.Windows.Application.Current.Dispatcher.InvokeAsync(() => {
+                                // Auto-copy scanned content to clipboard
+                                MainWindow._isWritingClipboard = true;
+                                try { System.Windows.Clipboard.SetText(result.Text); } 
+                                finally { MainWindow._isWritingClipboard = false; }
+
                                 this.ItemType = ClipboardItemType.QRCode;
                                 this.RawContent = result.Text;
                                 this.EvaluateSmartActions();
                                 this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("ItemType"));
                                 this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("RawContent"));
                                 this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("IsImagePreview"));
-                                AdvanceClip.Windows.ToastWindow.ShowToast("QR Code Extracted! 🔍");
+                                string preview = result.Text.Length > 50 ? result.Text.Substring(0, 50) + "..." : result.Text;
+                                AdvanceClip.Windows.ToastWindow.ShowToast($"QR Copied! 🔍 {preview}");
                             });
                         }
                     }

@@ -5,7 +5,7 @@
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         Title="PDF Merge" Height="550" Width="700"
         WindowStartupLocation="CenterScreen"
-        SystemBackdropType="Mica" Background="Transparent" Topmost="True">
+        SystemBackdropType="Mica" Background="Transparent" Topmost="False">
     
     <WindowChrome.WindowChrome>
         <WindowChrome CaptionHeight="32" ResizeBorderThickness="6" CornerRadius="8" GlassFrameThickness="-1" />
@@ -13,6 +13,7 @@
 
     <Grid Margin="16,8,16,16">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -27,12 +28,24 @@
 
         <TextBlock Grid.Row="1" Text="Arrange PDFs in merge order. Use 'Select Pages' to pick specific pages from each file." FontSize="13" Opacity="0.7" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorSecondary}" Margin="0,0,0,8" TextWrapping="Wrap" />
 
+        <!-- Output filename -->
+        <Grid Grid.Row="2" Margin="0,0,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="Output name:" FontSize="12" VerticalAlignment="Center" Margin="0,0,8,0" Opacity="0.6"
+                       Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorSecondary}"/>
+            <TextBox x:Name="OutputNameBox" Grid.Column="1" FontSize="13" Padding="8,6" 
+                     Background="#08FFFFFF" BorderBrush="#18FFFFFF" VerticalContentAlignment="Center"/>
+        </Grid>
+
         <!-- Summary bar -->
-        <Border Grid.Row="2" Background="#10FFFFFF" CornerRadius="6" Padding="12,8" Margin="0,0,0,8">
+        <Border Grid.Row="3" Background="#10FFFFFF" CornerRadius="6" Padding="12,8" Margin="0,0,0,8">
             <TextBlock x:Name="SummaryText" Text="" FontSize="12" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorSecondary}"/>
         </Border>
 
-        <Border Grid.Row="3" Background="#08FFFFFF" BorderBrush="#12FFFFFF" BorderThickness="1" CornerRadius="8" Padding="2">
+        <Border Grid.Row="4" Background="#08FFFFFF" BorderBrush="#12FFFFFF" BorderThickness="1" CornerRadius="8" Padding="2">
             <ListBox x:Name="PdfItemsList" Background="Transparent" BorderThickness="0" Margin="4"
                      ScrollViewer.VerticalScrollBarVisibility="Auto" AllowDrop="True">
                 <ListBox.ItemContainerStyle>
@@ -121,10 +134,13 @@
             </ListBox>
         </Border>
 
-        <Grid Grid.Row="4" Margin="0,16,0,0">
+        <Grid Grid.Row="5" Margin="0,16,0,0">
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
-                <ui:Button Content="Add PDF" Appearance="Transparent" Padding="12,8" Click="AddPdf_Click">
+                <ui:Button Content="Add Files" Appearance="Transparent" Padding="12,8" Click="AddPdf_Click" ToolTip="Add PDF or Word files">
                     <ui:Button.Icon><ui:SymbolIcon Symbol="Add24" /></ui:Button.Icon>
+                </ui:Button>
+                <ui:Button Content="Reverse" Appearance="Transparent" Padding="12,8" Click="Reverse_Click" ToolTip="Reverse file order">
+                    <ui:Button.Icon><ui:SymbolIcon Symbol="ArrowSort24" /></ui:Button.Icon>
                 </ui:Button>
             </StackPanel>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">

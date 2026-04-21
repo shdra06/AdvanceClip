@@ -26,6 +26,7 @@ namespace AdvanceClip.Windows
                 pdfsToMerge.Select(p => new PdfMergeItem(p.FilePath))
             );
             PdfItemsList.ItemsSource = MergeItems;
+            OutputNameBox.Text = $"Merged_{DateTime.Now:yyyyMMdd_HHmmss}";
             UpdateSummary();
         }
 
@@ -77,6 +78,13 @@ namespace AdvanceClip.Windows
             }
         }
 
+        private void Reverse_Click(object sender, RoutedEventArgs e)
+        {
+            var reversed = MergeItems.Reverse().ToList();
+            MergeItems.Clear();
+            foreach (var item in reversed) MergeItems.Add(item);
+        }
+
         private void SelectPages_Click(object sender, RoutedEventArgs e)
         {
             if (sender is FrameworkElement fe && fe.Tag is PdfMergeItem item)
@@ -101,9 +109,9 @@ namespace AdvanceClip.Windows
         {
             var dlg = new OpenFileDialog
             {
-                Filter = "PDF Files|*.pdf",
+                Filter = "PDF & Word Files|*.pdf;*.docx;*.doc|PDF Files|*.pdf|Word Files|*.docx;*.doc",
                 Multiselect = true,
-                Title = "Add PDFs to Merge"
+                Title = "Add Files to Merge"
             };
 
             if (dlg.ShowDialog() == true)
@@ -135,10 +143,12 @@ namespace AdvanceClip.Windows
             MergeBtn.IsEnabled = false;
             MergeBtn.Content = "Merging...";
 
-            string outputFileName = $"Merged_PDF_{DateTime.Now:yyyyMMdd_HHmmss}.pdf";
+            string userFileName = OutputNameBox.Text.Trim();
+            if (string.IsNullOrEmpty(userFileName)) userFileName = $"Merged_{DateTime.Now:yyyyMMdd_HHmmss}";
+            if (!userFileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) userFileName += ".pdf";
             string mergeDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "AdvanceClip", "Merged");
             Directory.CreateDirectory(mergeDir);
-            string outputPath = Path.Combine(mergeDir, outputFileName);
+            string outputPath = Path.Combine(mergeDir, userFileName);
 
             bool success = await System.Threading.Tasks.Task.Run(() =>
             {
@@ -156,7 +166,7 @@ namespace AdvanceClip.Windows
                                 var pageIndices = item.GetSelectedPageIndices();
                                 if (pageIndices.Count == 0) continue;
 
-                                using (PdfDocument inputDocument = PdfReader.Open(item.FilePath, PdfDocumentOpenMode.Import))
+                                using (PdfDocument inputDocument = PdfReader.Open(item.MergePath, PdfDocumentOpenMode.Import))
                                 {
                                     foreach (int idx in pageIndices)
                                     {

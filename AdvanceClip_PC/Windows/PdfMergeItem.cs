@@ -43,11 +43,19 @@ namespace AdvanceClip.Windows
         private bool[] _pageSelected;
         public bool[] PageSelected => _pageSelected;
 
+        public bool IsWordFile { get; private set; }
+        // The actual PDF path used for merging (may be a temp-converted file for Word docs)
+        public string MergePath => _convertedPdfPath ?? FilePath;
+        private string _convertedPdfPath;
+
         public PdfMergeItem(string filePath)
         {
             FilePath = filePath;
             FileName = Path.GetFileName(filePath);
             
+            string ext = Path.GetExtension(filePath).ToLower();
+            IsWordFile = ext == ".docx" || ext == ".doc";
+
             try
             {
                 var fi = new FileInfo(filePath);
@@ -64,13 +72,22 @@ namespace AdvanceClip.Windows
         {
             try
             {
-                using (var doc = PdfReader.Open(FilePath, PdfDocumentOpenMode.Import))
+                string pdfPath = FilePath;
+
+                // Convert Word files to PDF first
+                if (IsWordFile)
+                {
+                    pdfPath = ConvertWordToPdf(FilePath);
+                    _convertedPdfPath = pdfPath;
+                }
+
+                using (var doc = PdfReader.Open(pdfPath, PdfDocumentOpenMode.Import))
                 {
                     TotalPages = doc.PageCount;
                 }
                 _pageSelected = new bool[TotalPages];
-                for (int i = 0; i < TotalPages; i++) _pageSelected[i] = true; // All selected by default
-                _selectedPages = null; // null = all
+                for (int i = 0; i < TotalPages; i++) _pageSelected[i] = true;
+                _selectedPages = null;
                 Error = null;
             }
             catch (Exception ex)
@@ -79,6 +96,35 @@ namespace AdvanceClip.Windows
                 _pageSelected = new bool[0];
                 Error = ex.Message.Length > 60 ? ex.Message.Substring(0, 60) + "..." : ex.Message;
             }
+        }
+
+        private static string ConvertWordToPdf(string wordPath)
+        {
+            string tempPdf = Path.Combine(Path.GetTempPath(), "AdvanceClip_Merge", Path.GetFileNameWithoutExtension(wordPath) + ".pdf");
+            Directory.CreateDirectory(Path.GetDirectoryName(tempPdf));
+
+            dynamic wordApp = null;
+            dynamic doc = null;
+            try
+            {
+                var wordType = Type.GetTypeFromProgID("Word.Application");
+                if (wordType == null) throw new Exception("Microsoft Word not installed");
+                
+                wordApp = Activator.CreateInstance(wordType);
+                wordApp.Visible = false;
+                wordApp.DisplayAlerts = 0; // wdAlertsNone
+                
+                doc = wordApp.Documents.Open(wordPath, ReadOnly: true);
+                doc.SaveAs2(tempPdf, 17); // wdFormatPDF = 17
+                doc.Close(false);
+                doc = null;
+            }
+            finally
+            {
+                if (doc != null) try { doc.Close(false); } catch { }
+                if (wordApp != null) try { wordApp.Quit(false); } catch { }
+            }
+            return tempPdf;
         }
 
         /// <summary>

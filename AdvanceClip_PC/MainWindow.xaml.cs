@@ -655,13 +655,44 @@ namespace AdvanceClip
             else return FindVisualParent<T>(parentObject);
         }
 
+        // Smooth scroll state for main clipboard list
+        private double _scrollTarget = -1;
+        private bool _scrollAnimating = false;
+
         private void ShelfListView_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
         {
             var sv = FindVisualChild<System.Windows.Controls.ScrollViewer>((DependencyObject)sender);
             if (sv != null)
             {
-                sv.ScrollToVerticalOffset(sv.VerticalOffset - (e.Delta * 0.5));
                 e.Handled = true;
+
+                // Initialize target on first use
+                if (_scrollTarget < 0) _scrollTarget = sv.VerticalOffset;
+
+                // Accumulate scroll delta — 1.2x multiplier for responsive feel
+                _scrollTarget -= e.Delta * 1.2;
+                _scrollTarget = Math.Max(0, Math.Min(_scrollTarget, sv.ScrollableHeight));
+
+                // Start smooth animation loop if not running
+                if (!_scrollAnimating)
+                {
+                    _scrollAnimating = true;
+                    System.Windows.Media.CompositionTarget.Rendering += (s2, e2) =>
+                    {
+                        double current = sv.VerticalOffset;
+                        double diff = _scrollTarget - current;
+
+                        if (Math.Abs(diff) < 0.5)
+                        {
+                            sv.ScrollToVerticalOffset(_scrollTarget);
+                            _scrollAnimating = false;
+                            return;
+                        }
+
+                        // Lerp for smooth motion
+                        sv.ScrollToVerticalOffset(current + diff * 0.18);
+                    };
+                }
             }
         }
 
