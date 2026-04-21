@@ -25,7 +25,7 @@ namespace AdvanceClip.Classes
         // Time-windowed dedup: track fingerprint → last push time (10s cooldown)
         private static readonly Dictionary<string, long> _recentPushTimes = new();
         private const int DEDUP_COOLDOWN_MS = 10_000; // 10 seconds — same content within this window is skipped
-        private const int AUTO_DELETE_TEXT_MS = 90_000; // 90 seconds for text items
+        private const int AUTO_DELETE_TEXT_MS = 5 * 60_000; // 5 minutes — matches backlog catch-up window
         private const int AUTO_DELETE_FILE_MS = 24 * 60 * 60_000; // 24 hours for file items (large files need time to download)
 
         public static async Task PushToGlobalSync(ClipboardItem item)

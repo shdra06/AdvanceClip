@@ -32,7 +32,8 @@ namespace AdvanceClip.Classes
             StopPolling();
 
             _cts = new CancellationTokenSource();
-            _lastProcessedTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            // Backlog: process items from the last 5 minutes (catch-up for devices that connect late)
+            _lastProcessedTimestamp = DateTimeOffset.UtcNow.AddMinutes(-5).ToUnixTimeMilliseconds();
             _processedIds.Clear();
 
             Logger.LogAction("FIREBASE LISTENER", "Starting SSE real-time stream + forced sync poller.");
