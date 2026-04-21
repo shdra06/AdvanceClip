@@ -1,5 +1,5 @@
 {
-  "pc_version": "1.5.0",
-  "pc_download": "https://github.com/shdra06/AdvanceClip/releases/download/v1.5.0/AdvanceClip.exe",
-  "changelog": "v1.5.0: Robust cross-network file sync (5-step URL resolution), removed auth barrier on downloads, 10min timeout for large files, Open button for all file types, PDF-to-Word conversion, re-check update button."
+  "pc_version": "1.5.1",
+  "pc_download": "https://github.com/shdra06/AdvanceClip/releases/download/v1.5.1/AdvanceClip.exe",
+  "changelog": "v1.5.1: Fixed thread-safety crash in DocumentSniffer, fixed auto-update self-replace for single-file apps, robust cross-network file URL resolution."
 }

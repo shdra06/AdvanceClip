@@ -12,9 +12,9 @@
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <ApplicationIcon>Resources\AdvanceClipLogo.ico</ApplicationIcon>
     <NoWarn>CS4014;CS0168;CS0162;CS0414;CS8632;CS0169</NoWarn>
-    <Version>1.5.0</Version>
-    <AssemblyVersion>1.5.0</AssemblyVersion>
-    <FileVersion>1.5.0</FileVersion>
+    <Version>1.5.1</Version>
+    <AssemblyVersion>1.5.1</AssemblyVersion>
+    <FileVersion>1.5.1</FileVersion>
   </PropertyGroup>
 
   <!-- Prevent process crash from unobserved async Task exceptions (WebRTC I/O aborts) -->

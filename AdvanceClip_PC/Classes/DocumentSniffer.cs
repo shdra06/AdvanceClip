@@ -11,7 +11,7 @@ namespace AdvanceClip.Classes
     {
         private List<FileSystemWatcher> _watchers = new List<FileSystemWatcher>();
         private DropShelfViewModel _viewModel;
-        private HashSet<string> _recentlyTriggeredFiles = new HashSet<string>();
+        private System.Collections.Concurrent.ConcurrentDictionary<string, byte> _recentlyTriggeredFiles = new System.Collections.Concurrent.ConcurrentDictionary<string, byte>();
 
         public DocumentSniffer(DropShelfViewModel viewModel)
         {
@@ -91,9 +91,9 @@ namespace AdvanceClip.Classes
             if (fileName.StartsWith("~$")) return;
 
             // Debouncing fast duplicate events from web browsers downloading chunks
-            if (_recentlyTriggeredFiles.Contains(e.FullPath)) return;
+            if (_recentlyTriggeredFiles.ContainsKey(e.FullPath)) return;
             
-            _recentlyTriggeredFiles.Add(e.FullPath);
+            _recentlyTriggeredFiles.TryAdd(e.FullPath, 0);
             
             // Wait for file lock release
             await Task.Delay(2000);
@@ -139,12 +139,12 @@ namespace AdvanceClip.Classes
                 }
                 catch 
                 {
-                    _recentlyTriggeredFiles.Remove(e.FullPath);
+                    _recentlyTriggeredFiles.TryRemove(e.FullPath, out _);
                 }
             }
 
             await Task.Delay(13000);
-            _recentlyTriggeredFiles.Remove(e.FullPath);
+            _recentlyTriggeredFiles.TryRemove(e.FullPath, out _);
         }
     }
 }
