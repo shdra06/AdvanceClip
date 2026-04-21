@@ -491,7 +491,7 @@ namespace AdvanceClip.ViewModels
                                 bmp.CacheOption = BitmapCacheOption.OnLoad;
                                 bmp.EndInit();
                                 bmp.Freeze();
-                                Application.Current.Dispatcher.Invoke(() => item.Icon = bmp);
+                                Application.Current.Dispatcher.InvokeAsync(() => item.Icon = bmp);
                             }
                             catch { } 
                         });
@@ -503,7 +503,7 @@ namespace AdvanceClip.ViewModels
                             var icon = GetIcon(file);
                             if (icon != null)
                             {
-                                Application.Current.Dispatcher.Invoke(() => item.Icon = icon);
+                                Application.Current.Dispatcher.InvokeAsync(() => item.Icon = icon);
                             }
                         });
                     }

@@ -231,7 +231,7 @@ public partial class App : Application
             // Provide immediate feedback that the service captured the network without waiting for graphics
             AdvanceClip.Windows.ToastWindow.ShowToast("Service online");
 
-            System.IO.File.AppendAllText("bootlog.txt", "1. Startup Initialized\n");
+
             // Offload the massive WPF XAML layout rasterization payload directly to the background!
             // This drops AdvanceClip's actual active startup boot time from ~2000ms straight to < 10ms!
             Application.Current.Dispatcher.InvokeAsync(async () => 
@@ -268,6 +268,7 @@ public partial class App : Application
         }
         catch { }
         
+        AdvanceClip.Classes.Logger.Shutdown();
         base.OnExit(e);
     }
 

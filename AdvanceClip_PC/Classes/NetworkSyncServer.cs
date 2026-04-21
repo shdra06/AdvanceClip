@@ -146,7 +146,7 @@ namespace AdvanceClip.Classes
 
                 // Heartbeat: keep this PC visible in Firebase active_devices
                 // Android filters out devices with Timestamp older than 2 minutes
-                _heartbeatTimer = new System.Timers.Timer(30_000); // Every 30 seconds
+                _heartbeatTimer = new System.Timers.Timer(60_000); // Every 60 seconds
                 _heartbeatTimer.Elapsed += (s, e) =>
                 {
                     _ = FirebaseSyncManager.PushTunnelUrl(GlobalUrl ?? ServerUrl, true, ServerUrl);

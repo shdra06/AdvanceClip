@@ -82,7 +82,9 @@ namespace AdvanceClip.Classes
                         try
                         {
                             if (string.IsNullOrEmpty(e.Data)) return;
-                            Logger.LogAction("CF_STDERR", e.Data);
+                            // Only log errors/warnings, not verbose info lines
+                            bool isImportant = e.Data.Contains("ERR") || e.Data.Contains("WRN") || e.Data.Contains("trycloudflare.com") || e.Data.Contains("failed") || e.Data.Contains("error");
+                            if (isImportant) Logger.LogAction("CF_STDERR", e.Data);
                             Match match = Regex.Match(e.Data, @"https://([a-zA-Z0-9-]+)\.trycloudflare\.com");
                             if (match.Success)
                             {
