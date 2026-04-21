@@ -1,5 +1,5 @@
 {
-  "pc_version": "1.5.1",
-  "pc_download": "https://github.com/shdra06/AdvanceClip/releases/download/v1.5.1/AdvanceClip.exe",
-  "changelog": "v1.5.1: Fixed thread-safety crash in DocumentSniffer, fixed auto-update self-replace for single-file apps, robust cross-network file URL resolution."
+  "pc_version": "1.6.0",
+  "pc_download": "https://github.com/shdra06/AdvanceClip/releases/download/v1.6.0/AdvanceClip.exe",
+  "changelog": "v1.6.0: Auto QUIC→HTTP/2 protocol fallback for restricted networks, Cloudflare tunnel self-ping verification, 3-attempt download retry with backoff, thread-safe DocumentSniffer, auto-update self-replace fix."
 }
