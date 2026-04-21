@@ -1,5 +1,5 @@
 {
-  "pc_version": "1.4.0",
-  "pc_download": "https://github.com/shdra06/AdvanceClip/releases/download/v1.4.0/AdvanceClip.exe",
-  "changelog": "v1.4.0: Fixed cross-network file downloads (auth bypass on /download endpoint), proper file type classification on receiver (PDF/Word/Video/Audio icons), Open button for all file types, PDF-to-Word conversion, re-check update button, accurate LAN vs Cloud device detection."
+  "pc_version": "1.5.0",
+  "pc_download": "https://github.com/shdra06/AdvanceClip/releases/download/v1.5.0/AdvanceClip.exe",
+  "changelog": "v1.5.0: Robust cross-network file sync (5-step URL resolution), removed auth barrier on downloads, 10min timeout for large files, Open button for all file types, PDF-to-Word conversion, re-check update button."
 }
