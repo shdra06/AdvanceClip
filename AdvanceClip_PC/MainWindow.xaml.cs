@@ -309,6 +309,28 @@ namespace AdvanceClip
         private DateTime _spawnTime = DateTime.MinValue;
         private IntPtr _previousForegroundWindow = IntPtr.Zero;
         internal static bool _isWritingClipboard = false;
+        private static System.Threading.Timer _clipboardWriteResetTimer;
+        
+        /// <summary>
+        /// Sets _isWritingClipboard = true with automatic 2-second safety reset.
+        /// Prevents the flag from getting stuck true if an exception prevents the finally block.
+        /// </summary>
+        internal static void SetWritingClipboard(bool value)
+        {
+            _isWritingClipboard = value;
+            _clipboardWriteResetTimer?.Dispose();
+            if (value)
+            {
+                _clipboardWriteResetTimer = new System.Threading.Timer(_ =>
+                {
+                    if (_isWritingClipboard)
+                    {
+                        Classes.Logger.LogAction("CLIPBOARD", "⚠️ _isWritingClipboard was stuck true — auto-reset after 2s safety timeout");
+                        _isWritingClipboard = false;
+                    }
+                }, null, 2000, System.Threading.Timeout.Infinite);
+            }
+        }
 
         private IntPtr GetTargetForegroundWindow()
         {

@@ -409,6 +409,44 @@
                                     </ui:Button.Style>
                                 </ui:Button>
 
+                                <!-- Show in Explorer button for file-based items -->
+                                <ui:Button Focusable="False" Appearance="Secondary" Foreground="#FBBF24" ToolTip="Show in Explorer" Margin="0,0,6,0"
+                                           Command="{Binding DataContext.OpenFileLocationCommand, ElementName=ShelfListView}"
+                                           CommandParameter="{Binding}">
+                                    <ui:Button.Icon><ui:SymbolIcon Symbol="FolderOpen24" Filled="True" /></ui:Button.Icon>
+                                    <ui:Button.Style>
+                                        <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding ItemType}" Value="Document">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding ItemType}" Value="Pdf">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding ItemType}" Value="Archive">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding ItemType}" Value="Image">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding ItemType}" Value="Video">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding ItemType}" Value="Audio">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding ItemType}" Value="Presentation">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding ItemType}" Value="File">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </ui:Button.Style>
+                                </ui:Button>
+
                                 <ui:Button Focusable="False" Appearance="Secondary" Foreground="#F472B6" PreviewMouseLeftButtonDown="QuickLookSpecific_Click" ToolTip="Quick Look Media Preview" Margin="0,0,6,0">
                                     <ui:Button.Icon><ui:SymbolIcon Symbol="Maximize24" Filled="True" /></ui:Button.Icon>
                                     <ui:Button.Style>
