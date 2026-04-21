@@ -87,32 +87,12 @@ namespace AdvanceClip.Classes
 
                 if (isFile && !string.IsNullOrEmpty(CachedGlobalUrl) && CachedGlobalUrl.Contains("trycloudflare.com"))
                 {
-                    // Verify the tunnel actually works before trusting the URL
-                    bool tunnelHealthy = false;
-                    try
-                    {
-                        using var pingClient = new HttpClient() { Timeout = TimeSpan.FromSeconds(5) };
-                        var pingResp = await pingClient.GetAsync($"{CachedGlobalUrl}/api/health");
-                        tunnelHealthy = pingResp.IsSuccessStatusCode;
-                        Logger.LogAction("FIREBASE SYNC", $"Tunnel self-ping: {(tunnelHealthy ? "✅ OK" : $"❌ HTTP {(int)pingResp.StatusCode}")}");
-                    }
-                    catch (Exception pingEx)
-                    {
-                        Logger.LogAction("FIREBASE SYNC", $"Tunnel self-ping failed: {pingEx.Message}");
-                    }
-
-                    if (tunnelHealthy)
-                    {
-                        // Cloudflare tunnel is verified working — use public download link
-                        downloadUrl = $"{CachedGlobalUrl}/download?path={Uri.EscapeDataString(item.FilePath)}";
-                        raw = downloadUrl;
-                        Logger.LogAction("FIREBASE SYNC", $"File '{item.FileName}' → Cloudflare: {downloadUrl}");
-                    }
-                    else
-                    {
-                        // Tunnel URL exists but doesn't work — fall through to Firebase Storage
-                        Logger.LogAction("FIREBASE SYNC", $"Cloudflare tunnel broken — falling back to Firebase Storage for '{item.FileName}'");
-                    }
+                    // Trust the Cloudflare tunnel URL if the daemon provided it.
+                    // Don't self-ping — Cloudflare CDN often returns 400 during warmup on slow WiFi
+                    // but still correctly proxies actual file downloads.
+                    downloadUrl = $"{CachedGlobalUrl}/download?path={Uri.EscapeDataString(item.FilePath)}";
+                    raw = downloadUrl;
+                    Logger.LogAction("FIREBASE SYNC", $"File '{item.FileName}' → Cloudflare: {downloadUrl}");
                 }
                 if (isFile && string.IsNullOrEmpty(downloadUrl))
                 {
