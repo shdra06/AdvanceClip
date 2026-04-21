@@ -3,7 +3,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:mica="clr-namespace:MicaWPF.Styles;assembly=MicaWPF"
-             xmlns:local="clr-namespace:AdvanceClip">
+             xmlns:local="clr-namespace:AdvanceClip"
+             xmlns:classes="clr-namespace:AdvanceClip.Classes">
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
@@ -135,6 +136,13 @@
                         </Setter>
                     </Trigger>
                 </Style.Triggers>
+            </Style>
+
+            <!-- Global Smooth Scrolling — applies to ALL ScrollViewers automatically -->
+            <Style TargetType="ScrollViewer">
+                <Setter Property="classes:SmoothScrollBehavior.IsEnabled" Value="True"/>
+                <Setter Property="CanContentScroll" Value="False"/>
+                <Setter Property="PanningMode" Value="VerticalOnly"/>
             </Style>
 
         </ResourceDictionary>
