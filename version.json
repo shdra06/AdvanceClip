@@ -1,7 +1,7 @@
 {
-  "pc_version": "1.7.1",
-  "pc_download": "https://github.com/shdra06/AdvanceClip/releases/download/v1.7.2/AdvanceClip.exe",
-  "android_version": "1.7.2",
-  "android_download": "https://github.com/shdra06/AdvanceClip/releases/download/v1.7.2/AdvanceClip_Mobile.apk",
-  "changelog": "v1.7.2: Fixed device click crash (4 missing icons), simplified LAN connection pipeline, added chunked uploads for 1GB+ files over Cloudflare, compact category tabs, null URL guard on file uploads."
+  "pc_version": "1.8.0",
+  "pc_download": "https://github.com/shdra06/AdvanceClip/releases/download/v1.8.0/AdvanceClip.exe",
+  "android_version": "1.8.0",
+  "android_download": "https://github.com/shdra06/AdvanceClip/releases/download/v1.8.0/AdvanceClip_Mobile.apk",
+  "changelog": "v1.8.0: Fixed Cloudflare tunnel verification (was pinging non-existent /ping endpoint), public /api/health endpoint, no more broken LAN URLs in Firebase, Show in Explorer button for files, screenshot detection via Screenshots folder, clipboard safety auto-reset, chunked uploads for large files."
 }
