@@ -848,7 +848,7 @@ namespace AdvanceClip
                             _isWritingClipboard = true;
                             for(int retry=0; retry<5; retry++) {
                                 try { System.Windows.Clipboard.SetDataObject(dataObj, true); break; }
-                                catch { System.Threading.Thread.Sleep(20); }
+                                catch { await System.Threading.Tasks.Task.Delay(20); }
                             }
                             _isWritingClipboard = false;
                         }
@@ -857,7 +857,7 @@ namespace AdvanceClip
                             _isWritingClipboard = true;
                             for(int retry=0; retry<5; retry++) {
                                 try { System.Windows.Clipboard.SetText(clipboardObj.RawContent); break; }
-                                catch { System.Threading.Thread.Sleep(20); }
+                                catch { await System.Threading.Tasks.Task.Delay(20); }
                             }
                             _isWritingClipboard = false;
                         }
