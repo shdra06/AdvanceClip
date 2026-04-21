@@ -141,13 +141,17 @@ namespace AdvanceClip.Classes
                     if (tunnelUrlReceived)
                     {
                         // Verify the tunnel actually proxies traffic by self-pinging
+                        // Give tunnel extra time to fully establish the proxy before first ping
+                        await Task.Delay(3000);
+                        
                         bool verified = false;
-                        using var verifyClient = new HttpClient() { Timeout = TimeSpan.FromSeconds(8) };
-                        for (int v = 0; v < 3; v++)
+                        using var verifyClient = new HttpClient() { Timeout = TimeSpan.FromSeconds(12) };
+                        for (int v = 0; v < 5; v++)
                         {
                             try
                             {
-                                await Task.Delay(1000); // Give tunnel a moment to fully establish
+                                await Task.Delay(2000); // Wait between pings
+                                Logger.LogAction("CLOUDFLARE", $"Verifying tunnel (attempt {v + 1}/5)...");
                                 var pingResp = await verifyClient.GetAsync($"{GlobalUrl}/ping");
                                 if (pingResp.IsSuccessStatusCode)
                                 {
@@ -155,11 +159,11 @@ namespace AdvanceClip.Classes
                                     Logger.LogAction("CLOUDFLARE", $"✅ Tunnel verified working: {GlobalUrl}");
                                     break;
                                 }
-                                Logger.LogAction("CLOUDFLARE", $"Tunnel ping attempt {v + 1}/3: HTTP {(int)pingResp.StatusCode}");
+                                Logger.LogAction("CLOUDFLARE", $"Tunnel ping attempt {v + 1}/5: HTTP {(int)pingResp.StatusCode}");
                             }
                             catch (Exception pingEx)
                             {
-                                Logger.LogAction("CLOUDFLARE", $"Tunnel ping attempt {v + 1}/3 failed: {pingEx.Message}");
+                                Logger.LogAction("CLOUDFLARE", $"Tunnel ping attempt {v + 1}/5 failed: {pingEx.Message}");
                             }
                         }
 
