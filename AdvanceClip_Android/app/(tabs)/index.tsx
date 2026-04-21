@@ -142,46 +142,78 @@ export default function SyncScreen() {
         const result = await AdvanceOverlay.getLatestScreenshot();
         if (result && result.path && result.timestamp > lastScreenshotTsRef.current) {
           lastScreenshotTsRef.current = result.timestamp;
+
+          // Step 1: Copy screenshot to app-local storage (scoped storage blocks raw paths)
+          const fileName = result.name || `screenshot_${Date.now()}.png`;
+          const safeName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
+          await FileSystem.makeDirectoryAsync(IMAGE_CACHE_BASE, { intermediates: true }).catch(() => {});
+          const localCopy = `${IMAGE_CACHE_BASE}${safeName}`;
+          const sourceUri = result.path.startsWith('file://') ? result.path : `file://${result.path}`;
+
+          // Try content URI approach first (more reliable on Android 11+)
+          let localUri = localCopy;
+          try {
+            // Try reading from MediaLibrary instead of raw path
+            const media = await MediaLibrary.getAssetsAsync({ first: 1, mediaType: ['photo'], sortBy: [[MediaLibrary.SortBy.creationTime, false]] });
+            if (media.assets.length > 0) {
+              const latestAsset = media.assets[0];
+              const assetInfo = await MediaLibrary.getAssetInfoAsync(latestAsset.id);
+              const assetUri = assetInfo.localUri || assetInfo.uri;
+              if (assetUri) {
+                await FileSystem.copyAsync({ from: assetUri, to: localCopy });
+                localUri = localCopy;
+              }
+            }
+          } catch (copyErr) {
+            // Fallback: try direct file copy from raw path
+            try { await FileSystem.copyAsync({ from: sourceUri, to: localCopy }); } catch (e2) {
+              // Last resort: try downloading as content URI
+              try {
+                const contentUri = await FileSystem.getContentUriAsync(sourceUri);
+                await FileSystem.copyAsync({ from: contentUri, to: localCopy });
+              } catch (e3) { localUri = sourceUri; /* Use raw path as final fallback */ }
+            }
+          }
+
+          // Step 2: Create clip item with local app-accessible path
           const screenshotItem: ClipItem = {
-            Title: result.name || 'Screenshot', Type: 'Image', Raw: result.path,
+            Title: fileName, Type: 'ImageLink', Raw: localUri,
             Time: new Date().toLocaleString(), SourceDeviceName: deviceName || 'Phone',
-            SourceDeviceType: 'Mobile', Timestamp: Date.now(),
+            SourceDeviceType: 'Mobile', Timestamp: Date.now(), CachedUri: localUri,
           };
           setClips(prev => [screenshotItem, ...prev]);
-          if (Platform.OS === 'android') ToastAndroid.show(`📸 Screenshot detected!`, ToastAndroid.SHORT);
+          if (Platform.OS === 'android') ToastAndroid.show(`📸 Screenshot captured!`, ToastAndroid.SHORT);
+
+          // Step 3: Copy to clipboard
           try {
-            const imageUri = result.path.startsWith('file://') ? result.path : `file://${result.path}`;
-            const base64 = await FileSystem.readAsStringAsync(imageUri, { encoding: FileSystem.EncodingType.Base64 });
+            const base64 = await FileSystem.readAsStringAsync(localUri, { encoding: FileSystem.EncodingType.Base64 });
             await Clipboard.setImageAsync(base64);
-          } catch(e) { await Clipboard.setStringAsync(result.path).catch(() => {}); }
+          } catch(e) {}
+
+          // Step 4: Upload to Firebase if global sync enabled
           if (isGlobalSyncEnabled) {
             try {
-              const fileUri = result.path.startsWith('file://') ? result.path : `file://${result.path}`;
-              const fileName = result.name || `screenshot_${Date.now()}.png`;
-              const sRef = storageRef(storage, `clipboard_images/${fileName}`);
-              const fileResp = await fetch(fileUri);
+              const sRef = storageRef(storage, `clipboard_images/${safeName}`);
+              const fileResp = await fetch(localUri);
               const blob = await fileResp.blob();
               await uploadBytesResumable(sRef, blob);
               const downloadURL = await getDownloadURL(sRef);
               screenshotItem.Raw = downloadURL;
               const clipRef = push(ref(database, 'clipboard'));
               await set(clipRef, screenshotItem);
-              setClips(prev => prev.map(c => c === screenshotItem ? { ...c, Raw: downloadURL } : c));
+              setClips(prev => prev.map(c => c.Title === fileName && c.Type === 'ImageLink' ? { ...c, Raw: downloadURL } : c));
             } catch(e) {}
           }
+
+          // Step 5: Relay to PC
           try {
             const optimal = await getCachedPcUrl();
             if (optimal) {
-              const fileUri = result.path.startsWith('file://') ? result.path : `file://${result.path}`;
-              const fileResp2 = await fetch(fileUri);
-              const blob2 = await fileResp2.blob();
-              await fetchWithTimeout(`${optimal}/api/sync_file`, {
-                method: 'POST',
-                headers: { 'X-Advance-Client': 'MobileCompanion', 'X-Source-Device': deviceName || 'Phone',
-                  'X-File-Name': encodeURIComponent(result.name || 'screenshot.png'), 'X-File-Type': 'Image',
-                  'Content-Type': 'application/octet-stream' },
-                body: blob2,
-              }, 15000);
+              await FileSystem.uploadAsync(
+                `${optimal}/api/sync_file?name=${encodeURIComponent(fileName)}&type=ImageLink&sourceDevice=${encodeURIComponent(deviceName || 'Phone')}`,
+                localUri,
+                { httpMethod: 'POST', uploadType: 0 as any, headers: { 'X-Advance-Client': 'MobileCompanion', 'X-Original-Date': Date.now().toString() } }
+              );
             }
           } catch(e) {}
         }
