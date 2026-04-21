@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, Text, TextInput, TouchableOpacity, FlatList, ActivityIndicator, KeyboardAvoidingView, Platform, Alert, AppState, AppStateStatus, Modal, ToastAndroid, NativeModules, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Sharing from 'expo-sharing';
@@ -37,7 +37,7 @@ type ClipItem = {
 const DOWNLOAD_BASE = `${(FileSystem as any).documentDirectory}AdvanceClip/Downloads/`;
 const SYNC_CACHE_BASE = `${(FileSystem as any).cacheDirectory}AdvanceClip/SyncCache/`;
 const CONVERTED_BASE = `${(FileSystem as any).documentDirectory}AdvanceClip/Converted/`;
-const IMAGE_CACHE_BASE = `${(FileSystem as any).cacheDirectory}AdvanceClip/ImageCache/`;
+const IMAGE_CACHE_BASE = `${(FileSystem as any).documentDirectory}AdvanceClip/Downloads/Images/`;
 
 /** User-initiated downloads: documentDirectory/AdvanceClip/Downloads/{subfolder}/{filename} */
 const getDownloadPath = async (subfolder: string, filename: string) => {
@@ -102,70 +102,66 @@ const connectionColors: Record<string, string> = { Local: '#10B981', Cloud: '#F5
 const safeHash = (s: string): string => {
   let h = 0;
   for (let i = 0; i < s.length; i++) {
-    h = ((h * 31) + s.charCodeAt(i)) & 0x7fffffff; // keep positive 31-bit
+    h = ((h * 31) + s.charCodeAt(i)) & 0x7fffffff;
   }
   return h.toString(16);
 };
 
 const CachedImage = React.memo(({ imgUri, onPress }: { imgUri: string; onPress: () => void }) => {
   const [localUri, setLocalUri] = React.useState<string | null>(null);
-  const [errMsg, setErrMsg] = React.useState<string | null>(null);
+  const [failed, setFailed] = React.useState(false);
 
   React.useEffect(() => {
-    if (!imgUri) { setErrMsg('No URL'); return; }
+    if (!imgUri) { setFailed(true); return; }
 
-    // Local file:// or absolute path â€” use directly, no download needed
+    // Local file:// or absolute path
     if (imgUri.startsWith('file://') || imgUri.startsWith('/')) {
       const uri = imgUri.startsWith('file://') ? imgUri : `file://${imgUri}`;
-      setLocalUri(uri);
+      // Verify file exists
+      FileSystem.getInfoAsync(uri).then(info => {
+        if (info.exists) setLocalUri(uri);
+        else setFailed(true);
+      }).catch(() => setFailed(true));
       return;
     }
 
-    // Remote http:// â€” download to stable cache file
+    // Remote http:// — download to permanent storage
     if (imgUri.startsWith('http')) {
       const fname = `img_${safeHash(imgUri)}.jpg`;
-      const cacheUri = IMAGE_CACHE_BASE + fname;
+      const permUri = IMAGE_CACHE_BASE + fname;
 
       (async () => {
         try {
-          // Use cached version if it's valid (>500 bytes)
-          const info = await FileSystem.getInfoAsync(cacheUri);
+          await FileSystem.makeDirectoryAsync(IMAGE_CACHE_BASE, { intermediates: true }).catch(() => {});
+          // Use existing if valid
+          const info = await FileSystem.getInfoAsync(permUri);
           if (info.exists && (info as any).size > 500) {
-            setLocalUri(cacheUri);
+            setLocalUri(permUri);
             return;
           }
-          // Download fresh
-          const dl = await FileSystem.downloadAsync(imgUri, cacheUri, {
-            headers: { 'X-Advance-Client': 'MobileCompanion' }
-          });
-          if (dl.status === 200) {
-            setLocalUri(dl.uri);
-          } else {
-            // Retry once with direct URL as source
-            const dl2 = await FileSystem.downloadAsync(imgUri, cacheUri, {
-              headers: { 'X-Advance-Client': 'MobileCompanion' }
-            });
-            if (dl2.status === 200) setLocalUri(dl2.uri);
-            else setErrMsg(`HTTP ${dl2.status}`);
+          // Download with 3 retries
+          for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+              const dl = await FileSystem.downloadAsync(imgUri, permUri, {
+                headers: { 'X-Advance-Client': 'MobileCompanion' }
+              });
+              if (dl.status === 200) { setLocalUri(dl.uri); return; }
+            } catch {}
+            if (attempt < 2) await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
           }
-        } catch (e: any) {
-          setErrMsg(e?.message || 'Download failed');
+          setFailed(true);
+        } catch {
+          setFailed(true);
         }
       })();
       return;
     }
 
-    setErrMsg('Unsupported URI');
+    setFailed(true);
   }, [imgUri]);
 
-  if (errMsg) return (
-    <View style={{ marginBottom: 8, height: 80, borderRadius: 12, backgroundColor: '#1C202B', justifyContent: 'center', alignItems: 'center', padding: 8 }}>
-      <IconSymbol name="photo.fill" size={24} color="#4C5361" />
-      <Text style={{ color: '#8A8F98', fontSize: 10, marginTop: 4, textAlign: 'center' }}>
-        Image unavailable{'\n'}<Text style={{ color: '#4C5361', fontSize: 9 }}>{errMsg}</Text>
-      </Text>
-    </View>
-  );
+  // Hide broken images entirely instead of showing placeholder
+  if (failed) return null;
   if (!localUri) return (
     <View style={{ marginBottom: 8, height: 80, borderRadius: 12, backgroundColor: '#1C202B', justifyContent: 'center', alignItems: 'center' }}>
       <ActivityIndicator size="small" color="#4A62EB" />
@@ -739,12 +735,43 @@ export default function SyncScreen() {
                      const { uri } = await FileSystem.downloadAsync(mediaUrl, localUri, { headers: { 'X-Advance-Client': 'MobileCompanion' } });
                      const b64 = await FileSystem.readAsStringAsync(uri, { encoding: (FileSystem as any).EncodingType.Base64 });
                      await Clipboard.setImageAsync(b64);
-                     if (Platform.OS === 'android') ToastAndroid.show(`ðŸ–¼ï¸ Screenshot synced from PC!`, ToastAndroid.SHORT);
+                     if (Platform.OS === 'android') ToastAndroid.show(`🖼️ Screenshot synced from PC!`, ToastAndroid.SHORT);
                    }
                  } catch (imgErr) {}
                } else if (latest.Type === 'Pdf' || latest.Type === 'Document' || latest.Type === 'File' || latest.Type === 'Video' || latest.Type === 'Audio' || latest.Type === 'Archive' || latest.Type === 'Presentation') {
-                 // Don't auto-download files â€” they'll appear as cards with download buttons
-                 if (Platform.OS === 'android') ToastAndroid.show(`ðŸ“ ${latest.Title} â€” tap to download`, ToastAndroid.SHORT);
+                 // Auto-download files to app storage
+                 try {
+                   let fileUrl = '';
+                   if (latest.DownloadUrl?.startsWith('/')) fileUrl = `${targetUrl}${latest.DownloadUrl}`;
+                   else if (latest.Raw?.startsWith('http')) fileUrl = latest.Raw;
+                   else if (latest.DownloadUrl?.startsWith('http')) fileUrl = latest.DownloadUrl;
+                   else if (latest.Raw?.startsWith('/')) fileUrl = `${targetUrl}${latest.Raw}`;
+                   
+                   if (fileUrl) {
+                     const subfolder = latest.Type === 'Pdf' ? 'PDFs' : latest.Type === 'Video' ? 'Videos' : latest.Type === 'Audio' ? 'Audio' : 'Documents';
+                     const safeName = (latest.Title || `file_${Date.now()}`).replace(/[^a-zA-Z0-9._-]/g, '_');
+                     const destPath = await getDownloadPath(subfolder, safeName);
+                     
+                     // Check if already downloaded
+                     const existing = await FileSystem.getInfoAsync(destPath);
+                     if (!existing.exists) {
+                       if (Platform.OS === 'android') ToastAndroid.show(`⬇️ Downloading ${latest.Title}...`, ToastAndroid.SHORT);
+                       const dl = await FileSystem.downloadAsync(fileUrl, destPath, {
+                         headers: { 'X-Advance-Client': 'MobileCompanion' }
+                       });
+                       if (dl.status === 200) {
+                         // Update clip with local path
+                         setClips(prev => prev.map(c => c.id === latest.id ? { ...c, CachedUri: destPath } : c));
+                         setDownloadedItems(prev => { const n = new Set(prev); n.add(latest.id || latest.Title); return n; });
+                         if (Platform.OS === 'android') ToastAndroid.show(`✅ ${latest.Title} saved`, ToastAndroid.SHORT);
+                       }
+                     } else {
+                       setDownloadedItems(prev => { const n = new Set(prev); n.add(latest.id || latest.Title); return n; });
+                     }
+                   }
+                 } catch (dlErr) {
+                   if (Platform.OS === 'android') ToastAndroid.show(`📁 ${latest.Title} — tap to download`, ToastAndroid.SHORT);
+                 }
                }
 
                // Push to overlay floating ball (only non-own items)

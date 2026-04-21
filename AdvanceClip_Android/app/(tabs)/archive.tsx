@@ -1,6 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, ActivityIndicator, Dimensions, Modal, Alert, ScrollView, Image, Platform, FlatList, ToastAndroid, Linking, TextInput } from 'react-native';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import * as Sharing from 'expo-sharing';
+import * as IntentLauncher from 'expo-intent-launcher';
 import * as MediaLibrary from 'expo-media-library';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as DocumentPicker from 'expo-document-picker';
@@ -238,7 +240,7 @@ export default function ConnectScreen() {
     })();
   }, []);
 
-  // Media scan
+  // Media scan — full device scan for PDFs/docs, date-filtered for media
   const scanMedia = async () => {
     if (hasPermission === false) return;
     setIsScanning(true);
@@ -251,7 +253,7 @@ export default function ConnectScreen() {
       let hasNextPage = true;
       let after = undefined;
 
-      // Gallery scan
+      // Gallery scan for images/videos with date filter
       while (hasNextPage) {
         let media = await MediaLibrary.getAssetsAsync({
           first: 100,
@@ -266,44 +268,62 @@ export default function ConnectScreen() {
         after = media.endCursor;
       }
 
-      // File system scan for WhatsApp, Downloads, Documents
+      // Full device scan for PDFs, docs, and other files (NO date filter)
       if (Platform.OS !== 'web') {
-        const sourceRoots: { path: string, source: SourceFilter }[] = [
+        const scanRoots: { path: string, source: SourceFilter, recursive?: boolean }[] = [
+          { path: 'file:///storage/emulated/0/Download/', source: 'Downloads', recursive: true },
+          { path: 'file:///storage/emulated/0/Documents/', source: 'Downloads', recursive: true },
+          { path: 'file:///storage/emulated/0/DCIM/', source: 'Camera' },
+          { path: 'file:///storage/emulated/0/Pictures/', source: 'Camera' },
           { path: 'file:///storage/emulated/0/WhatsApp/Media/WhatsApp Images/', source: 'WhatsApp' },
           { path: 'file:///storage/emulated/0/WhatsApp/Media/WhatsApp Images/Sent/', source: 'WhatsApp' },
           { path: 'file:///storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Images/', source: 'WhatsApp' },
           { path: 'file:///storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Video/', source: 'WhatsApp' },
-          { path: 'file:///storage/emulated/0/Download/', source: 'Downloads' },
-          { path: 'file:///storage/emulated/0/Documents/', source: 'Downloads' },
         ];
 
-        for (const { path: rawRoot, source } of sourceRoots) {
+        const scanDir = async (dirPath: string, source: SourceFilter, depth: number = 0) => {
+          if (depth > 2) return; // Max 2 levels deep
           try {
-            const check = await FileSystem.getInfoAsync(rawRoot);
-            if (check.exists && check.isDirectory) {
-              const files = await FileSystem.readDirectoryAsync(rawRoot);
-              for (const file of files) {
-                if (file === '.nomedia' || file.startsWith('.')) continue;
-                const fullPath = rawRoot + file;
-                try {
-                  const fInfo = await FileSystem.getInfoAsync(fullPath);
-                  if (fInfo.exists && !fInfo.isDirectory) {
-                    const modTimeMs = (fInfo.modificationTime || 0) * 1000;
-                    if (modTimeMs >= startDate.getTime() && modTimeMs <= endDate.getTime()) {
-                      const lowerFile = file.toLowerCase();
-                      let mediaType = 'photo';
-                      if (lowerFile.endsWith('.pdf')) mediaType = 'pdf';
-                      else if (lowerFile.match(/\.(doc|docx|txt|xlsx|pptx)$/)) mediaType = 'doc';
-                      else if (lowerFile.match(/\.(mp4|avi|mkv|mov|3gp)$/)) mediaType = 'video';
-                      else if (lowerFile.match(/\.(apk|zip|rar|7z|tar|gz)$/)) mediaType = 'doc';
-                      
-                      allFound.push({ id: fullPath, uri: fullPath, filename: file, creationTime: modTimeMs, mediaType, source });
-                    }
+            const check = await FileSystem.getInfoAsync(dirPath);
+            if (!check.exists || !check.isDirectory) return;
+            const files = await FileSystem.readDirectoryAsync(dirPath);
+            for (const file of files) {
+              if (file === '.nomedia' || file.startsWith('.')) continue;
+              const fullPath = dirPath + file;
+              try {
+                const fInfo = await FileSystem.getInfoAsync(fullPath);
+                if (fInfo.exists && fInfo.isDirectory && depth < 2) {
+                  await scanDir(fullPath + '/', source, depth + 1);
+                } else if (fInfo.exists && !fInfo.isDirectory) {
+                  const lowerFile = file.toLowerCase();
+                  let mediaType = '';
+                  const fileSize = (fInfo as any).size || 0;
+                  
+                  if (lowerFile.endsWith('.pdf')) mediaType = 'pdf';
+                  else if (lowerFile.match(/\.(doc|docx|txt|xlsx|pptx|odt|rtf)$/)) mediaType = 'doc';
+                  else if (lowerFile.match(/\.(mp4|avi|mkv|mov|3gp|webm)$/)) mediaType = 'video';
+                  else if (lowerFile.match(/\.(jpg|jpeg|png|gif|webp|bmp|heic)$/)) mediaType = 'photo';
+                  else if (lowerFile.match(/\.(apk|zip|rar|7z|tar|gz)$/)) mediaType = 'doc';
+                  
+                  if (!mediaType) continue; // Skip unknown types
+                  
+                  const modTimeMs = (fInfo.modificationTime || 0) * 1000;
+                  
+                  // For PDFs and docs: no date filter (show ALL)
+                  // For images/videos: apply date filter
+                  if (mediaType === 'pdf' || mediaType === 'doc') {
+                    allFound.push({ id: fullPath, uri: fullPath, filename: file, creationTime: modTimeMs, mediaType, source, fileSize });
+                  } else if (modTimeMs >= startDate.getTime() && modTimeMs <= endDate.getTime()) {
+                    allFound.push({ id: fullPath, uri: fullPath, filename: file, creationTime: modTimeMs, mediaType, source, fileSize });
                   }
-                } catch {}
-              }
+                }
+              } catch {}
             }
           } catch {}
+        };
+
+        for (const { path, source, recursive } of scanRoots) {
+          await scanDir(path, source, recursive ? 0 : 2);
         }
       }
 
@@ -833,280 +853,274 @@ export default function ConnectScreen() {
     );
   }
 
-  // ─── MAIN SCREEN: Device List ───
+  // ─── File Actions ───
+  const openFile = async (asset: any) => {
+    try {
+      const uri = asset.uri || asset.localUri;
+      if (!uri) { Alert.alert('Error', 'No file path available'); return; }
+      const fileUri = uri.startsWith('file://') ? uri : `file://${uri}`;
+      if (Platform.OS === 'android') {
+        const contentUri = await FileSystem.getContentUriAsync(fileUri);
+        await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+          data: contentUri, flags: 1,
+        });
+      }
+    } catch (e: any) {
+      Alert.alert('Cannot Open', e?.message || 'No app available to open this file.');
+    }
+  };
+
+  const shareFile = async (asset: any) => {
+    try {
+      const uri = asset.uri || asset.localUri;
+      if (!uri) return;
+      const fileUri = uri.startsWith('file://') ? uri : `file://${uri}`;
+      await Sharing.shareAsync(fileUri);
+    } catch {}
+  };
+
+  const [isConnectExpanded, setIsConnectExpanded] = useState(false);
+  const [fileSearchText, setFileSearchText] = useState('');
+
+  useEffect(() => {
+    if (hasPermission !== false && mediaAssets.length === 0 && !isScanning) {
+      scanMedia();
+    }
+  }, [hasPermission]);
+
+  // ─── MAIN SCREEN: Files Browser ───
   return (
     <SafeAreaView style={s.container}>
       <View style={s.header}>
-        <Text style={s.title}>Connect</Text>
-        <Text style={s.subtitle}>Transfer Hub</Text>
+        <Text style={s.title}>Files</Text>
+        <Text style={s.subtitle}>Documents & Media Browser</Text>
       </View>
 
-      <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
-        {/* Local Devices Section */}
-        <View style={{ paddingHorizontal: 20, marginBottom: 20 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-            <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#10B981' }} />
-            <Text style={s.sectionTitle}>Local Devices</Text>
-            <Text style={{ color: '#4A5568', fontSize: 12 }}>({localDevices.length})</Text>
-          </View>
-          
-          {localDevices.length === 0 ? (
-            <View style={s.emptyCard}>
-              <IconSymbol name="wifi.slash" size={24} color="#4A5568" />
-              <Text style={{ color: '#6B7280', fontSize: 12, marginTop: 8 }}>No local devices found</Text>
-              <Text style={{ color: '#4A5568', fontSize: 10, marginTop: 2 }}>Make sure devices are on the same network</Text>
-            </View>
-          ) : (
-            localDevices.map((dev, i) => <DeviceCard key={`local_${i}`} device={dev} type="local" />)
-          )}
+      {/* Search bar */}
+      <View style={{ paddingHorizontal: 20, marginBottom: 12 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#1C1F26', borderRadius: 12, paddingHorizontal: 14, borderWidth: 1, borderColor: '#2A2F3A' }}>
+          <IconSymbol name="magnifyingglass" size={16} color="#6B7280" />
+          <TextInput value={fileSearchText} onChangeText={setFileSearchText} placeholder="Search files..." placeholderTextColor="#4A5568" style={{ flex: 1, color: '#FFF', fontSize: 14, paddingVertical: 12, marginLeft: 10 }} />
+          {fileSearchText ? <TouchableOpacity onPress={() => setFileSearchText('')}><IconSymbol name="xmark.circle.fill" size={18} color="#4A5568" /></TouchableOpacity> : null}
         </View>
+      </View>
 
-        {/* Global Devices Section */}
-        <View style={{ paddingHorizontal: 20 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-            <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#3B82F6' }} />
-            <Text style={s.sectionTitle}>Global Devices</Text>
-            <Text style={{ color: '#4A5568', fontSize: 12 }}>({globalDevices.length})</Text>
-          </View>
-          
-          {globalDevices.length === 0 ? (
-            <View style={s.emptyCard}>
-              <IconSymbol name="globe" size={24} color="#4A5568" />
-              <Text style={{ color: '#6B7280', fontSize: 12, marginTop: 8 }}>No remote devices</Text>
-              <Text style={{ color: '#4A5568', fontSize: 10, marginTop: 2 }}>All devices are on your local network</Text>
-            </View>
-          ) : (
-            <>
-              {/* PCs with Cloudflare first */}
-              {globalDevices.filter(d => d.connectionType === 'cloudflare' || d.connectionType === 'cloudflare-unverified').map((dev, i) => (
-                <DeviceCard key={`gcf_${i}`} device={dev} type="global" />
-              ))}
-              {/* Sync-only devices */}
-              {globalDevices.filter(d => d.connectionType === 'sync-only').map((dev, i) => (
-                <DeviceCard key={`gso_${i}`} device={dev} type="global" />
-              ))}
-            </>
-          )}
-        </View>
-
-        {/* ─── Device Groups Section ─── */}
-        <View style={{ paddingHorizontal: 20, marginTop: 16, marginBottom: 20 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#F59E0B' }} />
-              <Text style={s.sectionTitle}>Groups</Text>
-              <Text style={{ color: '#4A5568', fontSize: 12 }}>({deviceGroups.length})</Text>
-            </View>
-            <TouchableOpacity onPress={() => {
-              setEditingGroup(null);
-              setNewGroupName('');
-              setSelectedGroupDevices(new Set());
-              setShowGroupModal(true);
-            }} style={{ backgroundColor: '#F59E0B', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 8 }}>
-              <Text style={{ color: '#000', fontSize: 11, fontWeight: '800' }}>+ NEW</Text>
-            </TouchableOpacity>
-          </View>
-
-          {deviceGroups.length === 0 ? (
-            <View style={s.emptyCard}>
-              <IconSymbol name="person.3" size={24} color="#4A5568" />
-              <Text style={{ color: '#6B7280', fontSize: 12, marginTop: 8 }}>No groups created</Text>
-              <Text style={{ color: '#4A5568', fontSize: 10, marginTop: 2 }}>Groups sync regardless of global sync or network</Text>
-            </View>
-          ) : (
-            deviceGroups.map((group) => (
-              <View key={group.id} style={{ backgroundColor: '#171B26', borderRadius: 14, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: '#F59E0B22' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '700' }}>{group.name}</Text>
-                    <Text style={{ color: '#8A8F98', fontSize: 11, marginTop: 2 }}>{group.deviceNames.join(', ')}</Text>
-                  </View>
-                  <View style={{ flexDirection: 'row', gap: 6 }}>
-                    <TouchableOpacity onPress={() => {
-                      setEditingGroup(group);
-                      setNewGroupName(group.name);
-                      setSelectedGroupDevices(new Set(group.deviceNames));
-                      setShowGroupModal(true);
-                    }} style={{ backgroundColor: '#F59E0B22', padding: 8, borderRadius: 8 }}>
-                      <IconSymbol name="pencil" size={14} color="#F59E0B" />
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => deleteGroup(group.id)} style={{ backgroundColor: '#EF444422', padding: 8, borderRadius: 8 }}>
-                      <IconSymbol name="trash" size={14} color="#EF4444" />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </View>
-            ))
-          )}
-        </View>
-
-        {/* Info Card */}
-        {localDevices.length === 0 && globalDevices.length === 0 && (
-          <View style={{ marginHorizontal: 20, marginTop: 30, padding: 20, backgroundColor: '#141824', borderRadius: 16, borderWidth: 1, borderColor: '#1E293B' }}>
-            <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '700', marginBottom: 8 }}>No devices detected</Text>
-            <Text style={{ color: '#8A8F98', fontSize: 12, lineHeight: 18 }}>
-              • Make sure AdvanceClip.exe is running on your PC{'\n'}
-              • Both devices must be logged into the same Firebase project{'\n'}
-              • For local transfers, connect to the same WiFi{'\n'}
-              • For global transfers, enable Cloudflare tunnel on PC
+      {/* Type Filter Chips */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 6, marginBottom: 10 }}>
+        {(['All', 'PDFs', 'Docs', 'Images', 'Videos'] as const).map(t => (
+          <TouchableOpacity key={t} style={[s.sourceChip, activeTab === t && s.sourceChipActive]} onPress={() => setActiveTab(t)}>
+            <Text style={[s.sourceChipText, activeTab === t && s.sourceChipTextActive]}>
+              {t === 'PDFs' ? '📄' : t === 'Docs' ? '📝' : t === 'Images' ? '🖼️' : t === 'Videos' ? '🎬' : '🌐'} {t}
             </Text>
-          </View>
-        )}
+          </TouchableOpacity>
+        ))}
+        <TouchableOpacity style={[s.sourceChip, { backgroundColor: '#4A62EB33', borderColor: '#4A62EB' }]} onPress={browseFiles}>
+          <Text style={[s.sourceChipText, { color: '#4A62EB', fontWeight: '700' }]}>📁 Browse</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[s.sourceChip, { backgroundColor: '#10B98133', borderColor: '#10B981' }]} onPress={scanMedia}>
+          <Text style={[s.sourceChipText, { color: '#10B981', fontWeight: '700' }]}>🔄 Refresh</Text>
+        </TouchableOpacity>
       </ScrollView>
 
-      {/* ─── Online Websites Section ─── */}
-      {(() => {
-        const websiteDevices = allFirebaseDevices.filter(d => d.GlobalUrl && d.GlobalUrl.includes('trycloudflare.com'));
-        if (websiteDevices.length === 0) return null;
-        return (
-          <View style={{ paddingHorizontal: 20, paddingBottom: 20 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-              <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#8B5CF6' }} />
-              <Text style={s.sectionTitle}>Online Websites</Text>
-              <Text style={{ color: '#4A5568', fontSize: 12 }}>({websiteDevices.length})</Text>
-            </View>
-            {websiteDevices.map((dev, i) => {
-              const cfUrl = dev.GlobalUrl.endsWith('/') ? dev.GlobalUrl.slice(0, -1) : dev.GlobalUrl;
-              return (
-                <View key={`web_${i}`} style={[s.deviceCard, { borderColor: '#8B5CF644' }]}>
-                  <View style={[s.deviceIcon, { backgroundColor: '#8B5CF618' }]}>
-                    <IconSymbol name="globe" size={22} color="#8B5CF6" />
+      {/* Count + Actions */}
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 6, marginBottom: 4 }}>
+        <Text style={{ color: '#8A8F98', fontSize: 12, fontWeight: '600' }}>
+          {[...getFilteredAssets(), ...browserFiles].filter(a => !fileSearchText || (a.filename || '').toLowerCase().includes(fileSearchText.toLowerCase())).length} files · {selectedIds.size} selected
+        </Text>
+        <TouchableOpacity style={{ backgroundColor: '#2A2F3A', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 }} onPress={() => toggleSelectAll([...getFilteredAssets(), ...browserFiles])}>
+          <Text style={{ color: '#FFF', fontSize: 10, fontWeight: 'bold' }}>Select All</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* File List */}
+      {isScanning ? (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color="#4A62EB" />
+          <Text style={{ color: '#8A8F98', marginTop: 12, fontSize: 13 }}>Scanning device files...</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={(() => {
+            let items = [...getFilteredAssets(), ...browserFiles];
+            if (fileSearchText) items = items.filter(a => (a.filename || '').toLowerCase().includes(fileSearchText.toLowerCase()));
+            return items;
+          })()}
+          keyExtractor={(item, idx) => item.id || `f_${idx}`}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: selectedIds.size > 0 ? 180 : 100 }}
+          renderItem={({ item: asset }) => {
+            const isSelected = selectedIds.has(asset.id);
+            const isPdf = asset.mediaType === 'pdf';
+            const isDoc = asset.mediaType === 'doc';
+            const isVideo = asset.mediaType === 'video';
+            const isImage = asset.mediaType === 'photo';
+            const iconColor = isPdf ? '#EF4444' : isDoc ? '#3B82F6' : isVideo ? '#8B5CF6' : '#10B981';
+            return (
+              <TouchableOpacity
+                style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#141824', borderRadius: 14, padding: 12, marginBottom: 6, borderWidth: 1, borderColor: isSelected ? '#10B981' : '#1E293B' }}
+                onPress={() => toggleSelection(asset.id)}
+                onLongPress={() => isImage || isVideo ? setEnlargedPreview(asset) : openFile(asset)}
+              >
+                {isImage ? (
+                  <Image source={{ uri: asset.uri }} style={{ width: 48, height: 48, borderRadius: 10, backgroundColor: '#2A2F3A' }} />
+                ) : (
+                  <View style={{ width: 48, height: 48, borderRadius: 10, backgroundColor: `${iconColor}15`, alignItems: 'center', justifyContent: 'center' }}>
+                    <IconSymbol name={isPdf ? 'doc.fill' : isDoc ? 'doc.text.fill' : isVideo ? 'play.rectangle.fill' : 'photo.fill'} size={22} color={iconColor} />
                   </View>
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={s.deviceName}>{dev.DeviceName || 'Unknown'}</Text>
-                    <Text style={{ color: '#8B5CF6', fontSize: 10, marginTop: 2 }} numberOfLines={1}>{cfUrl}</Text>
-                  </View>
-                  <View style={{ flexDirection: 'row', gap: 6 }}>
-                    <TouchableOpacity onPress={() => Linking.openURL(cfUrl)} style={{ backgroundColor: '#8B5CF622', padding: 8, borderRadius: 8 }}>
-                      <IconSymbol name="arrow.up.right" size={14} color="#8B5CF6" />
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={async () => {
-                      const { default: Clip } = await import('expo-clipboard');
-                      await Clip.setStringAsync(cfUrl);
-                      if (Platform.OS === 'android') ToastAndroid.show('URL copied!', ToastAndroid.SHORT);
-                    }} style={{ backgroundColor: '#8B5CF622', padding: 8, borderRadius: 8 }}>
-                      <IconSymbol name="doc.on.doc" size={14} color="#8B5CF6" />
-                    </TouchableOpacity>
+                )}
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '600' }} numberOfLines={1}>{asset.filename || 'Unnamed'}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 3 }}>
+                    <View style={[s.badge, { backgroundColor: `${iconColor}22` }]}>
+                      <Text style={[s.badgeText, { color: iconColor }]}>{isPdf ? 'PDF' : isDoc ? 'DOC' : isVideo ? 'VIDEO' : 'IMAGE'}</Text>
+                    </View>
+                    {asset.fileSize ? <Text style={{ color: '#4A5568', fontSize: 10 }}>{asset.fileSize > 1048576 ? `${(asset.fileSize / 1048576).toFixed(1)} MB` : `${Math.round(asset.fileSize / 1024)} KB`}</Text> : null}
                   </View>
                 </View>
-              );
-            })}
-          </View>
-        );
-      })()}
+                <View style={{ flexDirection: 'row', gap: 4 }}>
+                  {(isPdf || isDoc) && <TouchableOpacity onPress={() => openFile(asset)} style={{ padding: 8, backgroundColor: '#3B82F615', borderRadius: 8 }}><IconSymbol name="arrow.up.right" size={14} color="#3B82F6" /></TouchableOpacity>}
+                  <TouchableOpacity onPress={() => shareFile(asset)} style={{ padding: 8, backgroundColor: '#10B98115', borderRadius: 8 }}><IconSymbol name="square.and.arrow.up" size={14} color="#10B981" /></TouchableOpacity>
+                  <View style={[{ width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: isSelected ? '#10B981' : '#4A5568', alignItems: 'center', justifyContent: 'center' }, isSelected && { backgroundColor: '#10B981' }]}>
+                    {isSelected && <IconSymbol name="checkmark" size={12} color="#FFF" />}
+                  </View>
+                </View>
+              </TouchableOpacity>
+            );
+          }}
+          ListEmptyComponent={<View style={{ alignItems: 'center', marginTop: 60 }}><IconSymbol name="folder" size={48} color="#4A5568" /><Text style={{ color: '#6B7280', marginTop: 12 }}>No files found</Text></View>}
+        />
+      )}
 
-      {/* ─── URL Popup Modal ─── */}
-      <Modal visible={!!urlPopup} transparent={true} animationType="fade" onRequestClose={() => setUrlPopup(null)}>
+      {/* Bottom Action Bar */}
+      {selectedIds.size > 0 && (
+        <View style={{ position: 'absolute', bottom: 60, left: 0, right: 0, backgroundColor: '#0F1115EE', paddingHorizontal: 16, paddingVertical: 12, borderTopWidth: 1, borderTopColor: '#2A2F3A' }}>
+          <Text style={{ color: '#8A8F98', fontSize: 11, marginBottom: 8, textAlign: 'center' }}>{selectedIds.size} file(s) selected</Text>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity style={{ flex: 1, backgroundColor: '#3B82F6', paddingVertical: 14, borderRadius: 14, alignItems: 'center' }} onPress={() => {
+              const sel = [...getFilteredAssets(), ...browserFiles].filter(a => selectedIds.has(a.id));
+              if (sel.length === 1) shareFile(sel[0]);
+              else Alert.alert('Share', 'Select a single file to share via Android.');
+            }}>
+              <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700' }}>📤 Share</Text>
+            </TouchableOpacity>
+            {(() => {
+              const selPdfs = [...getFilteredAssets(), ...browserFiles].filter(a => selectedIds.has(a.id) && (a.mediaType === 'pdf' || a.mediaType === 'doc'));
+              return selPdfs.length >= 2 ? (
+                <TouchableOpacity style={{ flex: 1, backgroundColor: '#F59E0B', paddingVertical: 14, borderRadius: 14, alignItems: 'center' }} onPress={() => {
+                  const allDevs = [...localDevices, ...globalDevices];
+                  const pc = allDevs.find((d: any) => d.DeviceType === 'PC' && d.resolvedUrl);
+                  if (!pc) { Alert.alert('No PC', 'Connect to a PC to merge files.'); return; }
+                  setSelectedTarget(pc);
+                  executeTransfer(pc);
+                }}>
+                  <Text style={{ color: '#000', fontSize: 13, fontWeight: '700' }}>📑 Merge on PC</Text>
+                </TouchableOpacity>
+              ) : null;
+            })()}
+            <TouchableOpacity style={{ flex: 1, backgroundColor: '#10B981', paddingVertical: 14, borderRadius: 14, alignItems: 'center' }} onPress={() => {
+              const allDevs = [...localDevices, ...globalDevices];
+              if (allDevs.length === 0) { Alert.alert('No Devices', 'Expand Connect section below.'); return; }
+              if (allDevs.length === 1) { setSelectedTarget(allDevs[0]); executeTransfer(allDevs[0]); return; }
+              Alert.alert('Send to:', '', allDevs.map((d: any) => ({ text: `${d.DeviceName} (${d.connectionType === 'local' ? 'LAN' : 'Cloud'})`, onPress: () => { setSelectedTarget(d); executeTransfer(d); } })).concat([{ text: 'Cancel' } as any]));
+            }}>
+              <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700' }}>📡 Send</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* Collapsible Connect Section */}
+      <TouchableOpacity
+        onPress={() => setIsConnectExpanded(!isConnectExpanded)}
+        style={{ backgroundColor: '#1A1F2E', borderTopWidth: 1, borderColor: '#2A2F3A', paddingVertical: 12, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <IconSymbol name="antenna.radiowaves.left.and.right" size={16} color="#3B82F6" />
+          <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '700' }}>Connect & Transfer</Text>
+          <View style={[s.badge, { backgroundColor: '#10B98122' }]}><Text style={[s.badgeText, { color: '#10B981' }]}>{localDevices.length + globalDevices.length}</Text></View>
+        </View>
+        <IconSymbol name={isConnectExpanded ? "chevron.down" : "chevron.up"} size={14} color="#8A8F98" />
+      </TouchableOpacity>
+
+      {isConnectExpanded && (
+        <ScrollView style={{ maxHeight: 350, backgroundColor: '#0F1115' }} contentContainerStyle={{ paddingBottom: 40 }}>
+          <View style={{ paddingHorizontal: 20, marginTop: 12, marginBottom: 12 }}>
+            <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700', marginBottom: 8 }}>⚡ Local ({localDevices.length})</Text>
+            {localDevices.length === 0 ? <Text style={{ color: '#4A5568', fontSize: 12 }}>No local devices</Text> : localDevices.map((dev, i) => <DeviceCard key={`l_${i}`} device={dev} type="local" />)}
+          </View>
+          <View style={{ paddingHorizontal: 20, marginBottom: 12 }}>
+            <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700', marginBottom: 8 }}>☁️ Global ({globalDevices.length})</Text>
+            {globalDevices.length === 0 ? <Text style={{ color: '#4A5568', fontSize: 12 }}>All devices are local</Text> : globalDevices.map((dev, i) => <DeviceCard key={`g_${i}`} device={dev} type="global" />)}
+          </View>
+          <View style={{ paddingHorizontal: 20, marginBottom: 12 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+              <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700' }}>🏷️ Groups ({deviceGroups.length})</Text>
+              <TouchableOpacity onPress={() => { setEditingGroup(null); setNewGroupName(''); setSelectedGroupDevices(new Set()); setShowGroupModal(true); }} style={{ backgroundColor: '#F59E0B', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 6 }}>
+                <Text style={{ color: '#000', fontSize: 10, fontWeight: '800' }}>+ NEW</Text>
+              </TouchableOpacity>
+            </View>
+            {deviceGroups.map(group => (
+              <View key={group.id} style={{ backgroundColor: '#171B26', borderRadius: 12, padding: 12, marginBottom: 6, borderWidth: 1, borderColor: '#F59E0B22' }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700' }}>{group.name}</Text>
+                    <Text style={{ color: '#8A8F98', fontSize: 10 }}>{group.deviceNames.join(', ')}</Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', gap: 4 }}>
+                    <TouchableOpacity onPress={() => { setEditingGroup(group); setNewGroupName(group.name); setSelectedGroupDevices(new Set(group.deviceNames)); setShowGroupModal(true); }} style={{ padding: 6, backgroundColor: '#F59E0B22', borderRadius: 6 }}><IconSymbol name="pencil" size={12} color="#F59E0B" /></TouchableOpacity>
+                    <TouchableOpacity onPress={() => deleteGroup(group.id)} style={{ padding: 6, backgroundColor: '#EF444422', borderRadius: 6 }}><IconSymbol name="trash" size={12} color="#EF4444" /></TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            ))}
+          </View>
+        </ScrollView>
+      )}
+
+      {/* Preview Modal */}
+      <Modal visible={!!enlargedPreview} animationType="fade" transparent>
+        <View style={[s.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.95)' }]}>
+          <TouchableOpacity style={{ position: 'absolute', top: 50, right: 20, zIndex: 10 }} onPress={() => setEnlargedPreview(null)}>
+            <View style={{ padding: 10, backgroundColor: '#2A2F3A', borderRadius: 20 }}><IconSymbol name="xmark" size={24} color="#FFF" /></View>
+          </TouchableOpacity>
+          {enlargedPreview && (enlargedPreview.mediaType === 'photo' || enlargedPreview.mediaType === 'video') ? (
+            <Image source={{ uri: enlargedPreview.uri }} style={{ width: '100%', height: '80%', resizeMode: 'contain' }} />
+          ) : (
+            <View style={{ alignItems: 'center' }}><IconSymbol name="doc.fill" size={80} color="#F59E0B" /><Text style={{ color: '#FFF', marginTop: 20, fontSize: 18, fontWeight: 'bold' }}>{enlargedPreview?.filename}</Text></View>
+          )}
+        </View>
+      </Modal>
+
+      {/* URL Popup */}
+      <Modal visible={!!urlPopup} transparent animationType="fade" onRequestClose={() => setUrlPopup(null)}>
         <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' }} activeOpacity={1} onPress={() => setUrlPopup(null)}>
           <View style={{ backgroundColor: '#1C1F26', borderRadius: 20, padding: 24, width: '85%', borderWidth: 1, borderColor: '#2A2F3A' }}>
-            <Text style={{ color: '#FFF', fontSize: 18, fontWeight: '800', marginBottom: 4 }}>{urlPopup?.device?.DeviceName}</Text>
-            <Text style={{ color: '#8A8F98', fontSize: 11, marginBottom: 20 }}>Device URLs</Text>
-            
-            {urlPopup?.localUrl ? (
-              <View style={{ marginBottom: 16 }}>
-                <Text style={{ color: '#10B981', fontSize: 11, fontWeight: '700', marginBottom: 6 }}>⚡ LOCAL URL</Text>
-                <Text style={{ color: '#CCC', fontSize: 12, marginBottom: 8 }} selectable>{urlPopup.localUrl}</Text>
-                <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <TouchableOpacity onPress={() => { Linking.openURL(urlPopup!.localUrl); setUrlPopup(null); }} style={{ flex: 1, backgroundColor: '#10B981', paddingVertical: 10, borderRadius: 10, alignItems: 'center' }}>
-                    <Text style={{ color: '#FFF', fontSize: 12, fontWeight: '700' }}>Open</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={async () => { 
-                    const { default: Clip } = await import('expo-clipboard');
-                    await Clip.setStringAsync(urlPopup!.localUrl); 
-                    if (Platform.OS === 'android') ToastAndroid.show('Copied!', ToastAndroid.SHORT); 
-                    setUrlPopup(null);
-                  }} style={{ flex: 1, backgroundColor: '#10B98133', paddingVertical: 10, borderRadius: 10, alignItems: 'center' }}>
-                    <Text style={{ color: '#10B981', fontSize: 12, fontWeight: '700' }}>Copy</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ) : null}
-            
-            {urlPopup?.globalUrl ? (
-              <View>
-                <Text style={{ color: '#3B82F6', fontSize: 11, fontWeight: '700', marginBottom: 6 }}>☁️ GLOBAL URL</Text>
-                <Text style={{ color: '#CCC', fontSize: 12, marginBottom: 8 }} selectable>{urlPopup.globalUrl}</Text>
-                <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <TouchableOpacity onPress={() => { Linking.openURL(urlPopup!.globalUrl); setUrlPopup(null); }} style={{ flex: 1, backgroundColor: '#3B82F6', paddingVertical: 10, borderRadius: 10, alignItems: 'center' }}>
-                    <Text style={{ color: '#FFF', fontSize: 12, fontWeight: '700' }}>Open</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={async () => { 
-                    const { default: Clip } = await import('expo-clipboard');
-                    await Clip.setStringAsync(urlPopup!.globalUrl); 
-                    if (Platform.OS === 'android') ToastAndroid.show('Copied!', ToastAndroid.SHORT); 
-                    setUrlPopup(null);
-                  }} style={{ flex: 1, backgroundColor: '#3B82F633', paddingVertical: 10, borderRadius: 10, alignItems: 'center' }}>
-                    <Text style={{ color: '#3B82F6', fontSize: 12, fontWeight: '700' }}>Copy</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ) : null}
+            <Text style={{ color: '#FFF', fontSize: 18, fontWeight: '800', marginBottom: 16 }}>{urlPopup?.device?.DeviceName}</Text>
+            {urlPopup?.localUrl ? (<View style={{ marginBottom: 16 }}><Text style={{ color: '#10B981', fontSize: 11, fontWeight: '700', marginBottom: 6 }}>⚡ LOCAL</Text><Text style={{ color: '#CCC', fontSize: 12 }} selectable>{urlPopup.localUrl}</Text><TouchableOpacity onPress={() => { Linking.openURL(urlPopup!.localUrl); setUrlPopup(null); }} style={{ marginTop: 8, backgroundColor: '#10B981', padding: 10, borderRadius: 10, alignItems: 'center' }}><Text style={{ color: '#FFF', fontWeight: '700' }}>Open</Text></TouchableOpacity></View>) : null}
+            {urlPopup?.globalUrl ? (<View><Text style={{ color: '#3B82F6', fontSize: 11, fontWeight: '700', marginBottom: 6 }}>☁️ GLOBAL</Text><Text style={{ color: '#CCC', fontSize: 12 }} selectable>{urlPopup.globalUrl}</Text><TouchableOpacity onPress={() => { Linking.openURL(urlPopup!.globalUrl); setUrlPopup(null); }} style={{ marginTop: 8, backgroundColor: '#3B82F6', padding: 10, borderRadius: 10, alignItems: 'center' }}><Text style={{ color: '#FFF', fontWeight: '700' }}>Open</Text></TouchableOpacity></View>) : null}
           </View>
         </TouchableOpacity>
       </Modal>
 
-      {/* ─── Group Create/Edit Modal ─── */}
+      {/* Group Modal */}
       <Modal visible={showGroupModal} transparent animationType="slide" onRequestClose={() => setShowGroupModal(false)}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', padding: 20 }}>
           <View style={{ backgroundColor: '#1A1F2E', borderRadius: 20, padding: 20, maxHeight: '80%' }}>
-            <Text style={{ color: '#FFF', fontSize: 18, fontWeight: '800', marginBottom: 16 }}>
-              {editingGroup ? 'Edit Group' : 'Create Group'}
-            </Text>
-            
-            <Text style={{ color: '#8A8F98', fontSize: 12, marginBottom: 6 }}>Group Name</Text>
-            <TextInput
-              value={newGroupName}
-              onChangeText={setNewGroupName}
-              placeholder="e.g. Home Office, Work Setup"
-              placeholderTextColor="#4A5568"
-              style={{ backgroundColor: '#0F1118', borderRadius: 10, padding: 12, color: '#FFF', fontSize: 14, marginBottom: 16, borderWidth: 1, borderColor: '#2A2F3A' }}
-            />
-
-            <Text style={{ color: '#8A8F98', fontSize: 12, marginBottom: 8 }}>Select Devices</Text>
+            <Text style={{ color: '#FFF', fontSize: 18, fontWeight: '800', marginBottom: 16 }}>{editingGroup ? 'Edit Group' : 'Create Group'}</Text>
+            <TextInput value={newGroupName} onChangeText={setNewGroupName} placeholder="Group name..." placeholderTextColor="#4A5568" style={{ backgroundColor: '#0F1118', borderRadius: 10, padding: 12, color: '#FFF', fontSize: 14, marginBottom: 16, borderWidth: 1, borderColor: '#2A2F3A' }} />
             <ScrollView style={{ maxHeight: 250 }}>
-              {[...localDevices, ...globalDevices, ...allFirebaseDevices]
-                .filter((dev, idx, arr) => arr.findIndex(d => d.DeviceName === dev.DeviceName) === idx)
-                .map((dev, i) => {
-                  const isSelected = selectedGroupDevices.has(dev.DeviceName);
-                  return (
-                    <TouchableOpacity
-                      key={`gdev_${i}`}
-                      onPress={() => {
-                        const next = new Set(selectedGroupDevices);
-                        if (isSelected) next.delete(dev.DeviceName); else next.add(dev.DeviceName);
-                        setSelectedGroupDevices(next);
-                      }}
-                      style={{
-                        flexDirection: 'row', alignItems: 'center', padding: 12,
-                        backgroundColor: isSelected ? '#F59E0B15' : '#0F1118',
-                        borderRadius: 10, marginBottom: 6, borderWidth: 1,
-                        borderColor: isSelected ? '#F59E0B44' : '#1E293B'
-                      }}
-                    >
-                      <View style={{
-                        width: 22, height: 22, borderRadius: 6, marginRight: 10,
-                        backgroundColor: isSelected ? '#F59E0B' : '#2A2F3A',
-                        alignItems: 'center', justifyContent: 'center'
-                      }}>
-                        {isSelected && <Text style={{ color: '#000', fontSize: 13, fontWeight: '900' }}>✓</Text>}
-                      </View>
-                      <IconSymbol name={dev.DeviceType === 'PC' ? 'laptopcomputer' : 'iphone'} size={18} color="#8A8F98" />
-                      <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '600', marginLeft: 8 }}>{dev.DeviceName || dev.DeviceType || 'Unknown'}</Text>
-                      <Text style={{ color: '#4A5568', fontSize: 10, marginLeft: 'auto' }}>
-                        {dev.connectionType === 'local' ? '🟢 Local' : dev.connectionType === 'cloudflare' ? '🔵 Cloud' : '⚪ Sync'}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
+              {[...localDevices, ...globalDevices, ...allFirebaseDevices].filter((d: any, i: number, a: any[]) => a.findIndex((x: any) => x.DeviceName === d.DeviceName) === i).map((dev: any, i: number) => {
+                const isSel = selectedGroupDevices.has(dev.DeviceName);
+                return (
+                  <TouchableOpacity key={`gd_${i}`} onPress={() => { const n = new Set(selectedGroupDevices); isSel ? n.delete(dev.DeviceName) : n.add(dev.DeviceName); setSelectedGroupDevices(n); }} style={{ flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: isSel ? '#F59E0B15' : '#0F1118', borderRadius: 10, marginBottom: 6, borderWidth: 1, borderColor: isSel ? '#F59E0B44' : '#1E293B' }}>
+                    <View style={{ width: 22, height: 22, borderRadius: 6, marginRight: 10, backgroundColor: isSel ? '#F59E0B' : '#2A2F3A', alignItems: 'center', justifyContent: 'center' }}>{isSel && <Text style={{ color: '#000', fontWeight: '900' }}>✓</Text>}</View>
+                    <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '600' }}>{dev.DeviceName || 'Unknown'}</Text>
+                  </TouchableOpacity>
+                );
+              })}
             </ScrollView>
-
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
-              <TouchableOpacity onPress={() => setShowGroupModal(false)} style={{ flex: 1, padding: 12, borderRadius: 10, backgroundColor: '#2A2F3A', alignItems: 'center' }}>
-                <Text style={{ color: '#8A8F98', fontWeight: '700' }}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={createOrUpdateGroup} style={{ flex: 1, padding: 12, borderRadius: 10, backgroundColor: '#F59E0B', alignItems: 'center' }}>
-                <Text style={{ color: '#000', fontWeight: '800' }}>{editingGroup ? 'Save' : 'Create'}</Text>
-              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setShowGroupModal(false)} style={{ flex: 1, padding: 12, borderRadius: 10, backgroundColor: '#2A2F3A', alignItems: 'center' }}><Text style={{ color: '#8A8F98', fontWeight: '700' }}>Cancel</Text></TouchableOpacity>
+              <TouchableOpacity onPress={createOrUpdateGroup} style={{ flex: 1, padding: 12, borderRadius: 10, backgroundColor: '#F59E0B', alignItems: 'center' }}><Text style={{ color: '#000', fontWeight: '800' }}>{editingGroup ? 'Save' : 'Create'}</Text></TouchableOpacity>
             </View>
           </View>
         </View>
@@ -1117,50 +1131,34 @@ export default function ConnectScreen() {
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0F1115' },
-  header: { paddingTop: 60, paddingHorizontal: 24, marginBottom: 20 },
+  header: { paddingTop: 60, paddingHorizontal: 24, marginBottom: 16 },
   title: { fontSize: 34, fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.5 },
   subtitle: { fontSize: 14, color: '#8A8F98', marginTop: 4, fontWeight: '500', textTransform: 'uppercase', letterSpacing: 1.5 },
   sectionTitle: { color: '#FFF', fontSize: 16, fontWeight: '700' },
   card: { backgroundColor: '#1C1F26', marginHorizontal: 20, borderRadius: 20, padding: 24, borderWidth: 1, borderColor: '#2A2F3A', marginTop: 20 },
-  
-  // Device cards
   deviceCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#141824', borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1 },
   deviceIcon: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   deviceName: { color: '#FFF', fontSize: 15, fontWeight: '700' },
   badge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
   badgeText: { fontSize: 10, fontWeight: '700' },
   emptyCard: { padding: 24, backgroundColor: '#141824', borderRadius: 14, borderWidth: 1, borderColor: '#1E293B', alignItems: 'center' },
-  
-  // Date
   dateBtn: { flex: 1, backgroundColor: '#1C1F26', borderRadius: 12, padding: 10, borderWidth: 1, borderColor: '#2A2F3A' },
   dateLabel: { color: '#8A8F98', fontSize: 9, fontWeight: '700', marginBottom: 2 },
   dateValue: { color: '#FFF', fontSize: 12, fontWeight: '600' },
-  
-  // Source chips
   sourceChip: { backgroundColor: '#1C1F26', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: '#2A2F3A' },
   sourceChipActive: { backgroundColor: '#10B98122', borderColor: '#10B981' },
   sourceChipText: { color: '#8A8F98', fontSize: 12, fontWeight: '600' },
   sourceChipTextActive: { color: '#10B981' },
-  
-  // Type tabs
   tabRow: { flexDirection: 'row', paddingHorizontal: 20, marginBottom: 6, gap: 4 },
   tab: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 10 },
   tabActive: { backgroundColor: '#2A2F3A' },
   tabText: { color: '#6B7280', fontSize: 12, fontWeight: '700' },
   tabTextActive: { color: '#FFF' },
-  
-  // Selection
   checkCircle: { position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(0,0,0,0.5)', borderWidth: 2, borderColor: '#FFF', alignItems: 'center', justifyContent: 'center' },
   checkCircleActive: { backgroundColor: '#10B981' },
-  
-  // Send
   sendButton: { backgroundColor: '#10B981', paddingVertical: 18, borderRadius: 18, alignItems: 'center', shadowColor: '#10B981', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 8 },
   sendButtonText: { color: '#FFF', fontSize: 16, fontWeight: '800' },
-  
-  // Upload
   controlBtn: { paddingVertical: 14, borderRadius: 14, alignItems: 'center' },
   controlBtnText: { color: '#FFF', fontSize: 14, fontWeight: '700' },
-  
-  // Modal
   modalOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 });

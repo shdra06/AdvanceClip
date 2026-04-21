@@ -26,8 +26,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="archive"
         options={{
-          title: 'Connect',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="link" color={color} />,
+          title: 'Files',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="folder" color={color} />,
         }}
       />
       <Tabs.Screen

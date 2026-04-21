@@ -1,5 +1,5 @@
 {
-  "pc_version": "1.6.2",
-  "pc_download": "https://github.com/shdra06/AdvanceClip/releases/download/v1.6.2/AdvanceClip.exe",
-  "changelog": "v1.6.2: QR auto-copy, smooth scroll fix, PDF rename/reverse/Word merge, table extractor overhaul (CSV/TSV export, add/delete row/col, flexible grid, row numbers, smart separator detection)."
+  "pc_version": "1.7.0",
+  "pc_download": "https://github.com/shdra06/AdvanceClip/releases/download/v1.7.0/AdvanceClip.exe",
+  "changelog": "v1.7.0: Android Files tab overhaul (renamed Connect→Files, full device PDF/doc scanner, file browser with search/filter/open/share, collapsible Connect panel, auto-download from sync, permanent image storage, broken image cleanup)."
 }
