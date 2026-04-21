@@ -87,14 +87,36 @@ namespace AdvanceClip.Classes
 
                 if (isFile && !string.IsNullOrEmpty(CachedGlobalUrl) && CachedGlobalUrl.Contains("trycloudflare.com"))
                 {
-                    // Cloudflare tunnel is active — use public download link
-                    downloadUrl = $"{CachedGlobalUrl}/download?path={Uri.EscapeDataString(item.FilePath)}";
-                    raw = downloadUrl;
-                    Logger.LogAction("FIREBASE SYNC", $"File '{item.FileName}' → Cloudflare: {downloadUrl}");
+                    // Verify the tunnel actually works before trusting the URL
+                    bool tunnelHealthy = false;
+                    try
+                    {
+                        using var pingClient = new HttpClient() { Timeout = TimeSpan.FromSeconds(5) };
+                        var pingResp = await pingClient.GetAsync($"{CachedGlobalUrl}/ping");
+                        tunnelHealthy = pingResp.IsSuccessStatusCode;
+                        Logger.LogAction("FIREBASE SYNC", $"Tunnel self-ping: {(tunnelHealthy ? "✅ OK" : $"❌ HTTP {(int)pingResp.StatusCode}")}");
+                    }
+                    catch (Exception pingEx)
+                    {
+                        Logger.LogAction("FIREBASE SYNC", $"Tunnel self-ping failed: {pingEx.Message}");
+                    }
+
+                    if (tunnelHealthy)
+                    {
+                        // Cloudflare tunnel is verified working — use public download link
+                        downloadUrl = $"{CachedGlobalUrl}/download?path={Uri.EscapeDataString(item.FilePath)}";
+                        raw = downloadUrl;
+                        Logger.LogAction("FIREBASE SYNC", $"File '{item.FileName}' → Cloudflare: {downloadUrl}");
+                    }
+                    else
+                    {
+                        // Tunnel URL exists but doesn't work — fall through to Firebase Storage
+                        Logger.LogAction("FIREBASE SYNC", $"Cloudflare tunnel broken — falling back to Firebase Storage for '{item.FileName}'");
+                    }
                 }
-                else if (isFile)
+                if (isFile && string.IsNullOrEmpty(downloadUrl))
                 {
-                    // No Cloudflare after 30s wait — try Firebase Storage upload
+                    // No working Cloudflare — try Firebase Storage upload
                     Logger.LogAction("FIREBASE SYNC", $"Cloudflare unavailable — uploading '{item.FileName}' to Firebase Storage...");
                     string storageUrl = await UploadFileToStorageAsync(item.FilePath);
                     if (!string.IsNullOrEmpty(storageUrl))

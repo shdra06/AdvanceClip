@@ -403,14 +403,50 @@ namespace AdvanceClip.Classes
                 });
 
                 // No auth header needed — /download is now public (before auth barrier)
-                var request = new HttpRequestMessage(HttpMethod.Get, cloudItem.Raw);
-                // Use a dedicated client with a generous timeout for large file downloads
-                using var downloadClient = new HttpClient() { Timeout = TimeSpan.FromMinutes(10) };
-                var response = await downloadClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+                // Retry up to 3 times with delays (Cloudflare tunnel DNS may need time to propagate)
+                HttpResponseMessage response = null;
+                int maxRetries = 3;
+                int[] retryDelays = { 2000, 5000, 10000 }; // 2s, 5s, 10s
 
-                if (!response.IsSuccessStatusCode)
+                using var downloadClient = new HttpClient() { Timeout = TimeSpan.FromMinutes(10) };
+                
+                for (int attempt = 0; attempt < maxRetries; attempt++)
                 {
-                    throw new Exception($"HTTP {(int)response.StatusCode}");
+                    try
+                    {
+                        if (attempt > 0)
+                        {
+                            Logger.LogAction("FIREBASE SSE", $"Download retry {attempt + 1}/{maxRetries} after {retryDelays[attempt - 1]}ms...");
+                            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                            {
+                                if (progressClip != null)
+                                    progressClip.RawContent = $"🔄 Retry {attempt + 1}/{maxRetries} — {cloudItem.Title}";
+                            });
+                            await Task.Delay(retryDelays[attempt - 1]);
+                        }
+
+                        var request = new HttpRequestMessage(HttpMethod.Get, cloudItem.Raw);
+                        response = await downloadClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+
+                        if (response.IsSuccessStatusCode)
+                        {
+                            Logger.LogAction("FIREBASE SSE", $"Download connected on attempt {attempt + 1}: {cloudItem.Raw}");
+                            break;
+                        }
+
+                        Logger.LogAction("FIREBASE SSE", $"Download attempt {attempt + 1} failed: HTTP {(int)response.StatusCode} from {cloudItem.Raw}");
+                    }
+                    catch (Exception retryEx)
+                    {
+                        Logger.LogAction("FIREBASE SSE", $"Download attempt {attempt + 1} error: {retryEx.Message}");
+                        if (attempt == maxRetries - 1) throw;
+                    }
+                }
+
+                if (response == null || !response.IsSuccessStatusCode)
+                {
+                    int code = response != null ? (int)response.StatusCode : 0;
+                    throw new Exception($"HTTP {code} after {maxRetries} attempts from {cloudItem.Raw}");
                 }
 
                 long totalBytes = response.Content.Headers.ContentLength ?? -1;
@@ -500,7 +536,7 @@ namespace AdvanceClip.Classes
             }
             catch (Exception ex)
             {
-                Logger.LogAction("FIREBASE SSE", "File Download Error: " + ex.Message);
+                Logger.LogAction("FIREBASE SSE", $"File Download Error: {ex.Message} | URL: {cloudItem.Raw}");
                 System.Windows.Application.Current.Dispatcher.Invoke(() =>
                 {
                     if (progressClip != null)

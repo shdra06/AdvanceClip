@@ -136,8 +136,50 @@ namespace AdvanceClip.Classes
 
                     if (tunnelUrlReceived)
                     {
-                        Logger.LogAction("CLOUDFLARE", $"Tunnel established: {GlobalUrl}");
-                        return; // Success!
+                        // Verify the tunnel actually proxies traffic by self-pinging
+                        bool verified = false;
+                        using var verifyClient = new HttpClient() { Timeout = TimeSpan.FromSeconds(8) };
+                        for (int v = 0; v < 3; v++)
+                        {
+                            try
+                            {
+                                await Task.Delay(1000); // Give tunnel a moment to fully establish
+                                var pingResp = await verifyClient.GetAsync($"{GlobalUrl}/ping");
+                                if (pingResp.IsSuccessStatusCode)
+                                {
+                                    verified = true;
+                                    Logger.LogAction("CLOUDFLARE", $"✅ Tunnel verified working: {GlobalUrl}");
+                                    break;
+                                }
+                                Logger.LogAction("CLOUDFLARE", $"Tunnel ping attempt {v + 1}/3: HTTP {(int)pingResp.StatusCode}");
+                            }
+                            catch (Exception pingEx)
+                            {
+                                Logger.LogAction("CLOUDFLARE", $"Tunnel ping attempt {v + 1}/3 failed: {pingEx.Message}");
+                            }
+                        }
+
+                        if (verified)
+                        {
+                            return; // Success!
+                        }
+                        else
+                        {
+                            // Tunnel URL exists but doesn't proxy — kill and retry
+                            Logger.LogAction("CLOUDFLARE", "⚠️ Tunnel URL received but ping failed — restarting tunnel...");
+                            KillExisting();
+                            _retryCount++;
+                            if (_retryCount <= MAX_RETRIES)
+                            {
+                                GlobalUrl = $"Tunnel broken, restarting ({_retryCount}/{MAX_RETRIES})...";
+                                GlobalUrlUpdated?.Invoke(GlobalUrl);
+                                await Task.Delay(RETRY_DELAY_MS);
+                                continue; // Retry the whole tunnel setup
+                            }
+                            GlobalUrl = "Tunnel verification failed — file sync uses cloud storage.";
+                            GlobalUrlUpdated?.Invoke(GlobalUrl);
+                            return;
+                        }
                     }
 
                     if (_cfProcess.HasExited)
