@@ -1,5 +1,5 @@
 {
-  "pc_version": "1.6.1",
-  "pc_download": "https://github.com/shdra06/AdvanceClip/releases/download/v1.6.1/AdvanceClip.exe",
-  "changelog": "v1.6.1: Enhanced PDF merger with visual page grid selector, page range input, odd/even selection, shift-click range, row/column toggle, 5-min backlog catch-up, QUIC→HTTP/2 tunnel fallback, download retry."
+  "pc_version": "1.6.2",
+  "pc_download": "https://github.com/shdra06/AdvanceClip/releases/download/v1.6.2/AdvanceClip.exe",
+  "changelog": "v1.6.2: QR auto-copy, smooth scroll fix, PDF rename/reverse/Word merge, table extractor overhaul (CSV/TSV export, add/delete row/col, flexible grid, row numbers, smart separator detection)."
 }
