@@ -21,7 +21,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // ═══ Extracted Modules ═══
 import { ClipItem, DOWNLOAD_BASE, SYNC_CACHE_BASE, CONVERTED_BASE, IMAGE_CACHE_BASE, getDownloadPath, getSyncCachePath, getConvertedPath } from '../../utils/clipTypes';
-import { fetchWithTimeout, getSubnet, getConnectionType, connectionColors, resolveOptimalUrl, getMediaUrl } from '../../utils/networkHelpers';
+import { fetchWithTimeout, getSubnet, getConnectionType, connectionColors, resolveOptimalUrl, getDeviceUrls, getMediaUrl } from '../../utils/networkHelpers';
 import { styles } from '../../styles/syncStyles';
 import CachedImage from '../../components/CachedImage';
 
@@ -50,32 +50,36 @@ export default function SyncScreen() {
   const sentContentFingerprintsRef = useRef<Set<string>>(new Set());
   const recentSyncFingerprintsRef = useRef<Map<string, number>>(new Map());
 
-  // ─── URL Cache ───
+  // ─── PC URL (auto-discovered from Firebase, no manual config needed) ───
   const cachedPcUrlRef = useRef<string | null>(null);
   const cachedPcUrlTimestampRef = useRef<number>(0);
-  const URL_CACHE_TTL = 30_000;
 
   const getCachedPcUrl = async (): Promise<string> => {
+    // Return cached URL if fresh (15s TTL)
     const now = Date.now();
-    if (cachedPcUrlRef.current && (now - cachedPcUrlTimestampRef.current) < URL_CACHE_TTL) {
+    if (cachedPcUrlRef.current && (now - cachedPcUrlTimestampRef.current) < 15_000) {
       return cachedPcUrlRef.current;
     }
-    const activePc = activeDevices.find(d => d.DeviceType === 'PC');
-    if (activePc) {
-      const resolved = await resolveOptimalUrl(activePc);
+    // Find PC from Firebase auto-discovered devices
+    const pc = activeDevices.find(d => d.DeviceType === 'PC');
+    if (pc) {
+      const urls = getDeviceUrls(pc);
+      // Single URL = use directly (no health check waste)
+      // Multiple URLs = resolveOptimalUrl picks fastest (LAN biased)
+      const resolved = urls.length === 1 ? urls[0] : await resolveOptimalUrl(pc);
       if (resolved) {
         cachedPcUrlRef.current = resolved;
         cachedPcUrlTimestampRef.current = now;
-        // DIAGNOSTIC: log once when URL resolves
-        if (Platform.OS === 'android') ToastAndroid.show(`🌐 PC resolved: ${resolved}`, ToastAndroid.SHORT);
         return resolved;
-      } else {
-        if (Platform.OS === 'android') ToastAndroid.show(`⚠️ resolveOptimalUrl failed for ${activePc.DeviceName}. Urls tried: ${activePc.LocalIp || 'none'}, ${activePc.Url || 'none'}`, ToastAndroid.LONG);
       }
     }
-    const fallback = `http://${pcLocalIp}`;
-    if (Platform.OS === 'android' && !cachedPcUrlRef.current) ToastAndroid.show(`📡 Using fallback IP: ${fallback}`, ToastAndroid.SHORT);
-    return fallback;
+    // Fallback: manual IP from Settings (legacy, rarely needed)
+    const raw = pcLocalIp?.trim();
+    if (raw) {
+      const fallback = raw.startsWith('http') ? raw.replace(/\/$/, '') : `http://${raw.includes(':') ? raw : raw + ':8999'}`;
+      return fallback;
+    }
+    return 'http://localhost:8999';
   };
 
   // ─── Overlay Sync ───
@@ -356,32 +360,16 @@ export default function SyncScreen() {
         const data = snapshot.val();
         const now = Date.now();
         rawDevices = Object.keys(data).map(k => ({ ...data[k], _key: k })).filter(d => d.IsOnline && d.Timestamp && (now - d.Timestamp) < 300_000);
-        // ── DIAGNOSTIC: Log what Firebase returned ──
-        const pcDevs = rawDevices.filter(d => d.DeviceType === 'PC');
-        if (Platform.OS === 'android' && pcDevs.length > 0) {
-          const pc = pcDevs[0];
-          ToastAndroid.show(`🔍 Firebase PC: ${pc.DeviceName}\nLocalIp: ${pc.LocalIp || 'none'}\nUrl: ${pc.Url || 'none'}\nGlobal: ${pc.GlobalUrl || 'none'}`, ToastAndroid.LONG);
-        } else if (Platform.OS === 'android' && rawDevices.length === 0) {
-          ToastAndroid.show(`⚠️ Firebase: No online devices found`, ToastAndroid.SHORT);
-        }
       }
+      // If no PC found in Firebase, probe manual IP from Settings as fallback
       const hasPc = rawDevices.some(d => d.DeviceType === 'PC');
       if (!hasPc && pcLocalIp) {
-        if (Platform.OS === 'android') ToastAndroid.show(`🔎 No PC in Firebase. Probing manual IP: ${pcLocalIp}`, ToastAndroid.SHORT);
         try {
-          const rawIp = pcLocalIp.trim();
-          const baseIp = rawIp.replace(/^https?:\/\//, '').split(':')[0];
-          const probeUrl = rawIp.startsWith('http') ? rawIp.replace(/\/$/, '') : `http://${rawIp.includes(':') ? rawIp : baseIp + ':8999'}`;
+          const raw = pcLocalIp.trim();
+          const probeUrl = raw.startsWith('http') ? raw.replace(/\/$/, '') : `http://${raw.includes(':') ? raw : raw.split(':')[0] + ':8999'}`;
           const res = await fetch(`${probeUrl}/api/health`, { method: 'GET', headers: { 'X-Advance-Client': 'MobileCompanion' }, signal: AbortSignal.timeout(2000) });
-          if (res.ok) {
-            rawDevices.push({ DeviceName: 'PC', DeviceType: 'PC', IsOnline: true, Url: probeUrl, LocalIp: probeUrl, _key: 'local_direct', Timestamp: Date.now() });
-            if (Platform.OS === 'android') ToastAndroid.show(`✅ Manual probe OK: ${probeUrl}`, ToastAndroid.SHORT);
-          } else {
-            if (Platform.OS === 'android') ToastAndroid.show(`❌ Manual probe failed: ${probeUrl} (${res.status})`, ToastAndroid.SHORT);
-          }
-        } catch(e: any) {
-          if (Platform.OS === 'android') ToastAndroid.show(`❌ Probe error: ${e.message?.substring(0, 60)}`, ToastAndroid.SHORT);
-        }
+          if (res.ok) rawDevices.push({ DeviceName: 'PC (LAN)', DeviceType: 'PC', IsOnline: true, Url: probeUrl, LocalIp: probeUrl, _key: 'local_direct', Timestamp: Date.now() });
+        } catch {}
       }
       setActiveDevices(rawDevices);
     });

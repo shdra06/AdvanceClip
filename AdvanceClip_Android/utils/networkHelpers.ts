@@ -1,4 +1,5 @@
 // Network utility helpers for AdvanceClip Android
+// Simplified: Trust Firebase data, try-then-fallback pattern, no redundant health checks
 
 /** Fetch with configurable timeout */
 export const fetchWithTimeout = async (url: string, options: any = {}, timeoutMs = 2500) => {
@@ -38,79 +39,119 @@ export const connectionColors: Record<string, string> = {
   P2P: '#06B6D4',
 };
 
-/** Resolve the best reachable URL for a device by trying all candidates */
+/**
+ * Normalize a raw IP/URL into a clean http:// URL with port.
+ * "192.168.1.5"       → "http://192.168.1.5:8999"
+ * "192.168.1.5:8999"  → "http://192.168.1.5:8999"
+ * "http://192.168.1.5" → "http://192.168.1.5:8999"
+ * "https://x.trycloudflare.com/" → "https://x.trycloudflare.com"
+ */
+const normalizeUrl = (raw: string): string => {
+  let url = raw.trim();
+  if (!url) return '';
+  // Cloudflare URLs are already complete
+  if (url.includes('trycloudflare.com')) return url.replace(/\/$/, '');
+  // Add http:// if missing
+  if (!url.startsWith('http')) url = `http://${url}`;
+  // Add port if missing
+  const hostPart = url.replace(/^https?:\/\//, '');
+  if (!hostPart.includes(':')) url = `${url}:8999`;
+  return url.replace(/\/$/, '');
+};
+
+/**
+ * Get ordered list of URLs to try for a device.
+ * Priority: LAN (fastest) → Cloudflare (reliable) → raw Url field
+ * No health checks here — caller will try-then-fallback.
+ */
+export const getDeviceUrls = (device: any): string[] => {
+  if (!device) return [];
+  const urls: string[] = [];
+  const seen = new Set<string>();
+
+  const add = (raw: string | undefined) => {
+    if (!raw || raw === 'offline') return;
+    const normalized = normalizeUrl(raw);
+    if (normalized && !seen.has(normalized)) {
+      seen.add(normalized);
+      urls.push(normalized);
+    }
+  };
+
+  // LAN first (lowest latency)
+  add(device.LocalIp);
+  // Then the Url field (often same as LocalIp, but may differ)
+  add(device.Url);
+  // Then Cloudflare (works from anywhere)
+  add(device.GlobalUrl);
+
+  return urls;
+};
+
+/**
+ * Resolve the best reachable URL for a device.
+ * Smart approach: trust Firebase data, only health-check if multiple candidates.
+ * If only one URL available, use it directly (no wasted round-trip).
+ */
 export const resolveOptimalUrl = async (
-  targetDeviceOrGlobal: any,
+  device: any,
   fetchFn = fetchWithTimeout
 ): Promise<string | null> => {
-  if (!targetDeviceOrGlobal || targetDeviceOrGlobal === 'Global') return null;
+  if (!device || device === 'Global') return null;
 
-  const candidates: string[] = [];
-  if (targetDeviceOrGlobal.Url && targetDeviceOrGlobal.Url.startsWith('http')) {
-    candidates.push(targetDeviceOrGlobal.Url.endsWith('/') ? targetDeviceOrGlobal.Url.slice(0, -1) : targetDeviceOrGlobal.Url);
-  }
-  if (targetDeviceOrGlobal.LocalIp) {
-    targetDeviceOrGlobal.LocalIp.split(',').forEach((ip: string) => {
-      let cleanIp = ip.trim();
-      if (!cleanIp.startsWith('http')) cleanIp = `http://${cleanIp}`;
-      const hostPart = cleanIp.replace(/^https?:\/\//, '');
-      if (!hostPart.includes(':')) cleanIp = `${cleanIp}:8999`;
-      if (!candidates.includes(cleanIp)) candidates.push(cleanIp);
-    });
-  }
-  if (targetDeviceOrGlobal.GlobalUrl && targetDeviceOrGlobal.GlobalUrl.includes('trycloudflare.com')) {
-    if (!candidates.includes(targetDeviceOrGlobal.GlobalUrl)) candidates.push(targetDeviceOrGlobal.GlobalUrl);
-  }
+  const urls = getDeviceUrls(device);
+  if (urls.length === 0) return null;
 
-  console.log(`[RESOLVE] Candidates for ${targetDeviceOrGlobal.DeviceName || 'unknown'}:`, candidates);
+  // If only one URL, trust it — don't waste time health-checking
+  if (urls.length === 1) return urls[0];
 
-  for (const url of candidates) {
-    try {
-      const res = await fetchFn(`${url}/api/health`, {
-        method: 'GET',
-        headers: { 'X-Advance-Client': 'MobileCompanion' },
-      }, 1500);
-      if (res.ok) {
-        console.log(`[RESOLVE] ✅ ${url} → OK`);
-        return url;
-      }
-      console.log(`[RESOLVE] ❌ ${url} → status ${res.status}`);
-    } catch (e: any) {
-      console.log(`[RESOLVE] ❌ ${url} → ${e.message?.substring(0, 60)}`);
-    }
+  // Multiple URLs: quick health check to pick the fastest (LAN preferred)
+  // Use Promise.race — first healthy response wins
+  try {
+    const result = await Promise.any(
+      urls.map(async (url, idx) => {
+        // Stagger Cloudflare by 500ms to prefer LAN
+        if (url.includes('trycloudflare.com')) {
+          await new Promise(r => setTimeout(r, 500));
+        }
+        const res = await fetchFn(`${url}/api/health`, {
+          method: 'GET',
+          headers: { 'X-Advance-Client': 'MobileCompanion' },
+        }, 2000);
+        if (res.ok) return url;
+        throw new Error(`${url} returned ${res.status}`);
+      })
+    );
+    return result;
+  } catch {
+    // All failed — return LAN URL as best guess (may recover)
+    return urls[0];
   }
-
-  const fallback = candidates.length > 0 ? candidates[0] : null;
-  console.log(`[RESOLVE] All health checks failed. Fallback: ${fallback}`);
-  return fallback;
 };
 
 /** Build absolute media URL from a clip item */
 export const getMediaUrl = (item: any, activeDevices: any[], pcLocalIp: string): string => {
+  // Already absolute URL
   if (item.Raw && item.Raw.startsWith('http')) return item.Raw;
   if (item.DownloadUrl && item.DownloadUrl.startsWith('http')) return item.DownloadUrl;
   if (item.PreviewUrl && item.PreviewUrl.startsWith('http')) return item.PreviewUrl;
+  // Local file path
   if (item.CachedUri && (item.CachedUri.startsWith('file://') || item.CachedUri.startsWith('/'))) return item.CachedUri;
 
+  // Relative URL — needs a base
   const relUrl = item.PreviewUrl || item.DownloadUrl || item.Raw || '';
   if (!relUrl) return '';
 
   const pcNode = activeDevices.find((d: any) => d.DeviceType === 'PC');
   if (pcNode) {
-    let baseUrl = '';
-    if (pcNode.resolvedUrl) baseUrl = pcNode.resolvedUrl.replace(/\/$/, '');
-    else if (pcNode.Url) baseUrl = pcNode.Url.split(',')[0].trim().replace(/\/$/, '');
-    else if (pcNode.LocalIp) {
-      const ip = pcNode.LocalIp.split(',')[0].trim();
-      baseUrl = ip.startsWith('http') ? ip.replace(/\/$/, '') : `http://${ip}`;
+    const urls = getDeviceUrls(pcNode);
+    if (urls.length > 0) {
+      return `${urls[0]}${relUrl.startsWith('/') ? relUrl : '/' + relUrl}`;
     }
-    else if (pcNode.GlobalUrl) baseUrl = pcNode.GlobalUrl.replace(/\/$/, '');
-    if (baseUrl) return `${baseUrl}${relUrl.startsWith('/') ? relUrl : '/' + relUrl}`;
   }
 
   if (pcLocalIp) {
-    const rawIp = pcLocalIp.trim().replace(/\/$/, '');
-    const base = rawIp.startsWith('http') ? rawIp : `http://${rawIp.includes(':') ? rawIp : rawIp + ':8999'}`;
+    const base = normalizeUrl(pcLocalIp);
     return `${base}${relUrl.startsWith('/') ? relUrl : '/' + relUrl}`;
   }
 
