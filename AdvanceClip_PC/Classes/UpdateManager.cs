@@ -163,47 +163,75 @@ namespace AdvanceClip.Classes
                 return;
             }
 
+            // For single-file published apps, MainModule.FileName can be empty.
+            // Use AppContext.BaseDirectory which always works.
             string currentExePath = Process.GetCurrentProcess().MainModule?.FileName ?? "";
+            if (string.IsNullOrEmpty(currentExePath) || !File.Exists(currentExePath))
+            {
+                currentExePath = Path.Combine(AppContext.BaseDirectory, "AdvanceClip.exe");
+            }
+            if (string.IsNullOrEmpty(currentExePath) || !File.Exists(currentExePath))
+            {
+                // Last resort: find ourselves by process name
+                currentExePath = Environment.ProcessPath ?? "";
+            }
             if (string.IsNullOrEmpty(currentExePath))
             {
                 StatusChanged?.Invoke("Cannot determine current EXE path.");
+                Logger.LogAction("UPDATE", "FATAL: Could not find current EXE path via any method.");
                 return;
             }
 
-            // Create a batch script that:
-            // 1. Waits for the current process to exit
-            // 2. Replaces the EXE
-            // 3. Launches the new EXE
-            // 4. Cleans up
+            Logger.LogAction("UPDATE", $"Current EXE: {currentExePath}");
+            Logger.LogAction("UPDATE", $"New EXE: {tempExePath}");
+
+            int pid = Process.GetCurrentProcess().Id;
+
+            // Create a robust batch script with retry logic
             string batchPath = Path.Combine(tempDir, "update.bat");
-            string batchContent = $@"
-@echo off
-echo Applying AdvanceClip update...
-timeout /t 2 /nobreak > nul
-copy /Y ""{tempExePath}"" ""{currentExePath}""
-if errorlevel 1 (
-    echo Update failed! Could not replace EXE.
-    pause
-    exit /b 1
+            string batchContent = $@"@echo off
+echo AdvanceClip Auto-Updater
+echo Waiting for app to close (PID {pid})...
+:waitloop
+tasklist /fi ""PID eq {pid}"" 2>nul | find ""{pid}"" >nul
+if not errorlevel 1 (
+    timeout /t 1 /nobreak > nul
+    goto waitloop
 )
+echo App closed. Replacing EXE...
+set RETRIES=0
+:copyloop
+copy /Y ""{tempExePath}"" ""{currentExePath}"" >nul 2>&1
+if errorlevel 1 (
+    set /a RETRIES+=1
+    if %RETRIES% GEQ 10 (
+        echo ERROR: Could not replace EXE after 10 attempts.
+        pause
+        exit /b 1
+    )
+    echo Retry %RETRIES%... file may be locked
+    timeout /t 1 /nobreak > nul
+    goto copyloop
+)
+echo Update applied! Starting new version...
 start """" ""{currentExePath}""
+timeout /t 2 /nobreak > nul
 del ""{tempExePath}"" 2>nul
 del ""%~f0"" 2>nul
 ";
 
             File.WriteAllText(batchPath, batchContent);
 
-            Logger.LogAction("UPDATE", $"Launching updater: {batchPath}");
+            Logger.LogAction("UPDATE", $"Launching updater batch: {batchPath}");
             StatusChanged?.Invoke("Restarting with update...");
 
-            // Launch the batch script hidden
+            // Launch the batch script — must use UseShellExecute=true so it survives our process exit
             var psi = new ProcessStartInfo
             {
-                FileName = "cmd.exe",
-                Arguments = $"/c \"{batchPath}\"",
+                FileName = batchPath,
                 CreateNoWindow = true,
                 WindowStyle = ProcessWindowStyle.Hidden,
-                UseShellExecute = false
+                UseShellExecute = true
             };
             Process.Start(psi);
 
