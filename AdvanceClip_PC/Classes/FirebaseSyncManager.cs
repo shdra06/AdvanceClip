@@ -92,7 +92,7 @@ namespace AdvanceClip.Classes
                     try
                     {
                         using var pingClient = new HttpClient() { Timeout = TimeSpan.FromSeconds(5) };
-                        var pingResp = await pingClient.GetAsync($"{CachedGlobalUrl}/ping");
+                        var pingResp = await pingClient.GetAsync($"{CachedGlobalUrl}/api/health");
                         tunnelHealthy = pingResp.IsSuccessStatusCode;
                         Logger.LogAction("FIREBASE SYNC", $"Tunnel self-ping: {(tunnelHealthy ? "✅ OK" : $"❌ HTTP {(int)pingResp.StatusCode}")}");
                     }
@@ -127,12 +127,14 @@ namespace AdvanceClip.Classes
                     }
                     else
                     {
-                        // Last resort: LAN URL
-                        string baseUrl = !string.IsNullOrEmpty(CachedLocalUrl) ? CachedLocalUrl : "";
-                        string relPath = $"/download?path={Uri.EscapeDataString(item.FilePath)}";
-                        downloadUrl = !string.IsNullOrEmpty(baseUrl) ? baseUrl + relPath : relPath;
-                        raw = downloadUrl;
-                        Logger.LogAction("FIREBASE SYNC", $"File '{item.FileName}' → LAN fallback: {downloadUrl}");
+                        // Both Cloudflare and Firebase Storage failed — don't write useless LAN URL
+                        Logger.LogAction("FIREBASE SYNC", $"⚠️ Cannot sync file '{item.FileName}' — no Cloudflare tunnel and Firebase Storage upload failed. File is only available on LAN.");
+                        
+                        // Show toast on PC so user knows
+                        System.Windows.Application.Current.Dispatcher.InvokeAsync(() => {
+                            AdvanceClip.Windows.ToastWindow.ShowToast($"⚠️ {item.FileName} — Cloudflare offline, can't share remotely");
+                        });
+                        return; // Skip this file — don't push an unreachable URL to Firebase
                     }
                 }
                 
@@ -324,12 +326,12 @@ namespace AdvanceClip.Classes
                                     }
                                     else
                                     {
-                                        // LAN fallback
-                                        string baseUrl = !string.IsNullOrEmpty(CachedLocalUrl) ? CachedLocalUrl : "";
-                                        string relPath = $"/download?path={Uri.EscapeDataString(item.FilePath)}";
-                                        downloadUrl = !string.IsNullOrEmpty(baseUrl) ? baseUrl + relPath : relPath;
-                                        raw = downloadUrl;
-                                        Logger.LogAction("FORCED SYNC", $"File '{item.FileName}' → LAN fallback: {downloadUrl}");
+                                        // Both Cloudflare and Firebase Storage failed
+                                        Logger.LogAction("FORCED SYNC", $"⚠️ Cannot send file '{item.FileName}' remotely — no tunnel, no storage");
+                                        System.Windows.Application.Current.Dispatcher.InvokeAsync(() => {
+                                            AdvanceClip.Windows.ToastWindow.ShowToast($"⚠️ {item.FileName} — can't share remotely (no tunnel)");
+                                        });
+                                        continue;
                                     }
                                 }
                             }

@@ -273,6 +273,12 @@ namespace AdvanceClip.Classes
                     res.OutputStream.Write(pong, 0, pong.Length);
                     res.Close();
                 }
+                else if (path == "/api/health" && req.HttpMethod == "GET")
+                {
+                    // Health check is PUBLIC — needed for Cloudflare tunnel self-verification
+                    res.StatusCode = 200;
+                    res.Close();
+                }
                 else if (path == "/download" && req.HttpMethod == "GET")
                 {
                     // File downloads must be PUBLIC (no auth) — Cloudflare tunnel passes these

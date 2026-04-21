@@ -147,25 +147,25 @@ namespace AdvanceClip.Classes
                         await Task.Delay(3000);
                         
                         bool verified = false;
-                        using var verifyClient = new HttpClient() { Timeout = TimeSpan.FromSeconds(12) };
-                        for (int v = 0; v < 5; v++)
+                        using var verifyClient = new HttpClient() { Timeout = TimeSpan.FromSeconds(15) };
+                        for (int v = 0; v < 8; v++)
                         {
                             try
                             {
                                 await Task.Delay(2000); // Wait between pings
                                 Logger.LogAction("CLOUDFLARE", $"Verifying tunnel (attempt {v + 1}/5)...");
-                                var pingResp = await verifyClient.GetAsync($"{GlobalUrl}/ping");
+                                var pingResp = await verifyClient.GetAsync($"{GlobalUrl}/api/health");
                                 if (pingResp.IsSuccessStatusCode)
                                 {
                                     verified = true;
                                     Logger.LogAction("CLOUDFLARE", $"✅ Tunnel verified working: {GlobalUrl}");
                                     break;
                                 }
-                                Logger.LogAction("CLOUDFLARE", $"Tunnel ping attempt {v + 1}/5: HTTP {(int)pingResp.StatusCode}");
+                                Logger.LogAction("CLOUDFLARE", $"Tunnel verify attempt {v + 1}/8: HTTP {(int)pingResp.StatusCode}");
                             }
                             catch (Exception pingEx)
                             {
-                                Logger.LogAction("CLOUDFLARE", $"Tunnel ping attempt {v + 1}/5 failed: {pingEx.Message}");
+                                Logger.LogAction("CLOUDFLARE", $"Tunnel verify attempt {v + 1}/8 failed: {pingEx.Message}");
                             }
                         }
 

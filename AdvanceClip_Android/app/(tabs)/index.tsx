@@ -143,11 +143,13 @@ export default function SyncScreen() {
   // ─── Device Discovery ───
   const [activeDevices, setActiveDevices] = useState<any[]>([]);
 
-  // ─── Screenshot Detection ───
-  const lastScreenshotTsRef = useRef<number>(0);
+  // ─── Screenshot Detection (works with or without overlay service) ───
+  const lastScreenshotTsRef = useRef<number>(Date.now());
   useEffect(() => {
-    if (Platform.OS !== 'android' || !AdvanceOverlay) return;
+    if (Platform.OS !== 'android') return;
     const screenshotPoll = setInterval(async () => {
+      // Try native overlay first, fallback to MediaLibrary polling
+      if (AdvanceOverlay) {
       try {
         const result = await AdvanceOverlay.getLatestScreenshot();
         if (result && result.path && result.timestamp > lastScreenshotTsRef.current) {
@@ -228,6 +230,38 @@ export default function SyncScreen() {
           } catch(e) {}
         }
       } catch(e) {}
+      } else {
+        // Fallback: poll MediaLibrary for new screenshots when overlay isn't active
+        try {
+          const media = await MediaLibrary.getAssetsAsync({ first: 1, mediaType: ['photo'], sortBy: [[MediaLibrary.SortBy.creationTime, false]] });
+          if (media.assets.length > 0) {
+            const latest = media.assets[0];
+            const createdMs = latest.creationTime * 1000;
+            if (createdMs > lastScreenshotTsRef.current && (latest.filename || '').toLowerCase().includes('screenshot')) {
+              lastScreenshotTsRef.current = createdMs;
+              const assetInfo = await MediaLibrary.getAssetInfoAsync(latest.id);
+              const assetUri = assetInfo.localUri || assetInfo.uri;
+              if (assetUri) {
+                const safeName = (latest.filename || `screenshot_${Date.now()}.png`).replace(/[^a-zA-Z0-9.-]/g, '_');
+                await FileSystem.makeDirectoryAsync(IMAGE_CACHE_BASE, { intermediates: true }).catch(() => {});
+                const localCopy = `${IMAGE_CACHE_BASE}${safeName}`;
+                await FileSystem.copyAsync({ from: assetUri, to: localCopy });
+                const screenshotItem: ClipItem = {
+                  Title: latest.filename || safeName, Type: 'ImageLink', Raw: localCopy,
+                  Time: new Date().toLocaleString(), SourceDeviceName: deviceName || 'Phone',
+                  SourceDeviceType: 'Mobile', Timestamp: Date.now(), CachedUri: localCopy,
+                };
+                setClips(prev => [screenshotItem, ...prev]);
+                ToastAndroid.show(`📸 Screenshot captured!`, ToastAndroid.SHORT);
+                try {
+                  const base64 = await FileSystem.readAsStringAsync(localCopy, { encoding: FileSystem.EncodingType.Base64 });
+                  await Clipboard.setImageAsync(base64);
+                } catch {}
+              }
+            }
+          }
+        } catch {}
+      }
     }, 3000);
     return () => clearInterval(screenshotPoll);
   }, [deviceName, isGlobalSyncEnabled, activeDevices]);
@@ -349,6 +383,38 @@ export default function SyncScreen() {
             }
           });
         }
+        // Auto-download files with absolute HTTP URLs from Firebase (remote PC via Cloudflare)
+        if (Platform.OS === 'android') {
+          const latest = parsed[0];
+          if (latest && latest.Raw?.startsWith('http') && ['Pdf', 'Document', 'File', 'Video', 'Audio', 'Archive', 'Presentation', 'Image', 'ImageLink'].includes(latest.Type)) {
+            const fp = `dl::${latest.Raw.substring(0, 100)}`;
+            if (!recentSyncFingerprintsRef.current.has(fp)) {
+              recentSyncFingerprintsRef.current.set(fp, Date.now());
+              // Fire-and-forget download
+              (async () => {
+                try {
+                  if (latest.Type === 'Image' || latest.Type === 'ImageLink') {
+                    const localUri = `${SYNC_CACHE_BASE}fb_img_${Date.now()}.png`;
+                    const { uri } = await FileSystem.downloadAsync(latest.Raw, localUri, { headers: { 'X-Advance-Client': 'MobileCompanion' } });
+                    const b64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+                    await Clipboard.setImageAsync(b64);
+                    ToastAndroid.show(`🖼️ Image synced from ${latest.SourceDeviceName || 'PC'}`, ToastAndroid.SHORT);
+                  } else {
+                    const subfolder = latest.Type === 'Pdf' ? 'PDFs' : latest.Type === 'Video' ? 'Videos' : 'Documents';
+                    const safeName = (latest.Title || `file_${Date.now()}`).replace(/[^a-zA-Z0-9._-]/g, '_');
+                    const destPath = await getDownloadPath(subfolder, safeName);
+                    const existing = await FileSystem.getInfoAsync(destPath);
+                    if (!existing.exists) {
+                      ToastAndroid.show(`⬇️ Downloading ${latest.Title}...`, ToastAndroid.SHORT);
+                      const dl = await FileSystem.downloadAsync(latest.Raw, destPath, { headers: { 'X-Advance-Client': 'MobileCompanion' } });
+                      if (dl.status === 200) ToastAndroid.show(`✅ ${latest.Title} saved`, ToastAndroid.SHORT);
+                    }
+                  }
+                } catch (e) {}
+              })();
+            }
+          }
+        }
         setClips(parsed);
       } else { setClips([]); }
     });
@@ -386,7 +452,8 @@ export default function SyncScreen() {
         try { if (deviceName) AdvanceOverlay.setDeviceName(deviceName); } catch(e) {}
       }
       try {
-        const response = await fetchWithTimeout(`${targetUrl}/api/sync`, { headers: { 'X-Advance-Client': 'MobileCompanion' } }, 1500);
+        const timeout = targetUrl.includes('trycloudflare.com') ? 5000 : 2000;
+        const response = await fetchWithTimeout(`${targetUrl}/api/sync`, { headers: { 'X-Advance-Client': 'MobileCompanion' } }, timeout);
         if (response.ok) {
           const data = await response.json();
           if (data && data.length > 0) {
