@@ -210,6 +210,9 @@
                                               Command="{Binding PlacementTarget.Tag.ConvertDocumentCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" 
                                               CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" 
                                               Visibility="{Binding PlacementTarget.DataContext.IsDocPreview, RelativeSource={RelativeSource AncestorType=ContextMenu}, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                    <MenuItem Header="Convert PDF to Word File" Click="ConvertPdfToWord_Click" 
+                                              Tag="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                              Visibility="{Binding PlacementTarget.DataContext.IsPdfPreview, RelativeSource={RelativeSource AncestorType=ContextMenu}, Converter={StaticResource BooleanToVisibilityConverter}}" />
                                     <MenuItem Header="Open URL in Microsoft Edge" 
                                               Command="{Binding PlacementTarget.Tag.OpenInBrowserCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" 
                                               CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" 
@@ -384,6 +387,21 @@
                                                     <Setter Property="Visibility" Value="Visible"/>
                                                 </DataTrigger>
                                                 <DataTrigger Binding="{Binding ItemType}" Value="Archive">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding ItemType}" Value="Pdf">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding ItemType}" Value="Video">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding ItemType}" Value="Audio">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding ItemType}" Value="Presentation">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding ItemType}" Value="File">
                                                     <Setter Property="Visibility" Value="Visible"/>
                                                 </DataTrigger>
                                             </Style.Triggers>

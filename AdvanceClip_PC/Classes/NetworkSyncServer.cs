@@ -264,6 +264,20 @@ namespace AdvanceClip.Classes
                 {
                     ServeHtml(res);
                 }
+                else if (path == "/ping")
+                {
+                    // Unauthenticated ping for LAN reachability detection
+                    byte[] pong = Encoding.UTF8.GetBytes("pong");
+                    res.StatusCode = 200;
+                    res.ContentType = "text/plain";
+                    res.OutputStream.Write(pong, 0, pong.Length);
+                    res.Close();
+                }
+                else if (path == "/download" && req.HttpMethod == "GET")
+                {
+                    // File downloads must be PUBLIC (no auth) — Cloudflare tunnel passes these
+                    await ServeFileDownload(req, res);
+                }
                 else
                 {
                     // HARD SECURE AUTHENTICATION BARRIER
@@ -317,10 +331,6 @@ namespace AdvanceClip.Classes
                     else if (path == "/api/convert_to_pdf" && req.HttpMethod == "POST")
                     {
                         await HandleConvertToPdf(req, res);
-                    }
-                    else if (path == "/download" && req.HttpMethod == "GET")
-                    {
-                        await ServeFileDownload(req, res);
                     }
                     else
                     {

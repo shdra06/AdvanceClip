@@ -459,14 +459,32 @@ namespace AdvanceClip.Classes
                     System.Windows.Clipboard.SetFileDropList(new System.Collections.Specialized.StringCollection { filePath });
                     AdvanceClip.Windows.ToastWindow.ShowToast($"✅ {cloudItem.Title} ({sizeStr}) from {cloudItem.SourceDeviceName}");
 
-                    var clip = new ClipboardItem
+                    // Use path constructor — auto-classifies by extension (Image/PDF/Document/Archive/Video/Audio/Code)
+                    // and loads FormattedSize, Icon, SmartActions etc.
+                    var clip = new ClipboardItem(filePath);
+                    clip.SourceDeviceName = cloudItem.SourceDeviceName ?? "Remote";
+                    clip.SourceDeviceType = "PC";
+
+                    // For images, the constructor already sets ItemType=Image, but we pre-load the preview at a good resolution
+                    if (clip.ItemType == ClipboardItemType.Image && clip.Icon == null)
                     {
-                        RawContent = filePath,
-                        FileName = cloudItem.Title,
-                        FilePath = filePath,
-                        Extension = Path.GetExtension(filePath).TrimStart('.').ToUpper(),
-                        ItemType = ClipboardItemType.File
-                    };
+                        try
+                        {
+                            var bmp = new System.Windows.Media.Imaging.BitmapImage();
+                            bmp.BeginInit();
+                            bmp.UriSource = new Uri(filePath);
+                            bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                            bmp.DecodePixelWidth = 400;
+                            bmp.EndInit();
+                            bmp.Freeze();
+                            clip.Icon = bmp;
+                        }
+                        catch (Exception imgEx)
+                        {
+                            Logger.LogAction("FIREBASE SSE", $"Image preview load failed: {imgEx.Message}");
+                        }
+                    }
+
                     clip.EvaluateSmartActions();
                     _viewModel.DroppedItems.Insert(0, clip);
                     _viewModel.OnPropertyChanged(nameof(_viewModel.ShelfVisibility));

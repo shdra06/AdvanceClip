@@ -62,34 +62,55 @@ namespace AdvanceClip.Classes
 
             try
             {
-                // For files: construct a public Cloudflare download URL instead of embedding raw content
+                // For files: always wait for Cloudflare tunnel first — it's the only reliable cross-network URL
                 bool isFile = !string.IsNullOrEmpty(item.FilePath) && File.Exists(item.FilePath);
                 string downloadUrl = "";
                 string raw = item.RawContent ?? "";
-                
+
+                if (isFile)
+                {
+                    // If tunnel not ready yet, wait up to 30s before proceeding
+                    if (string.IsNullOrEmpty(CachedGlobalUrl) || !CachedGlobalUrl.Contains("trycloudflare.com"))
+                    {
+                        Logger.LogAction("FIREBASE SYNC", $"Waiting for Cloudflare tunnel before sending '{item.FileName}'...");
+                        for (int i = 0; i < 60; i++) // 60 x 500ms = 30s max
+                        {
+                            await Task.Delay(500);
+                            if (!string.IsNullOrEmpty(CachedGlobalUrl) && CachedGlobalUrl.Contains("trycloudflare.com"))
+                            {
+                                Logger.LogAction("FIREBASE SYNC", $"Cloudflare ready after {(i + 1) * 500}ms");
+                                break;
+                            }
+                        }
+                    }
+                }
+
                 if (isFile && !string.IsNullOrEmpty(CachedGlobalUrl) && CachedGlobalUrl.Contains("trycloudflare.com"))
                 {
-                    // Build public download link: https://abc.trycloudflare.com/download?path=C%3A%5C...%5Cfile.apk
+                    // Cloudflare tunnel is active — use public download link
                     downloadUrl = $"{CachedGlobalUrl}/download?path={Uri.EscapeDataString(item.FilePath)}";
-                    raw = downloadUrl; // Use full Cloudflare URL as Raw — works everywhere
-                    Logger.LogAction("FIREBASE SYNC", $"File '{item.FileName}' → public URL: {downloadUrl}");
+                    raw = downloadUrl;
+                    Logger.LogAction("FIREBASE SYNC", $"File '{item.FileName}' → Cloudflare: {downloadUrl}");
                 }
                 else if (isFile)
                 {
-                    // No Cloudflare tunnel — upload to Firebase Storage for global access
-                    Logger.LogAction("FIREBASE SYNC", $"No Cloudflare — uploading '{item.FileName}' to Firebase Storage...");
+                    // No Cloudflare after 30s wait — try Firebase Storage upload
+                    Logger.LogAction("FIREBASE SYNC", $"Cloudflare unavailable — uploading '{item.FileName}' to Firebase Storage...");
                     string storageUrl = await UploadFileToStorageAsync(item.FilePath);
                     if (!string.IsNullOrEmpty(storageUrl))
                     {
                         downloadUrl = storageUrl;
                         raw = storageUrl;
-                        Logger.LogAction("FIREBASE SYNC", $"File '{item.FileName}' → Firebase Storage URL");
+                        Logger.LogAction("FIREBASE SYNC", $"File '{item.FileName}' → Firebase Storage: {storageUrl}");
                     }
                     else
                     {
-                        // Last resort: relative URL for LAN-only
-                        downloadUrl = $"/download?path={Uri.EscapeDataString(item.FilePath)}";
-                        Logger.LogAction("FIREBASE SYNC", $"File '{item.FileName}' → Firebase Storage failed, LAN only");
+                        // Last resort: LAN URL
+                        string baseUrl = !string.IsNullOrEmpty(CachedLocalUrl) ? CachedLocalUrl : "";
+                        string relPath = $"/download?path={Uri.EscapeDataString(item.FilePath)}";
+                        downloadUrl = !string.IsNullOrEmpty(baseUrl) ? baseUrl + relPath : relPath;
+                        raw = downloadUrl;
+                        Logger.LogAction("FIREBASE SYNC", $"File '{item.FileName}' → LAN fallback: {downloadUrl}");
                     }
                 }
                 
@@ -150,24 +171,43 @@ namespace AdvanceClip.Classes
 
         public static async Task<string> UploadFileToStorageAsync(string filePath)
         {
-            try
-            {
-                var fileName = Path.GetFileName(filePath);
-                var safeName = "archives/" + fileName + "_" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var fileName = Path.GetFileName(filePath);
+            var safeName = "archives/" + fileName + "_" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
-                using var stream = File.OpenRead(filePath);
-                var task = new FirebaseStorage("advance-sync.firebasestorage.app")
-                    .Child(safeName)
-                    .PutAsync(stream);
-                    
-                var downloadUrl = await task;
-                return downloadUrl;
-            }
-            catch (Exception ex)
+            // Try multiple bucket names — Firebase project naming can vary
+            string[] buckets = new[]
             {
-                Logger.LogAction("FIREBASE STORAGE", "Global blob upload aborted: " + ex.Message);
-                return "";
+                "advance-sync-default-rtdb.firebasestorage.app",
+                "advance-sync.firebasestorage.app",
+                "advance-sync-default-rtdb.appspot.com",
+                "advance-sync.appspot.com"
+            };
+
+            foreach (var bucket in buckets)
+            {
+                try
+                {
+                    Logger.LogAction("FIREBASE STORAGE", $"Trying bucket: {bucket}");
+                    using var stream = File.OpenRead(filePath);
+                    var task = new FirebaseStorage(bucket)
+                        .Child(safeName)
+                        .PutAsync(stream);
+
+                    var downloadUrl = await task;
+                    if (!string.IsNullOrEmpty(downloadUrl))
+                    {
+                        Logger.LogAction("FIREBASE STORAGE", $"Upload success via {bucket}: {downloadUrl}");
+                        return downloadUrl;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogAction("FIREBASE STORAGE", $"Bucket {bucket} failed: {ex.Message}");
+                }
             }
+
+            Logger.LogAction("FIREBASE STORAGE", "All buckets failed — file upload not possible");
+            return "";
         }
 
         public static async Task PushTunnelUrl(string url, bool isOnline, string localIp = "")
@@ -235,21 +275,40 @@ namespace AdvanceClip.Classes
                             }
                             else
                             {
-                                // No Cloudflare — upload to Firebase Storage for global access
-                                Logger.LogAction("FORCED SYNC", $"No Cloudflare — uploading '{item.FileName}' to Firebase Storage...");
-                                string storageUrl = await UploadFileToStorageAsync(item.FilePath);
-                                if (!string.IsNullOrEmpty(storageUrl))
+                                // Wait for Cloudflare tunnel
+                                Logger.LogAction("FORCED SYNC", $"No Cloudflare yet — waiting up to 20s...");
+                                for (int i = 0; i < 40; i++)
                                 {
-                                    downloadUrl = storageUrl;
-                                    raw = storageUrl;
-                                    Logger.LogAction("FORCED SYNC", $"File '{item.FileName}' → Firebase Storage URL");
+                                    await Task.Delay(500);
+                                    if (!string.IsNullOrEmpty(CachedGlobalUrl) && CachedGlobalUrl.Contains("trycloudflare.com")) break;
+                                }
+
+                                if (!string.IsNullOrEmpty(CachedGlobalUrl) && CachedGlobalUrl.Contains("trycloudflare.com"))
+                                {
+                                    downloadUrl = $"{CachedGlobalUrl}/download?path={Uri.EscapeDataString(item.FilePath)}";
+                                    raw = downloadUrl;
+                                    Logger.LogAction("FORCED SYNC", $"File '{item.FileName}' → Cloudflare URL (delayed)");
                                 }
                                 else
                                 {
-                                    // Last resort: relative URL for LAN-only
-                                    long fileSize = new FileInfo(item.FilePath).Length;
-                                    downloadUrl = $"/download?path={Uri.EscapeDataString(item.FilePath)}";
-                                    Logger.LogAction("FORCED SYNC", $"File '{item.FileName}' ({fileSize / (1024*1024)}MB) → LAN only");
+                                    // Firebase Storage fallback
+                                    Logger.LogAction("FORCED SYNC", $"Uploading '{item.FileName}' to Firebase Storage...");
+                                    string storageUrl = await UploadFileToStorageAsync(item.FilePath);
+                                    if (!string.IsNullOrEmpty(storageUrl))
+                                    {
+                                        downloadUrl = storageUrl;
+                                        raw = storageUrl;
+                                        Logger.LogAction("FORCED SYNC", $"File '{item.FileName}' → Firebase Storage");
+                                    }
+                                    else
+                                    {
+                                        // LAN fallback
+                                        string baseUrl = !string.IsNullOrEmpty(CachedLocalUrl) ? CachedLocalUrl : "";
+                                        string relPath = $"/download?path={Uri.EscapeDataString(item.FilePath)}";
+                                        downloadUrl = !string.IsNullOrEmpty(baseUrl) ? baseUrl + relPath : relPath;
+                                        raw = downloadUrl;
+                                        Logger.LogAction("FORCED SYNC", $"File '{item.FileName}' → LAN fallback: {downloadUrl}");
+                                    }
                                 }
                             }
                         }

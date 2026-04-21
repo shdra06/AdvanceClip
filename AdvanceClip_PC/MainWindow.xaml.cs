@@ -1102,5 +1102,69 @@ namespace AdvanceClip
                 ShelfListView.SelectedItems.Clear();
             }
         }
+        private async void ConvertPdfToWord_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var menuItem = sender as System.Windows.Controls.MenuItem;
+                var clipItem = menuItem?.Tag as ClipboardItem;
+                if (clipItem == null || string.IsNullOrEmpty(clipItem.FilePath)) return;
+
+                AdvanceClip.Windows.ToastWindow.ShowToast("📄 Converting PDF to Word...");
+
+                string outputPath = System.IO.Path.Combine(
+                    System.IO.Path.GetDirectoryName(clipItem.FilePath) ?? System.IO.Path.GetTempPath(),
+                    System.IO.Path.GetFileNameWithoutExtension(clipItem.FilePath) + "_Converted.docx");
+
+                await System.Threading.Tasks.Task.Run(() =>
+                {
+                    try
+                    {
+                        // Use Word COM to open PDF and save as DOCX (Word 2013+ supports this natively)
+                        string script = $@"
+$word = New-Object -ComObject Word.Application
+$word.Visible = $false
+$doc = $word.Documents.Open('{clipItem.FilePath.Replace("'", "''")}')
+$doc.SaveAs([ref]'{outputPath.Replace("'", "''")}', [ref]16)
+$doc.Close()
+$word.Quit()
+[System.Runtime.InteropServices.Marshal]::ReleaseComObject($word) | Out-Null
+";
+                        var psi = new System.Diagnostics.ProcessStartInfo
+                        {
+                            FileName = "powershell.exe",
+                            Arguments = $"-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command \"{script}\"",
+                            CreateNoWindow = true,
+                            UseShellExecute = false
+                        };
+                        System.Diagnostics.Process.Start(psi)?.WaitForExit(60000);
+                    }
+                    catch (Exception ex)
+                    {
+                        AdvanceClip.Classes.Logger.LogAction("PDF2WORD", $"Conversion error: {ex.Message}");
+                    }
+                });
+
+                if (System.IO.File.Exists(outputPath))
+                {
+                    // Add converted file to shelf
+                    var newItem = new ClipboardItem(outputPath);
+                    _viewModel.DroppedItems.Insert(0, newItem);
+                    _viewModel.OnPropertyChanged(nameof(_viewModel.ShelfVisibility));
+
+                    // Open containing folder with the file selected
+                    System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{outputPath}\"");
+                    AdvanceClip.Windows.ToastWindow.ShowToast($"✅ Converted: {System.IO.Path.GetFileName(outputPath)}");
+                }
+                else
+                {
+                    AdvanceClip.Windows.ToastWindow.ShowToast("❌ Conversion failed — Microsoft Word required");
+                }
+            }
+            catch (Exception ex)
+            {
+                AdvanceClip.Windows.ToastWindow.ShowToast($"❌ PDF to Word error: {ex.Message}");
+            }
+        }
     }
 }

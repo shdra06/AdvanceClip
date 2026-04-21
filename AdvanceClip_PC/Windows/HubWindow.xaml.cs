@@ -75,6 +75,12 @@ namespace AdvanceClip.Windows
                 {
                     UpdateBtn.Content = "✓ Up to Date";
                     UpdateBtn.IsEnabled = false;
+                    UpdateProgressPanel.Visibility = Visibility.Collapsed;
+
+                    // Re-enable after 3s so user can re-check for newer updates
+                    await Task.Delay(3000);
+                    UpdateBtn.Content = "Check Again";
+                    UpdateBtn.IsEnabled = true;
                 }
             });
 
@@ -470,8 +476,19 @@ namespace AdvanceClip.Windows
 
                 foreach (var d in devices)
                 {
-                    // Check LAN: same subnet
-                    bool isLan = !string.IsNullOrEmpty(d.LocalIp) && !string.IsNullOrEmpty(mySubnet) && GetSubnet(d.LocalIp) == mySubnet;
+                    // Check LAN: actually try to reach the device's local IP (subnet matching is unreliable)
+                    bool isLan = false;
+                    if (!string.IsNullOrEmpty(d.LocalIp) && d.LocalIp.StartsWith("http"))
+                    {
+                        try
+                        {
+                            using var pingClient = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromMilliseconds(800) };
+                            var resp = await pingClient.GetAsync(d.LocalIp + "/ping");
+                            isLan = resp.IsSuccessStatusCode;
+                        }
+                        catch { isLan = false; }
+                    }
+
                     if (isLan)
                         lanItems.Add(new DeviceDisplayItem { DeviceName = d.Name, DeviceType = d.Type, IsOnline = d.IsOnline, ConnectionType = "Local", LocalIp = d.LocalIp, GlobalUrl = d.GlobalUrl });
 
