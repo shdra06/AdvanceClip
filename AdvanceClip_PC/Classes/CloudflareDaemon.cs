@@ -12,6 +12,7 @@ namespace AdvanceClip.Classes
         private Process _cfProcess;
         private int _localPort;
         private int _retryCount = 0;
+        private bool _useHttp2 = false; // Start with QUIC, fallback to HTTP/2 for restricted networks
         private const int MAX_RETRIES = 3;
         private const int RETRY_DELAY_MS = 10_000; // 10 seconds between retries
         private const long MIN_EXE_SIZE = 10_000_000; // cloudflared.exe should be >10MB
@@ -65,7 +66,10 @@ namespace AdvanceClip.Classes
 
                     _cfProcess = new Process();
                     _cfProcess.StartInfo.FileName = exePath;
-                    _cfProcess.StartInfo.Arguments = $"tunnel --url http://localhost:{_localPort} --no-autoupdate";
+                    _cfProcess.StartInfo.Arguments = _useHttp2
+                        ? $"tunnel --url http://localhost:{_localPort} --no-autoupdate --protocol http2"
+                        : $"tunnel --url http://localhost:{_localPort} --no-autoupdate";
+                    Logger.LogAction("CLOUDFLARE", $"Starting tunnel with protocol: {(_useHttp2 ? "HTTP/2 (TCP 443)" : "QUIC (UDP 7844)")}");
                     _cfProcess.StartInfo.UseShellExecute = false;
                     _cfProcess.StartInfo.RedirectStandardError = true;
                     _cfProcess.StartInfo.CreateNoWindow = true;
@@ -176,6 +180,19 @@ namespace AdvanceClip.Classes
                                 await Task.Delay(RETRY_DELAY_MS);
                                 continue; // Retry the whole tunnel setup
                             }
+
+                            // If QUIC failed all retries, switch to HTTP/2 and try again
+                            if (!_useHttp2)
+                            {
+                                Logger.LogAction("CLOUDFLARE", "⚠️ QUIC protocol failed — switching to HTTP/2 (works on restricted networks)...");
+                                _useHttp2 = true;
+                                _retryCount = 0;
+                                GlobalUrl = "Switching to HTTP/2 protocol...";
+                                GlobalUrlUpdated?.Invoke(GlobalUrl);
+                                await Task.Delay(3000);
+                                continue; // Restart with HTTP/2
+                            }
+
                             GlobalUrl = "Tunnel verification failed — file sync uses cloud storage.";
                             GlobalUrlUpdated?.Invoke(GlobalUrl);
                             return;
