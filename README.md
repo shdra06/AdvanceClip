@@ -6,8 +6,8 @@
 
 *Copy on one device. Paste anywhere. Instantly.*
 
-[![Windows](https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)](#-pc-application)
-[![Android](https://img.shields.io/badge/Android-3DDC84?style=for-the-badge&logo=android&logoColor=white)](#-android-companion)
+[![Windows](https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/shdra06/AdvanceClip/releases/latest/download/AdvanceClip.exe)
+[![Android](https://img.shields.io/badge/Android-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/shdra06/AdvanceClip/releases/latest/download/AdvanceClip_Mobile.apk)
 
 
 ---
