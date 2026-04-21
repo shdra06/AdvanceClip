@@ -61,6 +61,10 @@ const MAPPING = {
   'pencil': 'edit',
   'hammer.fill': 'build',
   'antenna.radiowaves.left.and.right': 'cell-tower',
+  'chevron.left': 'chevron-left',
+  'play.fill': 'play-arrow',
+  'bolt.fill': 'flash-on',
+  'macwindow': 'picture-in-picture-alt',
 } as IconMapping;
 
 /**

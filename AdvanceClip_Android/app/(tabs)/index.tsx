@@ -772,7 +772,9 @@ export default function SyncScreen() {
         const ext = name.split('.').pop()?.toLowerCase() || '';
         await set(newRef, { Title: name, Type: (() => { if (type === 'Image' || type === 'Video') return type; if (['apk','zip','rar'].includes(ext)) return 'Archive'; if (['doc','docx','txt'].includes(ext)) return 'Document'; if (ext === 'pdf') return 'Pdf'; if (['mp4','avi','mkv'].includes(ext)) return 'Video'; if (['ppt','pptx'].includes(ext)) return 'Presentation'; if (['jpg','jpeg','png','gif','webp'].includes(ext)) return 'Image'; return 'File'; })(), Raw: downloadUrl, Time: new Date().toLocaleTimeString(), Timestamp: Date.now(), SourceDeviceName: deviceName || 'Unknown Mobile', SourceDeviceType: 'Mobile' });
       } else {
-        const uploadUrl = await resolveOptimalUrl(targetDeviceOrGlobal) + `/api/sync_file?name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}&sourceDevice=${encodeURIComponent(deviceName || 'Mobile')}`;
+        const resolved = await resolveOptimalUrl(targetDeviceOrGlobal);
+        if (!resolved) { Alert.alert('Device Unreachable', 'Could not connect to this device. Make sure it is online.'); setIsSending(false); setPendingUploadPayload(null); return; }
+        const uploadUrl = `${resolved}/api/sync_file?name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}&sourceDevice=${encodeURIComponent(deviceName || 'Mobile')}`;
         await FileSystem.uploadAsync(uploadUrl, hydratedPath, { httpMethod: 'POST', uploadType: 0 as any, headers: { 'X-Original-Date': Date.now().toString(), 'X-Advance-Client': 'MobileCompanion' } });
       }
     } catch (err: any) { Alert.alert('Upload Failed', err.message); }

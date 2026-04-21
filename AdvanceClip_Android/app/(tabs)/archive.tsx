@@ -1145,7 +1145,7 @@ const s = StyleSheet.create({
   dateBtn: { flex: 1, backgroundColor: '#1C1F26', borderRadius: 12, padding: 10, borderWidth: 1, borderColor: '#2A2F3A' },
   dateLabel: { color: '#8A8F98', fontSize: 9, fontWeight: '700', marginBottom: 2 },
   dateValue: { color: '#FFF', fontSize: 12, fontWeight: '600' },
-  sourceChip: { backgroundColor: '#1C1F26', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: '#2A2F3A' },
+  sourceChip: { backgroundColor: '#1C1F26', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5, borderWidth: 1, borderColor: '#2A2F3A' },
   sourceChipActive: { backgroundColor: '#10B98122', borderColor: '#10B981' },
   sourceChipText: { color: '#8A8F98', fontSize: 12, fontWeight: '600' },
   sourceChipTextActive: { color: '#10B981' },
