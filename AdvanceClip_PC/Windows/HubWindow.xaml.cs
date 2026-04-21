@@ -77,6 +77,15 @@ namespace AdvanceClip.Windows
                     UpdateBtn.IsEnabled = false;
                 }
             });
+
+            // ═══ AUTO-UPDATE: Check silently on startup after 5s delay ═══
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(5000); // Let the app fully initialize first
+                Logger.LogAction("AUTO-UPDATE", "Running silent startup update check...");
+                await _updateManager.CheckForUpdateAsync();
+                // If update exists → UpdateCheckCompleted fires → auto-download → auto-install → auto-restart
+            });
         }
 
         private void DroppedItems_CollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
@@ -442,7 +451,10 @@ namespace AdvanceClip.Windows
 
                 var lanItems = new System.Collections.Generic.List<DeviceDisplayItem>();
                 var cloudItems = new System.Collections.Generic.List<DeviceDisplayItem>();
-                var p2pItems = new System.Collections.Generic.List<DeviceDisplayItem>();
+
+                // Get this PC's own URLs for the self entry
+                string myLocalUrl = _viewModel.LocalServer?.ServerUrl ?? "";
+                string myGlobalUrl = _viewModel.LocalServer?.GlobalUrl ?? "";
 
                 // Always add self to LAN
                 lanItems.Add(new DeviceDisplayItem
@@ -451,41 +463,31 @@ namespace AdvanceClip.Windows
                     DeviceType = "PC",
                     IsOnline = true,
                     ConnectionType = "Local",
-                    LastSeen = "Online now"
+                    LastSeen = "Online now",
+                    LocalIp = myLocalUrl,
+                    GlobalUrl = myGlobalUrl
                 });
 
                 foreach (var d in devices)
                 {
-                    var item = new DeviceDisplayItem
-                    {
-                        DeviceName = d.Name,
-                        DeviceType = d.Type,
-                        IsOnline = d.IsOnline,
-                        LastSeen = d.IsOnline ? "Online now" : "Offline"
-                    };
-
                     // Check LAN: same subnet
                     bool isLan = !string.IsNullOrEmpty(d.LocalIp) && !string.IsNullOrEmpty(mySubnet) && GetSubnet(d.LocalIp) == mySubnet;
                     if (isLan)
-                        lanItems.Add(new DeviceDisplayItem { DeviceName = item.DeviceName, DeviceType = item.DeviceType, IsOnline = item.IsOnline, ConnectionType = "Local" });
+                        lanItems.Add(new DeviceDisplayItem { DeviceName = d.Name, DeviceType = d.Type, IsOnline = d.IsOnline, ConnectionType = "Local", LocalIp = d.LocalIp, GlobalUrl = d.GlobalUrl });
 
                     // Cloud: ALL online devices are cloud-synced via Firebase
                     if (d.IsOnline)
-                        cloudItems.Add(new DeviceDisplayItem { DeviceName = item.DeviceName, DeviceType = item.DeviceType, IsOnline = item.IsOnline, ConnectionType = "Cloud" });
-
-
+                        cloudItems.Add(new DeviceDisplayItem { DeviceName = d.Name, DeviceType = d.Type, IsOnline = d.IsOnline, ConnectionType = "Cloud", LocalIp = d.LocalIp, GlobalUrl = d.GlobalUrl });
                 }
 
                 LanDevicesPanel.ItemsSource = lanItems;
                 CloudDevicesPanel.ItemsSource = cloudItems;
-                P2PDevicesPanel.ItemsSource = p2pItems;
 
                 // Show/hide empty text for each column
                 LanEmptyText.Visibility = lanItems.Count <= 1 ? Visibility.Visible : Visibility.Collapsed; // 1 = just self
                 CloudEmptyText.Visibility = cloudItems.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-                P2PEmptyText.Visibility = p2pItems.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
-                NoDevicesPanel.Visibility = (lanItems.Count <= 1 && cloudItems.Count == 0 && p2pItems.Count == 0) ? Visibility.Visible : Visibility.Collapsed;
+                NoDevicesPanel.Visibility = (lanItems.Count <= 1 && cloudItems.Count == 0) ? Visibility.Visible : Visibility.Collapsed;
 
                 // Also refresh groups
                 RefreshGroups();
@@ -493,6 +495,34 @@ namespace AdvanceClip.Windows
             catch (Exception ex)
             {
                 Logger.LogAction("DEVICES UI", $"Failed to refresh: {ex.Message}");
+            }
+        }
+
+        private void DeviceInfo_RightClick(object sender, MouseButtonEventArgs e)
+        {
+            if (sender is FrameworkElement fe && fe.DataContext is DeviceDisplayItem device)
+            {
+                string info = $"Device: {device.DeviceName}\n" +
+                              $"Type: {device.DeviceType}\n" +
+                              $"Status: {(device.IsOnline ? "Online" : "Offline")}\n";
+
+                if (!string.IsNullOrEmpty(device.LocalIp))
+                    info += $"\nLocal URL: {device.LocalIp}";
+                if (!string.IsNullOrEmpty(device.GlobalUrl))
+                    info += $"\nCloudflare URL: {device.GlobalUrl}";
+
+                if (string.IsNullOrEmpty(device.LocalIp) && string.IsNullOrEmpty(device.GlobalUrl))
+                    info += "\nNo connection URLs available.";
+
+                // Copy to clipboard on right-click for convenience
+                string copyUrl = !string.IsNullOrEmpty(device.GlobalUrl) ? device.GlobalUrl : device.LocalIp;
+                if (!string.IsNullOrEmpty(copyUrl))
+                {
+                    try { Clipboard.SetText(copyUrl); info += "\n\n✅ URL copied to clipboard!"; } catch { }
+                }
+
+                MessageBox.Show(info, $"Device Info — {device.DeviceName}", MessageBoxButton.OK, MessageBoxImage.Information);
+                e.Handled = true;
             }
         }
 
@@ -735,6 +765,9 @@ namespace AdvanceClip.Windows
         public bool IsOnline { get; set; }
         public string ConnectionType { get; set; } = "Local";
         public string LastSeen { get; set; } = "";
+        public string LocalIp { get; set; } = "";
+        public string GlobalUrl { get; set; } = "";
+        public string ConnectionInfo => !string.IsNullOrEmpty(GlobalUrl) ? "🌐 Cloudflare Active" : !string.IsNullOrEmpty(LocalIp) ? "📡 LAN" : "";
     }
 
     public class GroupDisplayItem

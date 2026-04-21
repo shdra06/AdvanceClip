@@ -17,6 +17,10 @@ namespace AdvanceClip.Classes
         
         // Public Cloudflare URL for constructing file download links
         public static string CachedGlobalUrl { get; set; } = "";
+        // Local LAN server URL as fallback when Cloudflare is off
+        public static string CachedLocalUrl { get; set; } = "";
+        // Firebase Storage bucket for global file uploads when Cloudflare is unavailable
+        private const string FIREBASE_STORAGE_BUCKET = "advance-sync.appspot.com";
         
         // Time-windowed dedup: track fingerprint → last push time (10s cooldown)
         private static readonly Dictionary<string, long> _recentPushTimes = new();
@@ -72,11 +76,21 @@ namespace AdvanceClip.Classes
                 }
                 else if (isFile)
                 {
-                    // No Cloudflare tunnel — set relative download URL for LAN clients
-                    // BUT keep Raw as original content (file path) so receivers see the filename, not a garbled URL
-                    downloadUrl = $"/download?path={Uri.EscapeDataString(item.FilePath)}";
-                    // raw stays as item.RawContent (the file path) — NOT overwritten
-                    Logger.LogAction("FIREBASE SYNC", $"File '{item.FileName}' → LAN only (no Cloudflare)");
+                    // No Cloudflare tunnel — upload to Firebase Storage for global access
+                    Logger.LogAction("FIREBASE SYNC", $"No Cloudflare — uploading '{item.FileName}' to Firebase Storage...");
+                    string storageUrl = await UploadFileToStorageAsync(item.FilePath);
+                    if (!string.IsNullOrEmpty(storageUrl))
+                    {
+                        downloadUrl = storageUrl;
+                        raw = storageUrl;
+                        Logger.LogAction("FIREBASE SYNC", $"File '{item.FileName}' → Firebase Storage URL");
+                    }
+                    else
+                    {
+                        // Last resort: relative URL for LAN-only
+                        downloadUrl = $"/download?path={Uri.EscapeDataString(item.FilePath)}";
+                        Logger.LogAction("FIREBASE SYNC", $"File '{item.FileName}' → Firebase Storage failed, LAN only");
+                    }
                 }
                 
                 var payload = new
@@ -88,7 +102,7 @@ namespace AdvanceClip.Classes
                     DownloadUrl = downloadUrl,
                     FileName = item.FileName ?? "",
                     FileSize = isFile ? new FileInfo(item.FilePath).Length : 0,
-                    SenderUrl = CachedGlobalUrl ?? "", // Cloudflare URL so receivers can build download links
+                    SenderUrl = !string.IsNullOrEmpty(CachedGlobalUrl) ? CachedGlobalUrl : CachedLocalUrl ?? "", // Cloudflare or LAN URL so receivers can build download links
                     Time = item.DateCopied.ToString("HH:mm:ss"),
                     Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                     SourceDeviceName = deviceName,
@@ -221,11 +235,22 @@ namespace AdvanceClip.Classes
                             }
                             else
                             {
-                                // No Cloudflare — set relative download URL for LAN, keep Raw as file path
-                                long fileSize = new FileInfo(item.FilePath).Length;
-                                downloadUrl = $"/download?path={Uri.EscapeDataString(item.FilePath)}";
-                                // raw stays as original (file path) — NOT overwritten with useless relative URL
-                                Logger.LogAction("FORCED SYNC", $"File '{item.FileName}' ({fileSize / (1024*1024)}MB) → LAN only");
+                                // No Cloudflare — upload to Firebase Storage for global access
+                                Logger.LogAction("FORCED SYNC", $"No Cloudflare — uploading '{item.FileName}' to Firebase Storage...");
+                                string storageUrl = await UploadFileToStorageAsync(item.FilePath);
+                                if (!string.IsNullOrEmpty(storageUrl))
+                                {
+                                    downloadUrl = storageUrl;
+                                    raw = storageUrl;
+                                    Logger.LogAction("FORCED SYNC", $"File '{item.FileName}' → Firebase Storage URL");
+                                }
+                                else
+                                {
+                                    // Last resort: relative URL for LAN-only
+                                    long fileSize = new FileInfo(item.FilePath).Length;
+                                    downloadUrl = $"/download?path={Uri.EscapeDataString(item.FilePath)}";
+                                    Logger.LogAction("FORCED SYNC", $"File '{item.FileName}' ({fileSize / (1024*1024)}MB) → LAN only");
+                                }
                             }
                         }
 
@@ -237,7 +262,7 @@ namespace AdvanceClip.Classes
                             DownloadUrl = downloadUrl,
                             FileName = item.FileName ?? "",
                             FileSize = isFile ? new FileInfo(item.FilePath).Length : 0,
-                            SenderUrl = CachedGlobalUrl ?? "",
+                            SenderUrl = !string.IsNullOrEmpty(CachedGlobalUrl) ? CachedGlobalUrl : CachedLocalUrl ?? "",
                             ForcedBy = deviceName,
                             ForcedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                             SourceDeviceName = deviceName,
@@ -263,9 +288,9 @@ namespace AdvanceClip.Classes
         /// <summary>
         /// Fetch all active devices from Firebase for the forced sync device picker.
         /// </summary>
-        public static async Task<List<(string Id, string Name, string Type, bool IsOnline, string LocalIp)>> GetActiveDevices()
+        public static async Task<List<(string Id, string Name, string Type, bool IsOnline, string LocalIp, string GlobalUrl)>> GetActiveDevices()
         {
-            var devices = new List<(string Id, string Name, string Type, bool IsOnline, string LocalIp)>();
+            var devices = new List<(string Id, string Name, string Type, bool IsOnline, string LocalIp, string GlobalUrl)>();
             try
             {
                 string url = "https://advance-sync-default-rtdb.firebaseio.com/active_devices.json";
@@ -284,6 +309,7 @@ namespace AdvanceClip.Classes
                             string type = prop.Value.TryGetProperty("DeviceType", out var dt) ? dt.GetString() ?? "" : "";
                             bool online = prop.Value.TryGetProperty("IsOnline", out var on) && on.GetBoolean();
                             string localIp = prop.Value.TryGetProperty("LocalIp", out var lip) ? lip.GetString() ?? "" : "";
+                            string globalUrl = prop.Value.TryGetProperty("GlobalUrl", out var gurl) ? gurl.GetString() ?? "" : "";
                             
                             // TTL check: treat devices with heartbeat older than 2 minutes as offline
                             if (online && prop.Value.TryGetProperty("Timestamp", out var ts))
@@ -293,7 +319,7 @@ namespace AdvanceClip.Classes
                                 if (nowMs - deviceTs > 120_000) online = false; // Stale — hasn't heartbeated in 2 min
                             }
                             
-                            devices.Add((prop.Name, name, type, online, localIp));
+                            devices.Add((prop.Name, name, type, online, localIp, globalUrl));
                         }
                     }
                 }
@@ -306,7 +332,8 @@ namespace AdvanceClip.Classes
         }
         /// <summary>
         /// Purge old GUID-based device entries from Firebase that were created by the old NewGuid() logic.
-        /// Removes entries that look like raw GUIDs (contain dashes and no underscores) and are stale.
+        /// Only removes entries that are genuinely stale (offline for 24+ hours).
+        /// Active old-version devices are preserved so they remain visible for sync.
         /// </summary>
         public static async Task CleanupStaleDevices()
         {
@@ -320,13 +347,28 @@ namespace AdvanceClip.Classes
                     if (!string.IsNullOrWhiteSpace(json) && json != "null")
                     {
                         using var doc = JsonDocument.Parse(json);
+                        long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                        const long STALE_THRESHOLD_MS = 24 * 60 * 60_000; // 24 hours
+
                         foreach (var prop in doc.RootElement.EnumerateObject())
                         {
                             // Old format: a raw GUID like "a1b2c3d4-e5f6-7890-..."
                             // New format: "PC_MACHINENAME_USERNAME"
                             if (prop.Name.Contains('-') && !prop.Name.StartsWith("PC_") && !prop.Name.StartsWith("Mobile_"))
                             {
-                                // Delete stale GUID-based entry
+                                // Only delete if genuinely stale (no heartbeat in 24 hours)
+                                long deviceTs = 0;
+                                if (prop.Value.TryGetProperty("Timestamp", out var ts))
+                                    deviceTs = ts.GetInt64();
+
+                                if (deviceTs > 0 && (nowMs - deviceTs) < STALE_THRESHOLD_MS)
+                                {
+                                    // Old-format device is still active — keep it
+                                    Logger.LogAction("FIREBASE CLEANUP", $"Keeping active old-format device: {prop.Name}");
+                                    continue;
+                                }
+
+                                // Stale GUID-based entry — safe to remove
                                 string deleteUrl = $"https://advance-sync-default-rtdb.firebaseio.com/active_devices/{prop.Name}.json";
                                 await _client.DeleteAsync(deleteUrl);
                                 Logger.LogAction("FIREBASE CLEANUP", $"Removed stale device: {prop.Name}");

@@ -397,6 +397,7 @@ namespace AdvanceClip.Classes
                 });
 
                 var request = new HttpRequestMessage(HttpMethod.Get, cloudItem.Raw);
+                request.Headers.Add("X-Advance-Client", "DesktopSync");
                 var response = await _streamClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
 
                 if (!response.IsSuccessStatusCode)

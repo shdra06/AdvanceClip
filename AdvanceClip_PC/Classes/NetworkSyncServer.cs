@@ -136,6 +136,7 @@ namespace AdvanceClip.Classes
                 _listenerThread.Start();
 
                 UpdateServerUrl();
+                FirebaseSyncManager.CachedLocalUrl = DisplayUrl; // Cache first LAN URL for file download fallback
                 Logger.LogAction("NETWORK", $"Web server launched on {ServerUrl}");
                 NetworkActivityLog.Instance.ServerStatus = "Online";
 
@@ -268,7 +269,7 @@ namespace AdvanceClip.Classes
                     // HARD SECURE AUTHENTICATION BARRIER
                     string providedPin = req.Headers["Authorization"]?.Replace("Bearer ", "") ?? req.QueryString["pin"];
                     
-                    bool isNativeMobileCompanion = req.Headers["User-Agent"]?.Contains("AdvanceClipMobile_Native") == true || req.Headers["X-Advance-Client"] == "MobileCompanion";
+                    bool isNativeMobileCompanion = req.Headers["User-Agent"]?.Contains("AdvanceClipMobile_Native") == true || req.Headers["X-Advance-Client"] == "MobileCompanion" || req.Headers["X-Advance-Client"] == "DesktopSync";
                     
                     if (!isNativeMobileCompanion && (string.IsNullOrEmpty(providedPin) || providedPin != SettingsManager.Current.WebClientPinToken))
                     {

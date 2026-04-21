@@ -967,13 +967,11 @@
                                         </ui:Button>
                                     </Grid>
 
-                                    <!--  3-COLUMN DEVICE TOPOLOGY -->
+                                    <!--  2-COLUMN DEVICE TOPOLOGY -->
                                     <Grid Margin="0,0,0,4">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="8"/>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="8"/>
+                                            <ColumnDefinition Width="12"/>
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
 
@@ -988,21 +986,24 @@
                                                 <ItemsControl x:Name="LanDevicesPanel">
                                                     <ItemsControl.ItemTemplate>
                                                         <DataTemplate>
-                                                            <Border Background="#08FFFFFF" CornerRadius="8" Padding="8,6" Margin="0,0,0,4">
-                                                                <StackPanel Orientation="Horizontal">
-                                                                    <ui:SymbolIcon FontSize="14" Foreground="#10B981" Margin="0,0,8,0">
-                                                                        <ui:SymbolIcon.Style>
-                                                                            <Style TargetType="ui:SymbolIcon">
-                                                                                <Setter Property="Symbol" Value="Phone24"/>
-                                                                                <Style.Triggers>
-                                                                                    <DataTrigger Binding="{Binding DeviceType}" Value="PC">
-                                                                                        <Setter Property="Symbol" Value="Desktop24"/>
-                                                                                    </DataTrigger>
-                                                                                </Style.Triggers>
-                                                                            </Style>
-                                                                        </ui:SymbolIcon.Style>
-                                                                    </ui:SymbolIcon>
-                                                                    <TextBlock Text="{Binding DeviceName}" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorPrimary}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                                            <Border Background="#08FFFFFF" CornerRadius="8" Padding="8,6" Margin="0,0,0,4" Cursor="Hand" MouseRightButtonDown="DeviceInfo_RightClick" ToolTip="Right-click for connection info">
+                                                                <StackPanel>
+                                                                    <StackPanel Orientation="Horizontal">
+                                                                        <ui:SymbolIcon FontSize="14" Foreground="#10B981" Margin="0,0,8,0">
+                                                                            <ui:SymbolIcon.Style>
+                                                                                <Style TargetType="ui:SymbolIcon">
+                                                                                    <Setter Property="Symbol" Value="Phone24"/>
+                                                                                    <Style.Triggers>
+                                                                                        <DataTrigger Binding="{Binding DeviceType}" Value="PC">
+                                                                                            <Setter Property="Symbol" Value="Desktop24"/>
+                                                                                        </DataTrigger>
+                                                                                    </Style.Triggers>
+                                                                                </Style>
+                                                                            </ui:SymbolIcon.Style>
+                                                                        </ui:SymbolIcon>
+                                                                        <TextBlock Text="{Binding DeviceName}" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorPrimary}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                                                    </StackPanel>
+                                                                    <TextBlock Text="{Binding ConnectionInfo}" FontSize="9" Foreground="#10B98188" Margin="22,2,0,0" TextTrimming="CharacterEllipsis"/>
                                                                 </StackPanel>
                                                             </Border>
                                                         </DataTemplate>
@@ -1023,21 +1024,24 @@
                                                 <ItemsControl x:Name="CloudDevicesPanel">
                                                     <ItemsControl.ItemTemplate>
                                                         <DataTemplate>
-                                                            <Border Background="#08FFFFFF" CornerRadius="8" Padding="8,6" Margin="0,0,0,4">
-                                                                <StackPanel Orientation="Horizontal">
-                                                                    <ui:SymbolIcon FontSize="14" Foreground="#F59E0B" Margin="0,0,8,0">
-                                                                        <ui:SymbolIcon.Style>
-                                                                            <Style TargetType="ui:SymbolIcon">
-                                                                                <Setter Property="Symbol" Value="Phone24"/>
-                                                                                <Style.Triggers>
-                                                                                    <DataTrigger Binding="{Binding DeviceType}" Value="PC">
-                                                                                        <Setter Property="Symbol" Value="Desktop24"/>
-                                                                                    </DataTrigger>
-                                                                                </Style.Triggers>
-                                                                            </Style>
-                                                                        </ui:SymbolIcon.Style>
-                                                                    </ui:SymbolIcon>
-                                                                    <TextBlock Text="{Binding DeviceName}" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorPrimary}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                                            <Border Background="#08FFFFFF" CornerRadius="8" Padding="8,6" Margin="0,0,0,4" Cursor="Hand" MouseRightButtonDown="DeviceInfo_RightClick" ToolTip="Right-click for connection info">
+                                                                <StackPanel>
+                                                                    <StackPanel Orientation="Horizontal">
+                                                                        <ui:SymbolIcon FontSize="14" Foreground="#F59E0B" Margin="0,0,8,0">
+                                                                            <ui:SymbolIcon.Style>
+                                                                                <Style TargetType="ui:SymbolIcon">
+                                                                                    <Setter Property="Symbol" Value="Phone24"/>
+                                                                                    <Style.Triggers>
+                                                                                        <DataTrigger Binding="{Binding DeviceType}" Value="PC">
+                                                                                            <Setter Property="Symbol" Value="Desktop24"/>
+                                                                                        </DataTrigger>
+                                                                                    </Style.Triggers>
+                                                                                </Style>
+                                                                            </ui:SymbolIcon.Style>
+                                                                        </ui:SymbolIcon>
+                                                                        <TextBlock Text="{Binding DeviceName}" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorPrimary}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                                                    </StackPanel>
+                                                                    <TextBlock Text="{Binding ConnectionInfo}" FontSize="9" Foreground="#F59E0B88" Margin="22,2,0,0" TextTrimming="CharacterEllipsis"/>
                                                                 </StackPanel>
                                                             </Border>
                                                         </DataTemplate>
@@ -1046,42 +1050,8 @@
                                                 <TextBlock x:Name="CloudEmptyText" Text="No cloud devices" FontSize="10" Foreground="#25FFFFFF" HorizontalAlignment="Center" Margin="0,4,0,0" Visibility="Collapsed"/>
                                             </StackPanel>
                                         </Border>
-
-                                        <!-- P2P Column -->
-                                        <Border Grid.Column="4" Background="#0AFFFFFF" BorderBrush="#0CFFFFFF" BorderThickness="1" CornerRadius="12" Padding="10,10">
-                                            <StackPanel>
-                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                                                    <Border Width="8" Height="8" CornerRadius="4" Background="#06B6D4" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                                                    <TextBlock Text="P2P" FontSize="12" FontWeight="Bold" Foreground="#06B6D4"/>
-                                                </StackPanel>
-                                                <TextBlock Text="WebRTC active" FontSize="9" Foreground="#06B6D488" Margin="0,-6,0,8"/>
-                                                <ItemsControl x:Name="P2PDevicesPanel">
-                                                    <ItemsControl.ItemTemplate>
-                                                        <DataTemplate>
-                                                            <Border Background="#08FFFFFF" CornerRadius="8" Padding="8,6" Margin="0,0,0,4">
-                                                                <StackPanel Orientation="Horizontal">
-                                                                    <ui:SymbolIcon FontSize="14" Foreground="#06B6D4" Margin="0,0,8,0">
-                                                                        <ui:SymbolIcon.Style>
-                                                                            <Style TargetType="ui:SymbolIcon">
-                                                                                <Setter Property="Symbol" Value="Phone24"/>
-                                                                                <Style.Triggers>
-                                                                                    <DataTrigger Binding="{Binding DeviceType}" Value="PC">
-                                                                                        <Setter Property="Symbol" Value="Desktop24"/>
-                                                                                    </DataTrigger>
-                                                                                </Style.Triggers>
-                                                                            </Style>
-                                                                        </ui:SymbolIcon.Style>
-                                                                    </ui:SymbolIcon>
-                                                                    <TextBlock Text="{Binding DeviceName}" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorPrimary}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                                                                </StackPanel>
-                                                            </Border>
-                                                        </DataTemplate>
-                                                    </ItemsControl.ItemTemplate>
-                                                </ItemsControl>
-                                                <TextBlock x:Name="P2PEmptyText" Text="No P2P peers" FontSize="10" Foreground="#25FFFFFF" HorizontalAlignment="Center" Margin="0,4,0,0" Visibility="Collapsed"/>
-                                            </StackPanel>
-                                        </Border>
                                     </Grid>
+
 
                                     <!-- Empty State -->
                                     <StackPanel x:Name="NoDevicesPanel" HorizontalAlignment="Center" Margin="0,12,0,12" Visibility="Collapsed">
