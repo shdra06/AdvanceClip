@@ -283,18 +283,24 @@ namespace AdvanceClip.Classes
                                     cloudItem.Type == "Archive" || cloudItem.Type == "Video" || cloudItem.Type == "Document" ||
                                     cloudItem.Type == "Presentation" || cloudItem.Type == "Audio" || cloudItem.Type == "File";
 
-                // Resolve download URL: prefer full URL, fallback to SenderUrl + relative path
+                // Resolve download URL: try every possible combination to get a valid HTTP URL
                 string resolvedUrl = cloudItem.Raw ?? "";
-                if (!resolvedUrl.StartsWith("http") && !string.IsNullOrEmpty(cloudItem.DownloadUrl))
+
+                // Step 1: If Raw is already a full HTTP URL, use it
+                if (!resolvedUrl.StartsWith("http"))
                 {
-                    if (cloudItem.DownloadUrl.StartsWith("http"))
+                    // Step 2: DownloadUrl might be a full URL
+                    if (!string.IsNullOrEmpty(cloudItem.DownloadUrl) && cloudItem.DownloadUrl.StartsWith("http"))
                         resolvedUrl = cloudItem.DownloadUrl;
-                    else if (!string.IsNullOrEmpty(cloudItem.SenderUrl) && cloudItem.SenderUrl.StartsWith("http"))
-                        resolvedUrl = cloudItem.SenderUrl + cloudItem.DownloadUrl;
-                }
-                if (!resolvedUrl.StartsWith("http") && !string.IsNullOrEmpty(cloudItem.SenderUrl) && cloudItem.SenderUrl.StartsWith("http") && resolvedUrl.StartsWith("/"))
-                {
-                    resolvedUrl = cloudItem.SenderUrl + resolvedUrl;
+                    // Step 3: DownloadUrl is relative but SenderUrl is absolute
+                    else if (!string.IsNullOrEmpty(cloudItem.DownloadUrl) && !string.IsNullOrEmpty(cloudItem.SenderUrl) && cloudItem.SenderUrl.StartsWith("http"))
+                        resolvedUrl = cloudItem.SenderUrl.TrimEnd('/') + (cloudItem.DownloadUrl.StartsWith("/") ? cloudItem.DownloadUrl : "/" + cloudItem.DownloadUrl);
+                    // Step 4: Raw is a relative path like /download?path=..., combine with SenderUrl
+                    else if (!string.IsNullOrEmpty(cloudItem.SenderUrl) && cloudItem.SenderUrl.StartsWith("http") && resolvedUrl.StartsWith("/"))
+                        resolvedUrl = cloudItem.SenderUrl.TrimEnd('/') + resolvedUrl;
+                    // Step 5: Raw contains a file path like C:\... — try to build URL from SenderUrl
+                    else if (!string.IsNullOrEmpty(cloudItem.SenderUrl) && cloudItem.SenderUrl.StartsWith("http") && isFilePayload)
+                        resolvedUrl = cloudItem.SenderUrl.TrimEnd('/') + "/download?path=" + Uri.EscapeDataString(resolvedUrl);
                 }
                 cloudItem.Raw = resolvedUrl;
 
@@ -396,9 +402,11 @@ namespace AdvanceClip.Classes
                     _viewModel.OnPropertyChanged(nameof(_viewModel.ShelfVisibility));
                 });
 
+                // No auth header needed — /download is now public (before auth barrier)
                 var request = new HttpRequestMessage(HttpMethod.Get, cloudItem.Raw);
-                request.Headers.Add("X-Advance-Client", "DesktopSync");
-                var response = await _streamClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+                // Use a dedicated client with a generous timeout for large file downloads
+                using var downloadClient = new HttpClient() { Timeout = TimeSpan.FromMinutes(10) };
+                var response = await downloadClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
 
                 if (!response.IsSuccessStatusCode)
                 {
