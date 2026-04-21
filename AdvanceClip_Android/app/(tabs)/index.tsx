@@ -764,6 +764,8 @@ export default function SyncScreen() {
   };
 
   // ─── Heavy Upload ───
+  const CHUNK_SIZE = 50 * 1024 * 1024; // 50MB (under Cloudflare 100MB limit)
+
   const executeHeavyUpload = async (targetDeviceOrGlobal: any) => {
     if (!pendingUploadPayload) return;
     setIsTargetModalVisible(false);
@@ -773,7 +775,9 @@ export default function SyncScreen() {
       const safeName = `sync_${Date.now()}_` + name.replace(/[^a-zA-Z0-9.-]/g, '_');
       const hydratedPath = `${SYNC_CACHE_BASE}${safeName}`;
       await FileSystem.copyAsync({ from: physicalPath, to: hydratedPath });
+
       if (targetDeviceOrGlobal === 'Global') {
+        // Firebase Storage path (100MB limit enforced)
         if (!isGlobalSyncEnabled) { Alert.alert("Global Sync Disabled"); setIsTargetModalVisible(false); setPendingUploadPayload(null); return; }
         if (size && size > 100 * 1024 * 1024) { Alert.alert("Too Large", "100MB limit for Firebase."); setIsSending(false); return; }
         const response = await fetch(hydratedPath); const blob = await response.blob();
@@ -782,11 +786,78 @@ export default function SyncScreen() {
         const ext = name.split('.').pop()?.toLowerCase() || '';
         await set(newRef, { Title: name, Type: (() => { if (type === 'Image' || type === 'Video') return type; if (['apk','zip','rar'].includes(ext)) return 'Archive'; if (['doc','docx','txt'].includes(ext)) return 'Document'; if (ext === 'pdf') return 'Pdf'; if (['mp4','avi','mkv'].includes(ext)) return 'Video'; if (['ppt','pptx'].includes(ext)) return 'Presentation'; if (['jpg','jpeg','png','gif','webp'].includes(ext)) return 'Image'; return 'File'; })(), Raw: downloadUrl, Time: new Date().toLocaleTimeString(), Timestamp: Date.now(), SourceDeviceName: deviceName || 'Unknown Mobile', SourceDeviceType: 'Mobile' });
       } else {
+        // Direct device transfer (LAN or Cloudflare)
         const resolved = await resolveOptimalUrl(targetDeviceOrGlobal);
         if (!resolved) { Alert.alert('Device Unreachable', 'Could not connect to this device. Make sure it is online.'); setIsSending(false); setPendingUploadPayload(null); return; }
-        const uploadUrl = `${resolved}/api/sync_file?name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}&sourceDevice=${encodeURIComponent(deviceName || 'Mobile')}`;
-        await FileSystem.uploadAsync(uploadUrl, hydratedPath, { httpMethod: 'POST', uploadType: 0 as any, headers: { 'X-Original-Date': Date.now().toString(), 'X-Advance-Client': 'MobileCompanion' } });
+
+        const isCloudflare = resolved.includes('trycloudflare.com');
+        const fileSize = size || 0;
+
+        if (isCloudflare && fileSize > CHUNK_SIZE) {
+          // ── Chunked upload for large files over Cloudflare ──
+          if (Platform.OS === 'android') ToastAndroid.show(`📦 Chunked upload: ${Math.ceil(fileSize / CHUNK_SIZE)} chunks`, ToastAndroid.SHORT);
+          const sessionId = `${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+          const totalChunks = Math.ceil(fileSize / CHUNK_SIZE);
+
+          for (let i = 0; i < totalChunks; i++) {
+            const offset = i * CHUNK_SIZE;
+            const length = Math.min(CHUNK_SIZE, fileSize - offset);
+
+            // Read chunk as base64, write to temp file
+            const chunkB64 = await FileSystem.readAsStringAsync(hydratedPath, {
+              encoding: FileSystem.EncodingType.Base64,
+              position: offset,
+              length: length,
+            });
+            const chunkTempUri = `${FileSystem.cacheDirectory}chunk_${sessionId}_${i}`;
+            await FileSystem.writeAsStringAsync(chunkTempUri, chunkB64, { encoding: FileSystem.EncodingType.Base64 });
+
+            // Upload chunk with retries
+            let attempt = 0;
+            let done = false;
+            while (attempt < 3 && !done) {
+              attempt++;
+              try {
+                const res = await FileSystem.uploadAsync(`${resolved}/api/upload_chunk`, chunkTempUri, {
+                  httpMethod: 'POST',
+                  uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+                  headers: {
+                    'X-Advance-Client': 'MobileCompanion',
+                    'X-Upload-Session': sessionId,
+                    'X-Chunk-Index': i.toString(),
+                  }
+                });
+                if (res.status === 200) done = true;
+                else throw new Error(`Chunk ${i + 1}/${totalChunks} failed: HTTP ${res.status}`);
+              } catch (e) {
+                if (attempt === 3) throw e;
+                await new Promise(r => setTimeout(r, 1000));
+              }
+            }
+            try { await FileSystem.deleteAsync(chunkTempUri, { idempotent: true }); } catch {}
+            if (Platform.OS === 'android') ToastAndroid.show(`📤 Chunk ${i + 1}/${totalChunks} sent`, ToastAndroid.SHORT);
+          }
+
+          // Finalize — tell PC to merge all chunks
+          const finRes = await fetch(`${resolved}/api/upload_finalize`, {
+            method: 'POST',
+            headers: {
+              'X-Advance-Client': 'MobileCompanion',
+              'X-Upload-Session': sessionId,
+              'X-File-Name': encodeURIComponent(name),
+              'X-Original-Date': Date.now().toString(),
+              'X-Total-Chunks': totalChunks.toString(),
+              'X-Source-Device': encodeURIComponent(deviceName || 'Mobile'),
+            }
+          });
+          if (!finRes.ok) throw new Error(`Finalize failed: ${finRes.status}`);
+        } else {
+          // ── Direct single POST (LAN or small Cloudflare files) ──
+          const uploadUrl = `${resolved}/api/sync_file?name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}&sourceDevice=${encodeURIComponent(deviceName || 'Mobile')}`;
+          await FileSystem.uploadAsync(uploadUrl, hydratedPath, { httpMethod: 'POST', uploadType: 0 as any, headers: { 'X-Original-Date': Date.now().toString(), 'X-Advance-Client': 'MobileCompanion' } });
+        }
       }
+      if (Platform.OS === 'android') ToastAndroid.show(`✅ ${name} sent!`, ToastAndroid.SHORT);
     } catch (err: any) { Alert.alert('Upload Failed', err.message); }
     setIsSending(false);
     setPendingUploadPayload(null);
