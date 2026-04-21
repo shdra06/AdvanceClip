@@ -62,17 +62,27 @@ export const resolveOptimalUrl = async (
     if (!candidates.includes(targetDeviceOrGlobal.GlobalUrl)) candidates.push(targetDeviceOrGlobal.GlobalUrl);
   }
 
+  console.log(`[RESOLVE] Candidates for ${targetDeviceOrGlobal.DeviceName || 'unknown'}:`, candidates);
+
   for (const url of candidates) {
     try {
       const res = await fetchFn(`${url}/api/health`, {
         method: 'GET',
         headers: { 'X-Advance-Client': 'MobileCompanion' },
       }, 1500);
-      if (res.ok) return url;
-    } catch (e) {}
+      if (res.ok) {
+        console.log(`[RESOLVE] ✅ ${url} → OK`);
+        return url;
+      }
+      console.log(`[RESOLVE] ❌ ${url} → status ${res.status}`);
+    } catch (e: any) {
+      console.log(`[RESOLVE] ❌ ${url} → ${e.message?.substring(0, 60)}`);
+    }
   }
 
-  return candidates.length > 0 ? candidates[0] : null;
+  const fallback = candidates.length > 0 ? candidates[0] : null;
+  console.log(`[RESOLVE] All health checks failed. Fallback: ${fallback}`);
+  return fallback;
 };
 
 /** Build absolute media URL from a clip item */

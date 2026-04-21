@@ -66,10 +66,16 @@ export default function SyncScreen() {
       if (resolved) {
         cachedPcUrlRef.current = resolved;
         cachedPcUrlTimestampRef.current = now;
+        // DIAGNOSTIC: log once when URL resolves
+        if (Platform.OS === 'android') ToastAndroid.show(`🌐 PC resolved: ${resolved}`, ToastAndroid.SHORT);
         return resolved;
+      } else {
+        if (Platform.OS === 'android') ToastAndroid.show(`⚠️ resolveOptimalUrl failed for ${activePc.DeviceName}. Urls tried: ${activePc.LocalIp || 'none'}, ${activePc.Url || 'none'}`, ToastAndroid.LONG);
       }
     }
-    return `http://${pcLocalIp}`;
+    const fallback = `http://${pcLocalIp}`;
+    if (Platform.OS === 'android' && !cachedPcUrlRef.current) ToastAndroid.show(`📡 Using fallback IP: ${fallback}`, ToastAndroid.SHORT);
+    return fallback;
   };
 
   // ─── Overlay Sync ───
@@ -350,16 +356,32 @@ export default function SyncScreen() {
         const data = snapshot.val();
         const now = Date.now();
         rawDevices = Object.keys(data).map(k => ({ ...data[k], _key: k })).filter(d => d.IsOnline && d.Timestamp && (now - d.Timestamp) < 300_000);
+        // ── DIAGNOSTIC: Log what Firebase returned ──
+        const pcDevs = rawDevices.filter(d => d.DeviceType === 'PC');
+        if (Platform.OS === 'android' && pcDevs.length > 0) {
+          const pc = pcDevs[0];
+          ToastAndroid.show(`🔍 Firebase PC: ${pc.DeviceName}\nLocalIp: ${pc.LocalIp || 'none'}\nUrl: ${pc.Url || 'none'}\nGlobal: ${pc.GlobalUrl || 'none'}`, ToastAndroid.LONG);
+        } else if (Platform.OS === 'android' && rawDevices.length === 0) {
+          ToastAndroid.show(`⚠️ Firebase: No online devices found`, ToastAndroid.SHORT);
+        }
       }
       const hasPc = rawDevices.some(d => d.DeviceType === 'PC');
       if (!hasPc && pcLocalIp) {
+        if (Platform.OS === 'android') ToastAndroid.show(`🔎 No PC in Firebase. Probing manual IP: ${pcLocalIp}`, ToastAndroid.SHORT);
         try {
           const rawIp = pcLocalIp.trim();
           const baseIp = rawIp.replace(/^https?:\/\//, '').split(':')[0];
           const probeUrl = rawIp.startsWith('http') ? rawIp.replace(/\/$/, '') : `http://${rawIp.includes(':') ? rawIp : baseIp + ':8999'}`;
           const res = await fetch(`${probeUrl}/api/health`, { method: 'GET', headers: { 'X-Advance-Client': 'MobileCompanion' }, signal: AbortSignal.timeout(2000) });
-          if (res.ok) rawDevices.push({ DeviceName: 'PC', DeviceType: 'PC', IsOnline: true, Url: probeUrl, LocalIp: probeUrl, _key: 'local_direct', Timestamp: Date.now() });
-        } catch(e) {}
+          if (res.ok) {
+            rawDevices.push({ DeviceName: 'PC', DeviceType: 'PC', IsOnline: true, Url: probeUrl, LocalIp: probeUrl, _key: 'local_direct', Timestamp: Date.now() });
+            if (Platform.OS === 'android') ToastAndroid.show(`✅ Manual probe OK: ${probeUrl}`, ToastAndroid.SHORT);
+          } else {
+            if (Platform.OS === 'android') ToastAndroid.show(`❌ Manual probe failed: ${probeUrl} (${res.status})`, ToastAndroid.SHORT);
+          }
+        } catch(e: any) {
+          if (Platform.OS === 'android') ToastAndroid.show(`❌ Probe error: ${e.message?.substring(0, 60)}`, ToastAndroid.SHORT);
+        }
       }
       setActiveDevices(rawDevices);
     });
