@@ -1,5 +1,5 @@
 {
-  "pc_version": "1.6.0",
-  "pc_download": "https://github.com/shdra06/AdvanceClip/releases/download/v1.6.0/AdvanceClip.exe",
-  "changelog": "v1.6.0: Auto QUIC→HTTP/2 protocol fallback for restricted networks, Cloudflare tunnel self-ping verification, 3-attempt download retry with backoff, thread-safe DocumentSniffer, auto-update self-replace fix."
+  "pc_version": "1.6.1",
+  "pc_download": "https://github.com/shdra06/AdvanceClip/releases/download/v1.6.1/AdvanceClip.exe",
+  "changelog": "v1.6.1: Enhanced PDF merger with visual page grid selector, page range input, odd/even selection, shift-click range, row/column toggle, 5-min backlog catch-up, QUIC→HTTP/2 tunnel fallback, download retry."
 }
