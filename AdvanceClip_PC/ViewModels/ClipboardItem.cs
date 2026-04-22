@@ -35,7 +35,7 @@ namespace AdvanceClip.ViewModels
 
         public string SourceDeviceName { get; set; } = "Local";
         public string SourceDeviceType { get; set; } = "PC";
-        public string TransferMethod { get; set; } = "Local"; // Local, LAN, Cloud, ForceSend
+        public string TransferMethod { get; set; } = "Local"; // Local, LAN, Cloud, Cloudflare, ForceSend
 
         /// <summary>
         /// Computed display badge combining transfer method emoji + device name.
@@ -49,6 +49,7 @@ namespace AdvanceClip.ViewModels
                 {
                     "LAN" => "📡",
                     "Cloud" => "☁️",
+                    "Cloudflare" => "🌐",
                     "ForceSend" => "🎯",
                     _ => "📋"
                 };

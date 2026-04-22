@@ -311,6 +311,9 @@ namespace AdvanceClip.Classes
                 }
                 else
                 {
+                    // Detect transfer method: Cloudflare tunnel vs Firebase cloud
+                    bool isCloudflare = (!string.IsNullOrEmpty(cloudItem.SenderUrl) && cloudItem.SenderUrl.Contains(".trycloudflare.com")) ||
+                                        (!string.IsNullOrEmpty(cloudItem.Raw) && cloudItem.Raw.Contains(".trycloudflare.com"));
                     var clip = new ClipboardItem
                     {
                         RawContent = cloudItem.Raw,
@@ -319,7 +322,7 @@ namespace AdvanceClip.Classes
                         ItemType = cloudItem.Type == "Url" ? ClipboardItemType.Url : ClipboardItemType.Text,
                         SourceDeviceName = cloudItem.SourceDeviceName ?? "Remote",
                         SourceDeviceType = "Mobile",
-                        TransferMethod = "Cloud"
+                        TransferMethod = isCloudflare ? "Cloudflare" : "Cloud"
                     };
                     clip.EvaluateSmartActions();
                     _viewModel.DroppedItems.Insert(0, clip);
@@ -512,7 +515,10 @@ namespace AdvanceClip.Classes
                     var clip = new ClipboardItem(filePath);
                     clip.SourceDeviceName = cloudItem.SourceDeviceName ?? "Remote";
                     clip.SourceDeviceType = "Mobile";
-                    clip.TransferMethod = "Cloud";
+                    // Detect if file was downloaded via Cloudflare tunnel
+                    bool isCfDownload = (!string.IsNullOrEmpty(cloudItem.Raw) && cloudItem.Raw.Contains(".trycloudflare.com")) ||
+                                        (!string.IsNullOrEmpty(cloudItem.SenderUrl) && cloudItem.SenderUrl.Contains(".trycloudflare.com"));
+                    clip.TransferMethod = isCfDownload ? "Cloudflare" : "Cloud";
 
                     // For images, the constructor already sets ItemType=Image, but we pre-load the preview at a good resolution
                     if (clip.ItemType == ClipboardItemType.Image && clip.Icon == null)

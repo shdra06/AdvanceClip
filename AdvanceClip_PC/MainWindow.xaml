@@ -637,14 +637,17 @@
                                             <Style TargetType="Border">
                                                 <Setter Property="Background" Value="#1AF59E0B"/>
                                                 <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding TransferMethod}" Value="LAN">
+                                                    <DataTrigger Binding="{Binding TransferMethod}" Value="Cloudflare">
                                                         <Setter Property="Background" Value="#1A10B981"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding TransferMethod}" Value="LAN">
+                                                        <Setter Property="Background" Value="#1A6366F1"/>
                                                     </DataTrigger>
                                                     <DataTrigger Binding="{Binding TransferMethod}" Value="ForceSend">
                                                         <Setter Property="Background" Value="#1AEF4444"/>
                                                     </DataTrigger>
                                                     <DataTrigger Binding="{Binding TransferMethod}" Value="Local">
-                                                        <Setter Property="Background" Value="#1A6366F1"/>
+                                                        <Setter Property="Background" Value="#1A9CA3AF"/>
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
@@ -655,9 +658,13 @@
                                                     <Setter Property="Text" Value="☁️ Cloud"/>
                                                     <Setter Property="Foreground" Value="#F59E0B"/>
                                                     <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding TransferMethod}" Value="Cloudflare">
+                                                            <Setter Property="Text" Value="🌐 Cloudflare"/>
+                                                            <Setter Property="Foreground" Value="#10B981"/>
+                                                        </DataTrigger>
                                                         <DataTrigger Binding="{Binding TransferMethod}" Value="LAN">
                                                             <Setter Property="Text" Value="📡 LAN"/>
-                                                            <Setter Property="Foreground" Value="#10B981"/>
+                                                            <Setter Property="Foreground" Value="#6366F1"/>
                                                         </DataTrigger>
                                                         <DataTrigger Binding="{Binding TransferMethod}" Value="ForceSend">
                                                             <Setter Property="Text" Value="🎯 Direct"/>
@@ -665,7 +672,7 @@
                                                         </DataTrigger>
                                                         <DataTrigger Binding="{Binding TransferMethod}" Value="Local">
                                                             <Setter Property="Text" Value="📋 Local"/>
-                                                            <Setter Property="Foreground" Value="#6366F1"/>
+                                                            <Setter Property="Foreground" Value="#9CA3AF"/>
                                                         </DataTrigger>
                                                     </Style.Triggers>
                                                 </Style>
