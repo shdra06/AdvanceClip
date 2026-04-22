@@ -19,11 +19,14 @@ const safeHash = (s: string): string => {
 const CachedImage = React.memo(({ imgUri, onPress }: { imgUri: string; onPress: () => void }) => {
   const [localUri, setLocalUri] = React.useState<string | null>(null);
   const [failed, setFailed] = React.useState(false);
+  const [retryCount, setRetryCount] = React.useState(0);
 
   React.useEffect(() => {
     if (!imgUri) { setFailed(true); return; }
 
     let cancelled = false;
+    setFailed(false);
+    setLocalUri(null);
 
     const loadImage = async () => {
       try {
@@ -90,37 +93,60 @@ const CachedImage = React.memo(({ imgUri, onPress }: { imgUri: string; onPress: 
             return;
           }
 
-          // Download with retries
+          // Download with retries — try different strategies
           for (let attempt = 0; attempt < 3; attempt++) {
             try {
               const dl = await FileSystem.downloadAsync(imgUri, permUri, {
                 headers: { 'X-Advance-Client': 'MobileCompanion' }
               });
               if (dl.status === 200) {
-                if (!cancelled) setLocalUri(dl.uri);
-                return;
+                const dlInfo = await FileSystem.getInfoAsync(dl.uri);
+                if (dlInfo.exists && (dlInfo as any).size > 100) {
+                  if (!cancelled) setLocalUri(dl.uri);
+                  return;
+                }
               }
+              // Delete failed download
+              await FileSystem.deleteAsync(permUri, { idempotent: true }).catch(() => {});
             } catch {}
-            if (attempt < 2) await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+            if (attempt < 2) await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
           }
 
-          if (!cancelled) setFailed(true);
+          // All download attempts failed — try rendering remote URI directly as fallback
+          // expo-image can sometimes handle URLs that FileSystem.downloadAsync can't
+          if (!cancelled) setLocalUri(imgUri);
+          return;
+        }
+
+        // Content URI (content://) — try to render directly
+        if (imgUri.startsWith('content://')) {
+          if (!cancelled) setLocalUri(imgUri);
           return;
         }
 
         // Unknown scheme
         if (!cancelled) setFailed(true);
       } catch (err) {
-        if (!cancelled) setFailed(true);
+        // Don't hide the image — try to render the original URI as last resort
+        if (!cancelled) setLocalUri(imgUri);
       }
     };
 
     loadImage();
     return () => { cancelled = true; };
-  }, [imgUri]);
+  }, [imgUri, retryCount]);
 
-  // Hide broken images entirely
-  if (failed) return null;
+  // Show a retry button instead of hiding broken images
+  if (failed) return (
+    <TouchableOpacity 
+      style={{ marginBottom: 8, height: 100, borderRadius: 12, backgroundColor: '#1C202B', justifyContent: 'center', alignItems: 'center' }}
+      onPress={() => { setFailed(false); setRetryCount(c => c + 1); }}
+      activeOpacity={0.7}
+    >
+      <Text style={{ fontSize: 24 }}>🔄</Text>
+      <Text style={{ color: '#8A8F98', fontSize: 11, marginTop: 4 }}>Tap to retry image</Text>
+    </TouchableOpacity>
+  );
 
   if (!localUri) return (
     <View style={{ marginBottom: 8, height: 120, borderRadius: 12, backgroundColor: '#1C202B', justifyContent: 'center', alignItems: 'center' }}>
@@ -135,7 +161,10 @@ const CachedImage = React.memo(({ imgUri, onPress }: { imgUri: string; onPress: 
         source={{ uri: localUri }}
         style={{ width: '100%', minHeight: 160, maxHeight: 320, borderRadius: 12, backgroundColor: '#1C202B' }}
         contentFit="contain"
-        onError={() => setFailed(true)}
+        onError={() => {
+          // If direct URL render fails, show retry instead of hiding
+          setFailed(true);
+        }}
       />
     </TouchableOpacity>
   );
