@@ -598,61 +598,37 @@
                                 </ui:SymbolIcon>
                             </Border>
 
-                            <!-- The Text Body -->
-                            <StackPanel Grid.Row="0" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,0,4">
-                                <TextBlock Name="TitleText" 
-                                           Text="{Binding FileName}" Foreground="#E1E1E1" FontWeight="SemiBold" TextWrapping="Wrap" 
-                                           TextTrimming="CharacterEllipsis" MaxHeight="130" />
-                                
-                                <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                                    <StackPanel.Style>
-                                        <Style TargetType="StackPanel">
-                                            <Setter Property="Visibility" Value="Visible" />
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding SourceDeviceName}" Value="Local">
-                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </StackPanel.Style>
-                                    <ui:SymbolIcon FontSize="12" Margin="0,0,4,0">
-                                        <ui:SymbolIcon.Style>
-                                            <Style TargetType="ui:SymbolIcon">
-                                                <Setter Property="Symbol" Value="Laptop24" />
-                                                <Setter Property="Foreground" Value="#60A5FA" />
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding SourceDeviceType}" Value="Mobile">
-                                                        <Setter Property="Symbol" Value="Phone24"/>
-                                                        <Setter Property="Foreground" Value="#A78BFA"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </ui:SymbolIcon.Style>
-                                    </ui:SymbolIcon>
-                                    <TextBlock Text="{Binding SourceDeviceName}" Foreground="#9CA3AF" FontSize="11" Margin="0,0,4,0" />
-                                    <TextBlock Text="·" Foreground="#4B5563" FontSize="11" Margin="0,0,4,0" />
-                                    <!-- Transfer method with color coding -->
-                                    <Border CornerRadius="4" Padding="4,1" Margin="0,0,0,0">
-                                        <Border.Style>
-                                            <Style TargetType="Border">
-                                                <Setter Property="Background" Value="#1AF59E0B"/>
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding TransferMethod}" Value="Cloudflare">
-                                                        <Setter Property="Background" Value="#1A10B981"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding TransferMethod}" Value="LAN">
-                                                        <Setter Property="Background" Value="#1A6366F1"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding TransferMethod}" Value="ForceSend">
-                                                        <Setter Property="Background" Value="#1AEF4444"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding TransferMethod}" Value="Local">
-                                                        <Setter Property="Background" Value="#1A9CA3AF"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </Border.Style>
-                                        <TextBlock FontSize="9" FontWeight="SemiBold">
+                            <!-- Sender Badge — Top-right corner overlay -->
+                            <StackPanel Name="SenderBadge" Grid.Row="0" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-2,-2,0" Panel.ZIndex="4">
+                                <StackPanel.Style>
+                                    <Style TargetType="StackPanel">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SourceDeviceName}" Value="Local">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </StackPanel.Style>
+                                <Border CornerRadius="6" Padding="5,2" Background="#18FFFFFF">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:SymbolIcon FontSize="10" Margin="0,0,3,0">
+                                            <ui:SymbolIcon.Style>
+                                                <Style TargetType="ui:SymbolIcon">
+                                                    <Setter Property="Symbol" Value="Laptop24" />
+                                                    <Setter Property="Foreground" Value="#60A5FA" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding SourceDeviceType}" Value="Mobile">
+                                                            <Setter Property="Symbol" Value="Phone24"/>
+                                                            <Setter Property="Foreground" Value="#A78BFA"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </ui:SymbolIcon.Style>
+                                        </ui:SymbolIcon>
+                                        <TextBlock Text="{Binding SourceDeviceName}" Foreground="#9CA3AF" FontSize="9" Margin="0,0,4,0" VerticalAlignment="Center" />
+                                        <TextBlock Text="·" Foreground="#4B5563" FontSize="9" Margin="0,0,4,0" VerticalAlignment="Center" />
+                                        <TextBlock FontSize="8" FontWeight="SemiBold" VerticalAlignment="Center">
                                             <TextBlock.Style>
                                                 <Style TargetType="TextBlock">
                                                     <Setter Property="Text" Value="☁️ Cloud"/>
@@ -678,8 +654,15 @@
                                                 </Style>
                                             </TextBlock.Style>
                                         </TextBlock>
-                                    </Border>
-                                </StackPanel>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+
+                            <!-- The Text Body -->
+                            <StackPanel Grid.Row="0" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,0,4">
+                                <TextBlock Name="TitleText" 
+                                           Text="{Binding FileName}" Foreground="#E1E1E1" FontWeight="SemiBold" TextWrapping="Wrap" 
+                                           TextTrimming="CharacterEllipsis" MaxHeight="130" />
                             </StackPanel>
 
                         </Grid>

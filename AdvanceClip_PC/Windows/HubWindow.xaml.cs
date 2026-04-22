@@ -150,7 +150,15 @@ namespace AdvanceClip.Windows
                 if (LogsGrid != null) LogsGrid.Visibility = tag == "Logs" ? Visibility.Visible : Visibility.Collapsed;
                 
                 if (tag == "Logs") RefreshLogs_Click(null, null);
-                if (tag == "Network") RefreshDevices_Click(null, null);
+                if (tag == "Network")
+                {
+                    RefreshDevices_Click(null, null);
+                    // Auto-populate server diagnostics
+                    if (ServerDiagnosticsLog != null)
+                    {
+                        ServerDiagnosticsLog.Text = GetServerDiagnostics();
+                    }
+                }
             }
         }
 
@@ -332,6 +340,100 @@ namespace AdvanceClip.Windows
         }
 
         private string _currentFilterTag = "All";
+
+        private void RestartServer_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var vm = DataContext as AdvanceClip.ViewModels.DropShelfViewModel;
+                if (vm?.LocalServer == null) { ToastWindow.ShowToast("❌ Server instance not found"); return; }
+
+                ServerDiagnosticsLog.Text = "⏳ Stopping server...\n";
+                ServerDiagnosticsLog.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xF5, 0x9E, 0x0B)); // amber
+
+                vm.LocalServer.Stop();
+                ServerDiagnosticsLog.Text += "✅ Server stopped.\n⏳ Starting server...\n";
+
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(1000); // Brief cooldown
+                    Dispatcher.Invoke(() =>
+                    {
+                        vm.LocalServer.Start();
+                        vm.RefreshLocalServerData();
+
+                        // Read the BIND/PROXY/NETWORK log lines from the activity log
+                        string diagnostics = GetServerDiagnostics();
+                        ServerDiagnosticsLog.Text = diagnostics;
+                        ServerDiagnosticsLog.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x10, 0xB9, 0x81)); // green
+                        ToastWindow.ShowToast("🔄 Server restarted — check diagnostics below");
+                    });
+                });
+            }
+            catch (Exception ex)
+            {
+                ServerDiagnosticsLog.Text = $"❌ Restart failed: {ex.Message}";
+                ServerDiagnosticsLog.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xEF, 0x44, 0x44));
+            }
+        }
+
+        private void CopyServerDiagnostics_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                string diagnostics = GetServerDiagnostics();
+                string systemInfo = $"=== AdvanceClip Server Diagnostics ===\n" +
+                    $"PC Name: {Environment.MachineName}\n" +
+                    $"OS: {Environment.OSVersion}\n" +
+                    $"User: {Environment.UserName}\n" +
+                    $"Is Admin: {new System.Security.Principal.WindowsPrincipal(System.Security.Principal.WindowsIdentity.GetCurrent()).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator)}\n" +
+                    $"Time: {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n" +
+                    $"======================================\n\n{diagnostics}";
+                Clipboard.SetText(systemInfo);
+                ToastWindow.ShowToast("📋 Server diagnostics copied — share this with the developer!");
+            }
+            catch (Exception ex)
+            {
+                ToastWindow.ShowToast($"❌ Failed: {ex.Message}");
+            }
+        }
+
+        private string GetServerDiagnostics()
+        {
+            try
+            {
+                string logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AdvanceClip", "Logs", "activity_log.txt");
+                if (!System.IO.File.Exists(logPath)) return "No log file found.";
+
+                // Read last 500 lines and filter for server-related entries
+                var allLines = System.IO.File.ReadAllLines(logPath);
+                int startIdx = Math.Max(0, allLines.Length - 500);
+                var relevantLines = new System.Collections.Generic.List<string>();
+                for (int i = startIdx; i < allLines.Length; i++)
+                {
+                    string line = allLines[i];
+                    if (line.Contains("[BIND]") || line.Contains("[NETWORK") || line.Contains("[TCP PROXY]") ||
+                        line.Contains("[CLOUDFLARE]") || line.Contains("[CF_STDERR]") || line.Contains("[HEARTBEAT]") ||
+                        line.Contains("[FIREBASE SYNC]") || line.Contains("[DIAGNOSTICS]") || line.Contains("[HTTP]") && line.Contains("health"))
+                    {
+                        relevantLines.Add(line);
+                    }
+                }
+
+                if (relevantLines.Count == 0) return "No server log entries found in last 500 lines.";
+
+                // Take last 50 relevant lines
+                var output = relevantLines.Count > 50
+                    ? relevantLines.GetRange(relevantLines.Count - 50, 50)
+                    : relevantLines;
+
+                return string.Join("\n", output);
+            }
+            catch (Exception ex)
+            {
+                return $"Error reading logs: {ex.Message}";
+            }
+        }
 
         private void Filter_Checked(object sender, RoutedEventArgs e)
         {

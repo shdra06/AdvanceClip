@@ -943,6 +943,32 @@
                                 </StackPanel>
                             </Border>
 
+                            <!-- RESTART SERVER + DIAGNOSTICS -->
+                            <Border Style="{StaticResource PremiumSettingStyle}" Visibility="{Binding Source={x:Static settings:SettingsManager.Current}, Path=EnableLocalNetworkSync, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Border Width="28" Height="28" CornerRadius="7" Background="#1AEF4444" Margin="0,0,10,0">
+                                            <ui:SymbolIcon Symbol="WrenchScrewdriver24" FontSize="14" Foreground="#EF4444" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+                                        <TextBlock Text="Server Troubleshooting" FontWeight="Bold" FontSize="16" Foreground="#EF4444" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                    <TextBlock Text="If the local server or Cloudflare tunnel isn't working, restart the server below. The diagnostic log shows exactly what happened during the bind process." Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorTertiary}" FontSize="12" Margin="0,0,0,14" TextWrapping="Wrap" LineHeight="18" />
+                                    
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                                        <ui:Button Content="🔄 Restart Server" Appearance="Danger" Padding="14,8" CornerRadius="10" Click="RestartServer_Click" Margin="0,0,8,0" />
+                                        <ui:Button Content="📋 Copy Diagnostics" Appearance="Secondary" Padding="14,8" CornerRadius="10" Click="CopyServerDiagnostics_Click" />
+                                    </StackPanel>
+                                    
+                                    <!-- Live diagnostic log -->
+                                    <TextBlock Text="Server Bind Log" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorSecondary}" Margin="0,0,0,8"/>
+                                    <Border Background="#08FFFFFF" BorderBrush="#12FFFFFF" BorderThickness="1" CornerRadius="10" Padding="12" MaxHeight="300">
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+                                            <TextBlock Name="ServerDiagnosticsLog" FontFamily="Consolas" FontSize="11" Foreground="#10B981" TextWrapping="Wrap" Text="Click 'Restart Server' to see live diagnostics..." />
+                                        </ScrollViewer>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+
                             <!-- ACTIVE DEVICES SECTION -->
                             <StackPanel Orientation="Horizontal" Margin="0,10,0,14">
                                 <ui:SymbolIcon Symbol="People24" FontSize="18" Foreground="#8B5CF6" Margin="0,0,8,0"/>
