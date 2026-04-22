@@ -410,50 +410,91 @@ namespace AdvanceClip.Classes
                 });
 
                 // No auth header needed — /download is now public (before auth barrier)
-                // Retry up to 3 times with delays (Cloudflare tunnel DNS may need time to propagate)
+                // Enhanced download with fallback: try primary URL, then alternative URLs
                 HttpResponseMessage response = null;
                 int maxRetries = 3;
-                int[] retryDelays = { 2000, 5000, 10000 }; // 2s, 5s, 10s
+                int[] retryDelays = { 2000, 5000, 8000 }; // 2s, 5s, 8s
 
                 using var downloadClient = new HttpClient() { Timeout = TimeSpan.FromMinutes(10) };
                 
-                for (int attempt = 0; attempt < maxRetries; attempt++)
+                // Build fallback URL list: primary first, then alternatives
+                var urlsToTry = new List<string> { cloudItem.Raw };
+                
+                // If primary is Cloudflare, add DownloadUrl and SenderUrl-based alternatives
+                if (cloudItem.Raw.Contains(".trycloudflare.com"))
                 {
-                    try
+                    // DownloadUrl might be a Firebase Storage URL (firebasestorage.googleapis.com)
+                    if (!string.IsNullOrEmpty(cloudItem.DownloadUrl) && cloudItem.DownloadUrl.StartsWith("http") && cloudItem.DownloadUrl != cloudItem.Raw)
+                        urlsToTry.Add(cloudItem.DownloadUrl);
+                    
+                    // SenderUrl might be a different Cloudflare URL (tunnel restarted)
+                    if (!string.IsNullOrEmpty(cloudItem.SenderUrl) && cloudItem.SenderUrl.Contains(".trycloudflare.com") && !cloudItem.Raw.Contains(cloudItem.SenderUrl))
                     {
-                        if (attempt > 0)
-                        {
-                            Logger.LogAction("FIREBASE SSE", $"Download retry {attempt + 1}/{maxRetries} after {retryDelays[attempt - 1]}ms...");
-                            System.Windows.Application.Current.Dispatcher.Invoke(() =>
-                            {
-                                if (progressClip != null)
-                                    progressClip.RawContent = $"🔄 Retry {attempt + 1}/{maxRetries} — {cloudItem.Title}";
-                            });
-                            await Task.Delay(retryDelays[attempt - 1]);
-                        }
-
-                        var request = new HttpRequestMessage(HttpMethod.Get, cloudItem.Raw);
-                        response = await downloadClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
-
-                        if (response.IsSuccessStatusCode)
-                        {
-                            Logger.LogAction("FIREBASE SSE", $"Download connected on attempt {attempt + 1}: {cloudItem.Raw}");
-                            break;
-                        }
-
-                        Logger.LogAction("FIREBASE SSE", $"Download attempt {attempt + 1} failed: HTTP {(int)response.StatusCode} from {cloudItem.Raw}");
+                        // Rebuild download URL with the sender's current tunnel URL
+                        var pathMatch = System.Text.RegularExpressions.Regex.Match(cloudItem.Raw, @"/download\?path=(.+)$");
+                        if (pathMatch.Success)
+                            urlsToTry.Add($"{cloudItem.SenderUrl.TrimEnd('/')}/download?path={pathMatch.Groups[1].Value}");
                     }
-                    catch (Exception retryEx)
+                }
+
+                string successUrl = null;
+                foreach (var tryUrl in urlsToTry)
+                {
+                    bool succeeded = false;
+                    for (int attempt = 0; attempt < maxRetries; attempt++)
                     {
-                        Logger.LogAction("FIREBASE SSE", $"Download attempt {attempt + 1} error: {retryEx.Message}");
-                        if (attempt == maxRetries - 1) throw;
+                        try
+                        {
+                            if (attempt > 0)
+                            {
+                                Logger.LogAction("FIREBASE SSE", $"Download retry {attempt + 1}/{maxRetries} after {retryDelays[attempt - 1]}ms...");
+                                System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                                {
+                                    if (progressClip != null)
+                                        progressClip.RawContent = $"🔄 Retry {attempt + 1}/{maxRetries} — {cloudItem.Title}";
+                                });
+                                await Task.Delay(retryDelays[attempt - 1]);
+                            }
+
+                            var request = new HttpRequestMessage(HttpMethod.Get, tryUrl);
+                            response = await downloadClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+
+                            if (response.IsSuccessStatusCode)
+                            {
+                                Logger.LogAction("FIREBASE SSE", $"Download connected on attempt {attempt + 1}: {tryUrl}");
+                                successUrl = tryUrl;
+                                succeeded = true;
+                                break;
+                            }
+
+                            Logger.LogAction("FIREBASE SSE", $"Download attempt {attempt + 1} failed: HTTP {(int)response.StatusCode} from {tryUrl}");
+                        }
+                        catch (Exception retryEx)
+                        {
+                            Logger.LogAction("FIREBASE SSE", $"Download attempt {attempt + 1} error: {retryEx.Message}");
+                        }
+                    }
+                    
+                    if (succeeded) break;
+                    
+                    // Log that we're trying the next fallback URL
+                    if (urlsToTry.IndexOf(tryUrl) < urlsToTry.Count - 1)
+                    {
+                        string nextUrl = urlsToTry[urlsToTry.IndexOf(tryUrl) + 1];
+                        Logger.LogAction("FIREBASE SSE", $"Primary URL failed — trying fallback: {nextUrl}");
+                        System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                        {
+                            if (progressClip != null)
+                                progressClip.RawContent = $"🔄 Trying alternate download source — {cloudItem.Title}";
+                        });
                     }
                 }
 
                 if (response == null || !response.IsSuccessStatusCode)
                 {
                     int code = response != null ? (int)response.StatusCode : 0;
-                    throw new Exception($"HTTP {code} after {maxRetries} attempts from {cloudItem.Raw}");
+                    string tried = string.Join(", ", urlsToTry.Select(u => u.Length > 60 ? u.Substring(0, 60) + "..." : u));
+                    throw new Exception($"File Download Error: HTTP {code} after {maxRetries} attempts from {tried}");
                 }
 
                 long totalBytes = response.Content.Headers.ContentLength ?? -1;

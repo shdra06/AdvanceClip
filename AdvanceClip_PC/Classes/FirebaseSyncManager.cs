@@ -17,6 +17,8 @@ namespace AdvanceClip.Classes
         
         // Public Cloudflare URL for constructing file download links
         public static string CachedGlobalUrl { get; set; } = "";
+        // Whether the Cloudflare tunnel has been verified working (HTTP 200 on self-ping)
+        public static bool CachedTunnelVerified { get; set; } = false;
         // Local LAN server URL as fallback when Cloudflare is off
         public static string CachedLocalUrl { get; set; } = "";
         // Firebase Storage bucket for global file uploads when Cloudflare is unavailable
@@ -85,14 +87,17 @@ namespace AdvanceClip.Classes
                     }
                 }
 
-                if (isFile && !string.IsNullOrEmpty(CachedGlobalUrl) && CachedGlobalUrl.Contains("trycloudflare.com"))
+                if (isFile && !string.IsNullOrEmpty(CachedGlobalUrl) && CachedGlobalUrl.Contains("trycloudflare.com") && CachedTunnelVerified)
                 {
-                    // Trust the Cloudflare tunnel URL if the daemon provided it.
-                    // Don't self-ping — Cloudflare CDN often returns 400 during warmup on slow WiFi
-                    // but still correctly proxies actual file downloads.
+                    // Only use Cloudflare URL if the tunnel has been VERIFIED working (HTTP 200 self-ping)
                     downloadUrl = $"{CachedGlobalUrl}/download?path={Uri.EscapeDataString(item.FilePath)}";
                     raw = downloadUrl;
-                    Logger.LogAction("FIREBASE SYNC", $"File '{item.FileName}' → Cloudflare: {downloadUrl}");
+                    Logger.LogAction("FIREBASE SYNC", $"File '{item.FileName}' → Cloudflare (verified): {downloadUrl}");
+                }
+                else if (isFile && !string.IsNullOrEmpty(CachedGlobalUrl) && CachedGlobalUrl.Contains("trycloudflare.com") && !CachedTunnelVerified)
+                {
+                    // Tunnel URL exists but NOT verified — skip it and use Firebase Storage
+                    Logger.LogAction("FIREBASE SYNC", $"⚠️ Cloudflare tunnel exists but NOT verified — skipping for '{item.FileName}', using Firebase Storage fallback");
                 }
                 if (isFile && string.IsNullOrEmpty(downloadUrl))
                 {

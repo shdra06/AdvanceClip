@@ -34,6 +34,7 @@ namespace AdvanceClip.Classes
                 if (!string.IsNullOrEmpty(url) && url.Contains(".trycloudflare.com"))
                 {
                     FirebaseSyncManager.CachedGlobalUrl = url; // Cache for file download URL construction
+                    FirebaseSyncManager.CachedTunnelVerified = _cfDaemon.IsTunnelVerified; // Only allow file downloads if verified
                     _ = FirebaseSyncManager.PushTunnelUrl(url, true, ServerUrl);
                 }
             };

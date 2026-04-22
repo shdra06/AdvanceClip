@@ -19,6 +19,12 @@ namespace AdvanceClip.Classes
         private System.Timers.Timer _healthTimer;      // Periodic tunnel health monitor
 
         public string GlobalUrl { get; private set; } = "Initializing...";
+        /// <summary>
+        /// True ONLY when the tunnel has been self-verified (HTTP 200 on /api/health).
+        /// False if verification was inconclusive (HTTP 400/530/timeout).
+        /// FirebaseSyncManager checks this before using the URL for file downloads.
+        /// </summary>
+        public bool IsTunnelVerified { get; private set; } = false;
         public event Action<string> GlobalUrlUpdated;
 
         public async Task StartAsync(int localPort)
@@ -103,6 +109,7 @@ namespace AdvanceClip.Classes
                             }
                             GlobalUrl = match.Value;
                             tunnelUrlReceived = true;
+                            IsTunnelVerified = false; // Not verified until self-ping succeeds
                             _consecutiveFailures = 0; // Reset on success
                             Logger.LogAction("CLOUDFLARE", $"Tunnel URL: {GlobalUrl}");
                             GlobalUrlUpdated?.Invoke(GlobalUrl);
@@ -156,6 +163,7 @@ namespace AdvanceClip.Classes
                             if (pingResp.IsSuccessStatusCode)
                             {
                                 verified = true;
+                                IsTunnelVerified = true;
                                 Logger.LogAction("CLOUDFLARE", $"✅ Tunnel verified working: {GlobalUrl}");
                                 break;
                             }
@@ -167,10 +175,12 @@ namespace AdvanceClip.Classes
                         }
                     }
 
-                    // Keep the tunnel alive regardless — Cloudflare CDN sometimes needs more propagation time
+                    // Keep the tunnel alive — but mark it unverified so FirebaseSyncManager uses Firebase Storage fallback
                     if (!verified)
                     {
-                        Logger.LogAction("CLOUDFLARE", $"⚠️ Tunnel verification inconclusive but keeping tunnel alive: {GlobalUrl}");
+                        IsTunnelVerified = false;
+                        Logger.LogAction("CLOUDFLARE", $"⚠️ Tunnel verification FAILED — URL exists but NOT usable for file downloads: {GlobalUrl}");
+                        Logger.LogAction("CLOUDFLARE", $"⚠️ File sync will use Firebase Storage fallback instead of Cloudflare tunnel.");
                     }
                     
                     GlobalUrlUpdated?.Invoke(GlobalUrl);
@@ -235,10 +245,20 @@ namespace AdvanceClip.Classes
                     if (resp.IsSuccessStatusCode)
                     {
                         _healthFailCount = 0; // Healthy
+                        if (!IsTunnelVerified)
+                        {
+                            IsTunnelVerified = true;
+                            Logger.LogAction("CLOUDFLARE HEALTH", $"✅ Tunnel now verified via health check — file downloads enabled: {GlobalUrl}");
+                        }
                     }
                     else
                     {
                         _healthFailCount++;
+                        if (IsTunnelVerified && _healthFailCount >= 2)
+                        {
+                            IsTunnelVerified = false;
+                            Logger.LogAction("CLOUDFLARE HEALTH", $"⚠️ Tunnel verification lost — file downloads will use Firebase Storage fallback");
+                        }
                         Logger.LogAction("CLOUDFLARE HEALTH", $"Ping failed ({_healthFailCount}/3): HTTP {(int)resp.StatusCode}");
                     }
                 }
