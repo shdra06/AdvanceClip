@@ -19,6 +19,7 @@ namespace AdvanceClip.Classes
         private DropShelfViewModel _viewModel;
         private CloudflareDaemon _cfDaemon = new CloudflareDaemon();
         private System.Timers.Timer _heartbeatTimer;
+        private System.Net.Sockets.TcpListener _proxyListener = null;
         private static readonly HttpClient _httpClient = new HttpClient() { Timeout = TimeSpan.FromSeconds(30) };
         
         public string ServerUrl { get; private set; } = "Not Running";
@@ -76,101 +77,108 @@ namespace AdvanceClip.Classes
                 }
                 catch { }
 
-                // Auto-register URL ACL for localhost — fixes "Access Denied" on fresh Windows
-                // This runs silently and doesn't require admin for localhost bindings
-                EnsureUrlAcl(8999);
+                int publicPort = 8999;
+                bool needsProxy = false;
 
-                bool TryBindSequence(int port)
-                {
-                    // Strategy 1: http://+:port/ (accepts ALL interfaces — less restrictive than http://*:port/)
-                    try {
-                        _listener = new HttpListener();
-                        _listener.Prefixes.Add($"http://+:{port}/");
-                        _listener.Start();
-                        Logger.LogAction("BIND", $"✅ Bound to http://+:{port}/ (all interfaces)");
-                        return true;
-                    } catch (Exception ex) { 
-                        Logger.LogAction("BIND", $"http://+:{port}/ failed: {ex.Message}");
-                        if (_listener != null) { try { _listener.Close(); } catch { } } 
-                    }
-
-                    // Strategy 2: http://*:port/ (accepts ALL interfaces — requires admin/urlacl)
-                    try {
-                        _listener = new HttpListener();
-                        _listener.Prefixes.Add($"http://*:{port}/");
-                        _listener.Start();
-                        Logger.LogAction("BIND", $"✅ Bound to http://*:{port}/ (all interfaces)");
-                        return true;
-                    } catch (Exception ex) { 
-                        Logger.LogAction("BIND", $"http://*:{port}/ failed: {ex.Message}");
-                        if (_listener != null) { try { _listener.Close(); } catch { } } 
-                    }
-
-                    // Strategy 3: http://{localIp}:port/ + http://localhost:port/ 
-                    // MUST add BOTH — LAN access AND cloudflared (which connects to localhost)
-                    try {
-                        _listener = new HttpListener();
-                        _listener.Prefixes.Add($"http://{localIp}:{port}/");
-                        _listener.Prefixes.Add($"http://localhost:{port}/");  // Critical for Cloudflare tunnel!
-                        _listener.Start();
-                        Logger.LogAction("BIND", $"✅ Bound to http://{localIp}:{port}/ + http://localhost:{port}/");
-                        return true;
-                    } catch (Exception ex) { 
-                        Logger.LogAction("BIND", $"Dual-bind failed: {ex.Message}");
-                        if (_listener != null) { try { _listener.Close(); } catch { } } 
-                    }
-
-                    // Strategy 4: http://localhost:port/ only (Cloudflare works, LAN won't)
-                    try {
-                        _listener = new HttpListener();
-                        _listener.Prefixes.Add($"http://localhost:{port}/");
-                        _listener.Start();
-                        Logger.LogAction("BIND", $"✅ Bound to http://localhost:{port}/ (localhost only — LAN disabled)");
-                        return true;
-                    } catch (Exception ex) { 
-                        Logger.LogAction("BIND", $"localhost-only bind failed: {ex.Message}");
-                        if (_listener != null) { try { _listener.Close(); } catch { } } 
-                    }
-
-                    // Strategy 5: http://127.0.0.1:port/ (absolute last resort)
-                    try {
-                        _listener = new HttpListener();
-                        _listener.Prefixes.Add($"http://127.0.0.1:{port}/");
-                        _listener.Start();
-                        Logger.LogAction("BIND", $"✅ Bound to http://127.0.0.1:{port}/ (loopback only)");
-                        return true;
-                    } catch (Exception ex) { 
-                        Logger.LogAction("BIND", $"127.0.0.1 bind also failed: {ex.Message}");
-                        if (_listener != null) { try { _listener.Close(); } catch { } } 
-                    }
-
-                    return false;
+                // === PHASE 1: Try to bind HttpListener to ALL interfaces (no proxy needed) ===
+                bool allInterfacesBound = false;
+                
+                // Strategy 1: http://+:port/ (accepts ALL interfaces)
+                if (!allInterfacesBound) try {
+                    _listener = new HttpListener();
+                    _listener.Prefixes.Add($"http://+:{publicPort}/");
+                    _listener.Start();
+                    Logger.LogAction("BIND", $"✅ Bound to http://+:{publicPort}/ (all interfaces — no proxy needed)");
+                    allInterfacesBound = true;
+                } catch (Exception ex) { 
+                    Logger.LogAction("BIND", $"http://+:{publicPort}/ failed: {ex.Message}");
+                    if (_listener != null) { try { _listener.Close(); } catch { } } 
                 }
 
-                // Try ports 8999, 9000, 9001, 9002 — auto-fallback if primary port is in use
-                int[] portsToTry = { 8999, 9000, 9001, 9002 };
-                bool bound = false;
-                foreach (int port in portsToTry)
+                // Strategy 2: http://*:port/
+                if (!allInterfacesBound) try {
+                    _listener = new HttpListener();
+                    _listener.Prefixes.Add($"http://*:{publicPort}/");
+                    _listener.Start();
+                    Logger.LogAction("BIND", $"✅ Bound to http://*:{publicPort}/ (all interfaces — no proxy needed)");
+                    allInterfacesBound = true;
+                } catch (Exception ex) { 
+                    Logger.LogAction("BIND", $"http://*:{publicPort}/ failed: {ex.Message}");
+                    if (_listener != null) { try { _listener.Close(); } catch { } } 
+                }
+
+                // Strategy 3: http://{localIp}:port/ + http://localhost:port/
+                if (!allInterfacesBound) try {
+                    _listener = new HttpListener();
+                    _listener.Prefixes.Add($"http://{localIp}:{publicPort}/");
+                    _listener.Prefixes.Add($"http://localhost:{publicPort}/");
+                    _listener.Start();
+                    Logger.LogAction("BIND", $"✅ Bound to http://{localIp}:{publicPort}/ + http://localhost:{publicPort}/");
+                    allInterfacesBound = true;
+                } catch (Exception ex) { 
+                    Logger.LogAction("BIND", $"Dual-bind failed: {ex.Message}");
+                    if (_listener != null) { try { _listener.Close(); } catch { } } 
+                }
+
+                // === PHASE 2: Localhost-only + TCP Proxy (works without admin) ===
+                if (!allInterfacesBound)
                 {
-                    EnsureUrlAcl(port);
-                    if (TryBindSequence(port))
+                    // Bind HttpListener to localhost on an INTERNAL port (publicPort + 10000)
+                    int internalPort = publicPort + 10000; // e.g., 18999
+                    bool localhostBound = false;
+
+                    try {
+                        _listener = new HttpListener();
+                        _listener.Prefixes.Add($"http://localhost:{internalPort}/");
+                        _listener.Start();
+                        localhostBound = true;
+                        Logger.LogAction("BIND", $"✅ HttpListener bound to http://localhost:{internalPort}/ (internal)");
+                    } catch (Exception ex) {
+                        Logger.LogAction("BIND", $"localhost:{internalPort} failed: {ex.Message}");
+                        if (_listener != null) { try { _listener.Close(); } catch { } }
+                    }
+
+                    // Fallback: try 127.0.0.1
+                    if (!localhostBound) try {
+                        _listener = new HttpListener();
+                        _listener.Prefixes.Add($"http://127.0.0.1:{internalPort}/");
+                        _listener.Start();
+                        localhostBound = true;
+                        Logger.LogAction("BIND", $"✅ HttpListener bound to http://127.0.0.1:{internalPort}/ (internal)");
+                    } catch (Exception ex) {
+                        Logger.LogAction("BIND", $"127.0.0.1:{internalPort} failed: {ex.Message}");
+                        if (_listener != null) { try { _listener.Close(); } catch { } }
+                    }
+
+                    if (!localhostBound)
                     {
-                        CurrentPort = port;
-                        bound = true;
-                        if (port != 8999)
-                            Logger.LogAction("BIND", $"⚠️ Primary port 8999 was unavailable — using fallback port {port}");
-                        break;
+                        throw new Exception("Cannot bind HTTP server to ANY address — check antivirus/firewall.");
                     }
-                    Logger.LogAction("BIND", $"Port {port} failed all strategies — trying next port...");
+
+                    // Start TCP Proxy on 0.0.0.0:publicPort → forwards to localhost:internalPort
+                    // TcpListener does NOT need admin privileges or URL ACLs!
+                    try
+                    {
+                        _proxyListener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Any, publicPort);
+                        _proxyListener.Start();
+                        _proxyRunning = true;
+                        needsProxy = true;
+                        _proxyInternalPort = internalPort;
+                        
+                        // Accept connections in background
+                        _ = Task.Run(async () => await TcpProxyLoop(internalPort));
+                        
+                        Logger.LogAction("BIND", $"✅ TCP Proxy started: 0.0.0.0:{publicPort} → localhost:{internalPort} (LAN + Cloudflare enabled)");
+                    }
+                    catch (Exception proxyEx)
+                    {
+                        Logger.LogAction("BIND", $"❌ TCP Proxy on port {publicPort} failed: {proxyEx.Message} — LAN access will NOT work");
+                        // Even without the proxy, the HttpListener on localhost still works for Cloudflare
+                        // (cloudflared connects to localhost). So we don't throw here.
+                    }
                 }
 
-                if (!bound)
-                {
-                    Logger.LogAction("BIND", "❌ FATAL: Could not bind to ANY port (8999-9002). All strategies exhausted.");
-                    throw new Exception("Cannot bind HTTP server — all ports and strategies failed. Check antivirus/firewall.");
-                }
-
-                LaunchUacBypassProxy(CurrentPort);
+                CurrentPort = publicPort;
 
                 _isRunning = true;
                 _listenerThread = new Thread(() =>
@@ -183,16 +191,18 @@ namespace AdvanceClip.Classes
 
                 UpdateServerUrl();
                 FirebaseSyncManager.CachedLocalUrl = DisplayUrl; // Cache first LAN URL for file download fallback
-                Logger.LogAction("NETWORK", $"✅ Web server launched on {ServerUrl} (port {CurrentPort})");
+                string bindMode = needsProxy ? "TCP Proxy" : "Direct";
+                Logger.LogAction("NETWORK", $"✅ Web server launched on {ServerUrl} (port {CurrentPort}, mode: {bindMode})");
                 NetworkActivityLog.Instance.ServerStatus = "Online";
 
                 // Natively trigger Cloudflare alongside HTTP Socket unconditionally
+                // If we used a TCP proxy, Cloudflare tunnels to publicPort which the TcpProxy handles.
+                // If we bound directly, Cloudflare tunnels to publicPort which HttpListener handles.
                 _ = _cfDaemon.StartAsync(CurrentPort);
                 _ = FirebaseSyncManager.PushTunnelUrl(GlobalUrl ?? ServerUrl, true, ServerUrl);
 
                 // Heartbeat: keep this PC visible in Firebase active_devices
-                // Android filters out devices with Timestamp older than 2 minutes
-                _heartbeatTimer = new System.Timers.Timer(60_000); // Every 60 seconds
+                _heartbeatTimer = new System.Timers.Timer(60_000);
                 _heartbeatTimer.Elapsed += (s, e) =>
                 {
                     _ = FirebaseSyncManager.PushTunnelUrl(GlobalUrl ?? ServerUrl, true, ServerUrl);
@@ -210,30 +220,71 @@ namespace AdvanceClip.Classes
             System.Windows.Application.Current.Dispatcher.InvokeAsync(() => _viewModel.RefreshLocalServerData());
         }
 
-        /// <summary>
-        /// URL ACL registration removed — netsh requires admin privileges which can hang or 
-        /// trigger UAC prompts. The 5-strategy bind fallback handles permissions gracefully.
-        /// </summary>
-        private void EnsureUrlAcl(int port) { /* no-op */ }
+        // ═══════════════════════════════════════════════════════════════════
+        // TCP Reverse Proxy: Enables LAN access without admin/URL ACL.
+        // TcpListener on 0.0.0.0:publicPort accepts any connection and
+        // proxies the raw TCP stream to HttpListener on localhost:internalPort.
+        // ═══════════════════════════════════════════════════════════════════
+        private bool _proxyRunning = false;
+        private int _proxyInternalPort = 18999;
+
+        private async Task TcpProxyLoop(int internalPort)
+        {
+            while (_proxyRunning && _proxyListener != null)
+            {
+                try
+                {
+                    var client = await _proxyListener.AcceptTcpClientAsync();
+                    // Handle each connection in parallel — don't block the accept loop
+                    _ = Task.Run(() => ProxyConnection(client, internalPort));
+                }
+                catch (ObjectDisposedException) { break; }
+                catch (System.Net.Sockets.SocketException) { break; }
+                catch (Exception ex)
+                {
+                    Logger.LogAction("TCP PROXY", $"Accept error: {ex.Message}");
+                    if (!_proxyRunning) break;
+                    await Task.Delay(100);
+                }
+            }
+        }
+
+        private async Task ProxyConnection(System.Net.Sockets.TcpClient client, int targetPort)
+        {
+            try
+            {
+                using (client)
+                using (var target = new System.Net.Sockets.TcpClient())
+                {
+                    client.NoDelay = true;
+                    await target.ConnectAsync("localhost", targetPort);
+                    target.NoDelay = true;
+
+                    var clientStream = client.GetStream();
+                    var targetStream = target.GetStream();
+
+                    // Bi-directional relay — when either side closes, both close
+                    using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5)); // 5min max per connection
+                    var t1 = clientStream.CopyToAsync(targetStream, cts.Token);
+                    var t2 = targetStream.CopyToAsync(clientStream, cts.Token);
+                    await Task.WhenAny(t1, t2);
+                }
+            }
+            catch { } // Connection closed — normal
+        }
 
         public void Stop()
         {
             if (!_isRunning) return;
             _isRunning = false;
+            _proxyRunning = false;
             ServerUrl = "Offline";
             try { _heartbeatTimer?.Stop(); _heartbeatTimer?.Dispose(); } catch { }
             _cfDaemon.Stop();
             _ = FirebaseSyncManager.PushTunnelUrl("offline", false, "");
-            try { _listener.Stop(); } catch { }
+            try { _listener?.Stop(); } catch { }
             try { _proxyListener?.Stop(); } catch { }
             System.Windows.Application.Current.Dispatcher.InvokeAsync(() => _viewModel.RefreshLocalServerData());
-        }
-
-        private System.Net.Sockets.TcpListener _proxyListener = null;
-
-        private void LaunchUacBypassProxy(int publicWifiPort)
-        {
-            // Fully deprecated the TCP Proxy and restored the pure native HttpListener binding dynamically conceptually carefully successfully smartly elegantly intuitively exactly perfectly expertly safely easily gracefully.
         }
 
         private void UpdateServerUrl()
