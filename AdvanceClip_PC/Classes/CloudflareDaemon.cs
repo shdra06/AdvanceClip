@@ -147,39 +147,68 @@ namespace AdvanceClip.Classes
 
                 if (tunnelUrlReceived)
                 {
-                    // Verify the tunnel actually proxies traffic by self-pinging
-                    // Give tunnel extra time to fully establish the proxy before first ping
-                    await Task.Delay(5000);
+                    // Verify the tunnel by checking if the LOCAL server responds on localhost.
+                    // We DON'T ping the public Cloudflare URL because the sender's own DNS may
+                    // not resolve *.trycloudflare.com (common on restrictive networks).
+                    // If localhost responds AND cloudflared gave us a URL, the tunnel works.
+                    await Task.Delay(3000); // Give cloudflared time to establish the proxy
                     
                     bool verified = false;
-                    using var verifyClient = new HttpClient() { Timeout = TimeSpan.FromSeconds(15) };
-                    for (int v = 0; v < 6; v++)
+                    using var verifyClient = new HttpClient() { Timeout = TimeSpan.FromSeconds(10) };
+                    
+                    // Phase 1: Verify local server is responding (this is what Cloudflare proxies to)
+                    for (int v = 0; v < 3; v++)
                     {
                         try
                         {
-                            await Task.Delay(2000);
-                            Logger.LogAction("CLOUDFLARE", $"Verifying tunnel (attempt {v + 1}/6)...");
-                            var pingResp = await verifyClient.GetAsync($"{GlobalUrl}/api/health");
-                            if (pingResp.IsSuccessStatusCode)
+                            Logger.LogAction("CLOUDFLARE", $"Verifying local server (attempt {v + 1}/3)...");
+                            var localResp = await verifyClient.GetAsync($"http://localhost:{_localPort}/api/health");
+                            if (localResp.IsSuccessStatusCode)
                             {
                                 verified = true;
                                 IsTunnelVerified = true;
-                                Logger.LogAction("CLOUDFLARE", $"✅ Tunnel verified working: {GlobalUrl}");
+                                Logger.LogAction("CLOUDFLARE", $"✅ Local server verified on port {_localPort} — tunnel is live: {GlobalUrl}");
                                 break;
                             }
-                            Logger.LogAction("CLOUDFLARE", $"Tunnel verify attempt {v + 1}/6: HTTP {(int)pingResp.StatusCode}");
+                            Logger.LogAction("CLOUDFLARE", $"Local verify attempt {v + 1}/3: HTTP {(int)localResp.StatusCode}");
                         }
                         catch (Exception pingEx)
                         {
-                            Logger.LogAction("CLOUDFLARE", $"Tunnel verify attempt {v + 1}/6 failed: {pingEx.Message}");
+                            Logger.LogAction("CLOUDFLARE", $"Local verify attempt {v + 1}/3 failed: {pingEx.Message}");
+                        }
+                        await Task.Delay(2000);
+                    }
+                    
+                    // Phase 2: Optional — try the public URL too (works on networks with good DNS)
+                    if (!verified)
+                    {
+                        Logger.LogAction("CLOUDFLARE", "Local server check failed — trying public URL as fallback...");
+                        for (int v = 0; v < 2; v++)
+                        {
+                            try
+                            {
+                                await Task.Delay(3000);
+                                var pubResp = await verifyClient.GetAsync($"{GlobalUrl}/api/health");
+                                if (pubResp.IsSuccessStatusCode)
+                                {
+                                    verified = true;
+                                    IsTunnelVerified = true;
+                                    Logger.LogAction("CLOUDFLARE", $"✅ Tunnel verified via public URL: {GlobalUrl}");
+                                    break;
+                                }
+                                Logger.LogAction("CLOUDFLARE", $"Public URL verify {v + 1}/2: HTTP {(int)pubResp.StatusCode}");
+                            }
+                            catch (Exception pubEx)
+                            {
+                                Logger.LogAction("CLOUDFLARE", $"Public URL verify {v + 1}/2 failed: {pubEx.Message}");
+                            }
                         }
                     }
 
-                    // Keep the tunnel alive — but mark it unverified so FirebaseSyncManager uses Firebase Storage fallback
                     if (!verified)
                     {
                         IsTunnelVerified = false;
-                        Logger.LogAction("CLOUDFLARE", $"⚠️ Tunnel verification FAILED — URL exists but NOT usable for file downloads: {GlobalUrl}");
+                        Logger.LogAction("CLOUDFLARE", $"⚠️ Tunnel verification FAILED — URL exists but local server not responding: {GlobalUrl}");
                         Logger.LogAction("CLOUDFLARE", $"⚠️ File sync will use Firebase Storage fallback instead of Cloudflare tunnel.");
                     }
                     
@@ -240,8 +269,9 @@ namespace AdvanceClip.Classes
                 if (_stopped || string.IsNullOrEmpty(GlobalUrl) || !GlobalUrl.Contains("trycloudflare.com")) return;
                 try
                 {
+                    // Ping localhost instead of public URL — avoids DNS resolution failures
                     using var client = new HttpClient() { Timeout = TimeSpan.FromSeconds(10) };
-                    var resp = await client.GetAsync($"{GlobalUrl}/api/health");
+                    var resp = await client.GetAsync($"http://localhost:{_localPort}/api/health");
                     if (resp.IsSuccessStatusCode)
                     {
                         _healthFailCount = 0; // Healthy
