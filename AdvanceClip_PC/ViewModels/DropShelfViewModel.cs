@@ -522,7 +522,9 @@ namespace AdvanceClip.ViewModels
 
                             
                             // PRIORITY 1: Cloudflare tunnel — FREE, unlimited, works for ANY file size
-                            if (localServer != null && !string.IsNullOrEmpty(localServer.GlobalUrl) && localServer.GlobalUrl.Contains("trycloudflare.com"))
+                            // But ONLY if the tunnel is verified working (not just has a URL)
+                            bool tunnelVerified = AdvanceClip.Classes.FirebaseSyncManager.CachedTunnelVerified;
+                            if (localServer != null && !string.IsNullOrEmpty(localServer.GlobalUrl) && localServer.GlobalUrl.Contains("trycloudflare.com") && tunnelVerified)
                             {
                                 string downloadUrl = $"{localServer.GlobalUrl}/download?path={Uri.EscapeDataString(file)}";
                                 var syncItem = item.CloneForSync(downloadUrl);
@@ -532,13 +534,15 @@ namespace AdvanceClip.ViewModels
                             // PRIORITY 2: Firebase Storage upload — works for files under 25MB
                             else if (fSize > 0 && fSize < 25 * 1024 * 1024)
                             {
+                                if (!tunnelVerified && localServer != null && !string.IsNullOrEmpty(localServer.GlobalUrl) && localServer.GlobalUrl.Contains("trycloudflare.com"))
+                                    AdvanceClip.Classes.Logger.LogAction("FILE SYNC", $"\u26a0\ufe0f Cloudflare tunnel exists but NOT verified — using Firebase Storage for '{Path.GetFileName(file)}'");
                                 string capturedFile = file;
                                 var capturedItem = item;
                                 _ = System.Threading.Tasks.Task.Run(async () =>
                                 {
                                     try
                                     {
-                                        AdvanceClip.Classes.Logger.LogAction("FILE SYNC", $"No Cloudflare — uploading '{Path.GetFileName(capturedFile)}' ({fSize / 1024}KB) to Firebase Storage...");
+                                        AdvanceClip.Classes.Logger.LogAction("FILE SYNC", $"Uploading '{Path.GetFileName(capturedFile)}' ({fSize / 1024}KB) to Firebase Storage...");
                                         string fbDownloadUrl = await AdvanceClip.Classes.FirebaseSyncManager.UploadFileToStorageAsync(capturedFile);
                                         if (!string.IsNullOrEmpty(fbDownloadUrl))
                                         {
@@ -560,8 +564,8 @@ namespace AdvanceClip.ViewModels
                             }
                             else
                             {
-                                // File too large for Firebase Storage and no Cloudflare tunnel
-                                AdvanceClip.Classes.Logger.LogAction("FILE SYNC", $"File '{Path.GetFileName(file)}' ({fSize / (1024*1024)}MB) — no Cloudflare, too large for Firebase Storage.");
+                                // File too large for Firebase Storage and no working Cloudflare tunnel
+                                AdvanceClip.Classes.Logger.LogAction("FILE SYNC", $"File '{Path.GetFileName(file)}' ({fSize / (1024*1024)}MB) — no verified Cloudflare, too large for Firebase Storage.");
                             }
                         }
                     }
@@ -671,16 +675,21 @@ namespace AdvanceClip.ViewModels
                                 {
                                     var srv = LocalServer;
                                     bool synced = false;
+                                    bool tunnelOk = AdvanceClip.Classes.FirebaseSyncManager.CachedTunnelVerified;
                                     
-                                    if (srv != null && !string.IsNullOrEmpty(srv.GlobalUrl) && srv.GlobalUrl.Contains("trycloudflare.com"))
+                                    if (srv != null && !string.IsNullOrEmpty(srv.GlobalUrl) && srv.GlobalUrl.Contains("trycloudflare.com") && tunnelOk)
                                     {
                                         string dlUrl = $"{srv.GlobalUrl}/download?path={Uri.EscapeDataString(tempFile)}";
                                         var syncItem = item.CloneForSync(dlUrl);
                                         _ = AdvanceClip.Classes.FirebaseSyncManager.PushToGlobalSync(syncItem);
                                         synced = true;
                                     }
+                                    else if (srv != null && !string.IsNullOrEmpty(srv.GlobalUrl) && srv.GlobalUrl.Contains("trycloudflare.com") && !tunnelOk)
+                                    {
+                                        AdvanceClip.Classes.Logger.LogAction("IMAGE SYNC", "⚠️ Cloudflare tunnel exists but NOT verified — using Firebase Storage for screenshot");
+                                    }
                                     
-                                    // No Cloudflare — upload screenshot to Firebase Storage (< 5MB)
+                                    // No working Cloudflare — upload screenshot to Firebase Storage (< 5MB)
                                     if (!synced && new FileInfo(tempFile).Length < 5 * 1024 * 1024)
                                     {
                                         string capturedTempFile = tempFile;
