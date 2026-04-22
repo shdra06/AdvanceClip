@@ -1,7 +1,8 @@
 {
-  "pc_version": "1.8.2",
-  "pc_download": "https://github.com/shdra06/AdvanceClip/releases/download/v1.8.2/AdvanceClip.exe",
+  "pc_version": "1.8.3",
+  "pc_download": "https://github.com/shdra06/AdvanceClip/releases/download/v1.8.3-pc/AdvanceClip.exe",
   "android_version": "1.8.2",
   "android_download": "https://github.com/shdra06/AdvanceClip/releases/download/v1.8.2/AdvanceClip_Mobile.apk",
-  "changelog": "v1.8.2: Fixed double/triple clipboard entries, background Firebase sync via floating ball, forced/group sync support, PDF detection improvements."
+  "pc_changelog": "v1.8.3: Network diagnostics panel, Cloudflare unlimited auto-retry with protocol fallback, health monitor, transfer method badges (Green/Indigo/Amber/Red).",
+  "android_changelog": "v1.8.2: Fixed double/triple clipboard entries, background Firebase sync via floating ball, forced/group sync support, PDF detection improvements."
 }
