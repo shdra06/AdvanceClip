@@ -48,7 +48,8 @@ namespace AdvanceClip.Classes
                 var root = doc.RootElement;
 
                 LatestVersion = root.TryGetProperty("pc_version", out var v) ? v.GetString() ?? "" : "";
-                Changelog = root.TryGetProperty("changelog", out var c) ? c.GetString() ?? "" : "";
+                Changelog = root.TryGetProperty("pc_changelog", out var c) ? c.GetString() ?? "" : 
+                           (root.TryGetProperty("changelog", out var c2) ? c2.GetString() ?? "" : "");
                 DownloadUrl = root.TryGetProperty("pc_download", out var d) ? d.GetString() ?? "" : "";
 
                 if (string.IsNullOrEmpty(LatestVersion))

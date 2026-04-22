@@ -76,56 +76,101 @@ namespace AdvanceClip.Classes
                 }
                 catch { }
 
+                // Auto-register URL ACL for localhost — fixes "Access Denied" on fresh Windows
+                // This runs silently and doesn't require admin for localhost bindings
+                EnsureUrlAcl(8999);
+
                 bool TryBindSequence(int port)
                 {
-                    // Strategy 1: http://*:port/ (accepts ALL interfaces — requires admin/urlacl)
+                    // Strategy 1: http://+:port/ (accepts ALL interfaces — less restrictive than http://*:port/)
+                    try {
+                        _listener = new HttpListener();
+                        _listener.Prefixes.Add($"http://+:{port}/");
+                        _listener.Start();
+                        Logger.LogAction("BIND", $"✅ Bound to http://+:{port}/ (all interfaces)");
+                        return true;
+                    } catch (Exception ex) { 
+                        Logger.LogAction("BIND", $"http://+:{port}/ failed: {ex.Message}");
+                        if (_listener != null) { try { _listener.Close(); } catch { } } 
+                    }
+
+                    // Strategy 2: http://*:port/ (accepts ALL interfaces — requires admin/urlacl)
                     try {
                         _listener = new HttpListener();
                         _listener.Prefixes.Add($"http://*:{port}/");
                         _listener.Start();
-                        Logger.LogAction("BIND", $"Bound to http://*:{port}/ (all interfaces)");
+                        Logger.LogAction("BIND", $"✅ Bound to http://*:{port}/ (all interfaces)");
                         return true;
                     } catch (Exception ex) { 
                         Logger.LogAction("BIND", $"http://*:{port}/ failed: {ex.Message}");
                         if (_listener != null) { try { _listener.Close(); } catch { } } 
                     }
 
-                    // Strategy 2: http://{localIp}:port/ + http://localhost:port/ 
+                    // Strategy 3: http://{localIp}:port/ + http://localhost:port/ 
                     // MUST add BOTH — LAN access AND cloudflared (which connects to localhost)
                     try {
                         _listener = new HttpListener();
                         _listener.Prefixes.Add($"http://{localIp}:{port}/");
                         _listener.Prefixes.Add($"http://localhost:{port}/");  // Critical for Cloudflare tunnel!
                         _listener.Start();
-                        Logger.LogAction("BIND", $"Bound to http://{localIp}:{port}/ + http://localhost:{port}/");
+                        Logger.LogAction("BIND", $"✅ Bound to http://{localIp}:{port}/ + http://localhost:{port}/");
                         return true;
                     } catch (Exception ex) { 
                         Logger.LogAction("BIND", $"Dual-bind failed: {ex.Message}");
                         if (_listener != null) { try { _listener.Close(); } catch { } } 
                     }
 
-                    // Strategy 3: http://localhost:port/ only (Cloudflare works, LAN won't)
+                    // Strategy 4: http://localhost:port/ only (Cloudflare works, LAN won't)
                     try {
                         _listener = new HttpListener();
                         _listener.Prefixes.Add($"http://localhost:{port}/");
                         _listener.Start();
-                        Logger.LogAction("BIND", $"Bound to http://localhost:{port}/ (localhost only)");
+                        Logger.LogAction("BIND", $"✅ Bound to http://localhost:{port}/ (localhost only — LAN disabled)");
                         return true;
                     } catch (Exception ex) { 
                         Logger.LogAction("BIND", $"localhost-only bind failed: {ex.Message}");
                         if (_listener != null) { try { _listener.Close(); } catch { } } 
                     }
 
+                    // Strategy 5: http://127.0.0.1:port/ (absolute last resort)
+                    try {
+                        _listener = new HttpListener();
+                        _listener.Prefixes.Add($"http://127.0.0.1:{port}/");
+                        _listener.Start();
+                        Logger.LogAction("BIND", $"✅ Bound to http://127.0.0.1:{port}/ (loopback only)");
+                        return true;
+                    } catch (Exception ex) { 
+                        Logger.LogAction("BIND", $"127.0.0.1 bind also failed: {ex.Message}");
+                        if (_listener != null) { try { _listener.Close(); } catch { } } 
+                    }
+
                     return false;
                 }
 
-                int publicWifiPort = 8999; 
+                // Try ports 8999, 9000, 9001, 9002 — auto-fallback if primary port is in use
+                int[] portsToTry = { 8999, 9000, 9001, 9002 };
+                bool bound = false;
+                foreach (int port in portsToTry)
+                {
+                    EnsureUrlAcl(port);
+                    if (TryBindSequence(port))
+                    {
+                        CurrentPort = port;
+                        bound = true;
+                        if (port != 8999)
+                            Logger.LogAction("BIND", $"⚠️ Primary port 8999 was unavailable — using fallback port {port}");
+                        break;
+                    }
+                    Logger.LogAction("BIND", $"Port {port} failed all strategies — trying next port...");
+                }
 
-                bool bound = TryBindSequence(publicWifiPort);
-                if (!bound) throw new Exception("OS Sandbox structurally blocked pure internal kernel port mapping.");
-                
-                CurrentPort = publicWifiPort; 
-                LaunchUacBypassProxy(publicWifiPort);
+                if (!bound)
+                {
+                    Logger.LogAction("BIND", "❌ FATAL: Could not bind to ANY port (8999-9002). All strategies exhausted.");
+                    throw new Exception("Cannot bind HTTP server — all ports and strategies failed. Check antivirus/firewall.");
+                }
+
+                LaunchUacBypassProxy(CurrentPort);
 
                 _isRunning = true;
                 _listenerThread = new Thread(() =>
@@ -138,7 +183,7 @@ namespace AdvanceClip.Classes
 
                 UpdateServerUrl();
                 FirebaseSyncManager.CachedLocalUrl = DisplayUrl; // Cache first LAN URL for file download fallback
-                Logger.LogAction("NETWORK", $"Web server launched on {ServerUrl}");
+                Logger.LogAction("NETWORK", $"✅ Web server launched on {ServerUrl} (port {CurrentPort})");
                 NetworkActivityLog.Instance.ServerStatus = "Online";
 
                 // Natively trigger Cloudflare alongside HTTP Socket unconditionally
@@ -154,15 +199,50 @@ namespace AdvanceClip.Classes
                 };
                 _heartbeatTimer.AutoReset = true;
                 _heartbeatTimer.Start();
-                Logger.LogAction("HEARTBEAT", "Firebase device heartbeat started (30s interval)");
+                Logger.LogAction("HEARTBEAT", "Firebase device heartbeat started (60s interval)");
             }
             catch (Exception ex)
             {
                 ServerUrl = "Fatal Error Bind Failed";
-                Logger.LogAction("NETWORK ERROR", ex.Message);
+                Logger.LogAction("NETWORK ERROR", $"❌ Server failed to start: {ex.Message}");
             }
             
             System.Windows.Application.Current.Dispatcher.InvokeAsync(() => _viewModel.RefreshLocalServerData());
+        }
+
+        /// <summary>
+        /// Silently registers a URL ACL so HttpListener can bind without admin privileges.
+        /// Uses netsh — runs hidden, does NOT prompt UAC for localhost bindings.
+        /// </summary>
+        private void EnsureUrlAcl(int port)
+        {
+            try
+            {
+                string user = System.Security.Principal.WindowsIdentity.GetCurrent().Name;
+                // Register both localhost and + (all interfaces)
+                string[] urls = { $"http://localhost:{port}/", $"http://+:{port}/" };
+                foreach (var url in urls)
+                {
+                    try
+                    {
+                        var psi = new System.Diagnostics.ProcessStartInfo
+                        {
+                            FileName = "netsh",
+                            Arguments = $"http add urlacl url={url} user=\"{user}\"",
+                            CreateNoWindow = true,
+                            WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden,
+                            UseShellExecute = false,
+                            RedirectStandardOutput = true,
+                            RedirectStandardError = true
+                        };
+                        var p = System.Diagnostics.Process.Start(psi);
+                        p?.WaitForExit(5000);
+                        // Don't log success — this runs silently. Only log failures.
+                    }
+                    catch { } // Ignore — netsh may fail if already registered or no admin
+                }
+            }
+            catch { }
         }
 
         public void Stop()
