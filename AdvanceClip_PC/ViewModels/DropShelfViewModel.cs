@@ -529,52 +529,39 @@ namespace AdvanceClip.ViewModels
                                 _ = AdvanceClip.Classes.FirebaseSyncManager.PushToGlobalSync(syncItem);
                                 AdvanceClip.Windows.ToastWindow.ShowToast($"File ({fSize / (1024*1024)}MB) synced via Public Link \ud83c\udf10");
                             }
-                            // PRIORITY 2: Local mesh URL — for LAN-only transfers
-                            else if (localServer != null && !string.IsNullOrEmpty(localServer.DisplayUrl))
+                            // PRIORITY 2: Firebase Storage upload — works for files under 25MB
+                            else if (fSize > 0 && fSize < 25 * 1024 * 1024)
                             {
-                                string downloadUrl = $"{localServer.DisplayUrl}/download?path={Uri.EscapeDataString(file)}";
-                                var syncItem = item.CloneForSync(downloadUrl);
-                                _ = AdvanceClip.Classes.FirebaseSyncManager.PushToGlobalSync(syncItem);
-                                AdvanceClip.Windows.ToastWindow.ShowToast($"File ({fSize / (1024*1024)}MB) synced via Local Mesh \ud83d\udce1");
+                                string capturedFile = file;
+                                var capturedItem = item;
+                                _ = System.Threading.Tasks.Task.Run(async () =>
+                                {
+                                    try
+                                    {
+                                        AdvanceClip.Classes.Logger.LogAction("FILE SYNC", $"No Cloudflare — uploading '{Path.GetFileName(capturedFile)}' ({fSize / 1024}KB) to Firebase Storage...");
+                                        string fbDownloadUrl = await AdvanceClip.Classes.FirebaseSyncManager.UploadFileToStorageAsync(capturedFile);
+                                        if (!string.IsNullOrEmpty(fbDownloadUrl))
+                                        {
+                                            var syncItem = capturedItem.CloneForSync(fbDownloadUrl);
+                                            await AdvanceClip.Classes.FirebaseSyncManager.PushToGlobalSync(syncItem);
+                                            Application.Current.Dispatcher.Invoke(() =>
+                                                AdvanceClip.Windows.ToastWindow.ShowToast($"File synced via Firebase Storage \u2601\ufe0f"));
+                                        }
+                                        else
+                                        {
+                                            AdvanceClip.Classes.Logger.LogAction("FILE SYNC", "Firebase Storage upload failed — file only available on LAN");
+                                        }
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        AdvanceClip.Classes.Logger.LogAction("FILE SYNC", $"Upload failed: {ex.Message}");
+                                    }
+                                });
                             }
-                            // NO tunnel, NO mesh → upload small/medium files directly to Firebase Storage
                             else
                             {
-                                // Files under 25MB: upload to Firebase Storage for seamless cross-device sync
-                                if (fSize > 0 && fSize < 25 * 1024 * 1024)
-                                {
-                                    string capturedFile = file;
-                                    var capturedItem = item;
-                                    _ = System.Threading.Tasks.Task.Run(async () =>
-                                    {
-                                        try
-                                        {
-                                            AdvanceClip.Classes.Logger.LogAction("FILE SYNC", $"Uploading '{Path.GetFileName(capturedFile)}' ({fSize / 1024}KB) to Firebase Storage...");
-                                            string fbDownloadUrl = await AdvanceClip.Classes.FirebaseSyncManager.UploadFileToStorageAsync(capturedFile);
-                                            if (!string.IsNullOrEmpty(fbDownloadUrl))
-                                            {
-                                                var syncItem = capturedItem.CloneForSync(fbDownloadUrl);
-                                                await AdvanceClip.Classes.FirebaseSyncManager.PushToGlobalSync(syncItem);
-                                                Application.Current.Dispatcher.Invoke(() =>
-                                                    AdvanceClip.Windows.ToastWindow.ShowToast($"File synced via Firebase Storage \u2601\ufe0f"));
-                                                AdvanceClip.Classes.Logger.LogAction("FILE SYNC", $"Uploaded successfully: {fbDownloadUrl}");
-                                            }
-                                            else
-                                            {
-                                                AdvanceClip.Classes.Logger.LogAction("FILE SYNC", "Firebase Storage upload returned empty URL");
-                                            }
-                                        }
-                                        catch (Exception ex)
-                                        {
-                                            AdvanceClip.Classes.Logger.LogAction("FILE SYNC", $"Upload failed: {ex.Message}");
-                                        }
-                                    });
-                                }
-                                else
-                                {
-                                    // File too large for Firebase Storage — stays local
-                                    AdvanceClip.Classes.Logger.LogAction("FILE SYNC", $"File '{Path.GetFileName(file)}' ({fSize / (1024*1024)}MB) too large for Firebase Storage. Use Force Send or enable Cloudflare tunnel.");
-                                }
+                                // File too large for Firebase Storage and no Cloudflare tunnel
+                                AdvanceClip.Classes.Logger.LogAction("FILE SYNC", $"File '{Path.GetFileName(file)}' ({fSize / (1024*1024)}MB) — no Cloudflare, too large for Firebase Storage.");
                             }
                         }
                     }
@@ -692,42 +679,26 @@ namespace AdvanceClip.ViewModels
                                         _ = AdvanceClip.Classes.FirebaseSyncManager.PushToGlobalSync(syncItem);
                                         synced = true;
                                     }
-                                    else if (srv != null && !string.IsNullOrEmpty(srv.DisplayUrl))
-                                    {
-                                        string dlUrl = $"{srv.DisplayUrl}/download?path={Uri.EscapeDataString(tempFile)}";
-                                        var syncItem = item.CloneForSync(dlUrl);
-                                        _ = AdvanceClip.Classes.FirebaseSyncManager.PushToGlobalSync(syncItem);
-                                        synced = true;
-                                    }
                                     
-
-                                    
-                                    // Last resort: upload small images (< 5MB) to Firebase Storage
+                                    // No Cloudflare — upload screenshot to Firebase Storage (< 5MB)
                                     if (!synced && new FileInfo(tempFile).Length < 5 * 1024 * 1024)
                                     {
+                                        string capturedTempFile = tempFile;
+                                        var capturedItem = item;
                                         _ = System.Threading.Tasks.Task.Run(async () =>
                                         {
                                             try
                                             {
-                                                string fbUrl = $"https://firebasestorage.googleapis.com/v0/b/advance-sync.appspot.com/o/clipboard_images%2FScreenshot_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}.png?uploadType=media";
-                                                byte[] imgBytes = File.ReadAllBytes(tempFile);
-                                                var uploadContent = new System.Net.Http.ByteArrayContent(imgBytes);
-                                                uploadContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/png");
-                                                var client = new System.Net.Http.HttpClient();
-                                                var resp = await client.PostAsync(fbUrl, uploadContent);
-                                                if (resp.IsSuccessStatusCode)
+                                                string fbUrl = await AdvanceClip.Classes.FirebaseSyncManager.UploadFileToStorageAsync(capturedTempFile);
+                                                if (!string.IsNullOrEmpty(fbUrl))
                                                 {
-                                                    string respJson = await resp.Content.ReadAsStringAsync();
-                                                    var respDoc = System.Text.Json.JsonDocument.Parse(respJson);
-                                                    string storageName = respDoc.RootElement.GetProperty("name").GetString();
-                                                    string downloadUrl = $"https://firebasestorage.googleapis.com/v0/b/advance-sync.appspot.com/o/{Uri.EscapeDataString(storageName)}?alt=media";
-                                                    
-                                                    Application.Current.Dispatcher.Invoke(() => {
-                                                        // Don't mutate the original item — clone for sync
-                                                    });
-                                                    var syncItem = item.CloneForSync(downloadUrl);
-                                                    _ = AdvanceClip.Classes.FirebaseSyncManager.PushToGlobalSync(syncItem);
-                                                    AdvanceClip.Classes.Logger.LogAction("IMAGE SYNC", $"Uploaded screenshot to Firebase Storage as fallback");
+                                                    var syncItem = capturedItem.CloneForSync(fbUrl);
+                                                    await AdvanceClip.Classes.FirebaseSyncManager.PushToGlobalSync(syncItem);
+                                                    AdvanceClip.Classes.Logger.LogAction("IMAGE SYNC", $"Screenshot uploaded to Firebase Storage");
+                                                }
+                                                else
+                                                {
+                                                    AdvanceClip.Classes.Logger.LogAction("IMAGE SYNC", "Firebase Storage upload failed — screenshot only available on LAN");
                                                 }
                                             }
                                             catch (Exception ex) { AdvanceClip.Classes.Logger.LogAction("IMAGE SYNC", $"Firebase Storage upload error: {ex.Message}"); }
