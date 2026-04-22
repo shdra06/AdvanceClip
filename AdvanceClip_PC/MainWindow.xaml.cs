@@ -214,7 +214,7 @@ namespace AdvanceClip
                 {
                     _clipboardDebounceTimer = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Background)
                     {
-                        Interval = TimeSpan.FromMilliseconds(100)
+                        Interval = TimeSpan.FromMilliseconds(350) // 350ms collapses Snipping Tool's dual clipboard events (~200ms apart)
                     };
                     _clipboardDebounceTimer.Tick += (s, ev) =>
                     {

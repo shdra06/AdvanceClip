@@ -25,9 +25,7 @@ namespace AdvanceClip.Classes
             var pathsToWatch = new List<string>
             {
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads"),
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Microsoft", "Windows", "Recent"),
-                // Watch Screenshots folder for Win+PrtScn captures
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Screenshots")
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Microsoft", "Windows", "Recent")
             };
 
             // Add manual custom bounds
@@ -87,15 +85,7 @@ namespace AdvanceClip.Classes
         private async Task OnFileDetectedCore(FileSystemEventArgs e)
         {
             string ext = Path.GetExtension(e.FullPath).ToLower();
-            if (ext != ".pdf" && ext != ".docx" && ext != ".doc" && ext != ".lnk" && ext != ".png" && ext != ".jpg" && ext != ".jpeg") return;
-
-            // For screenshots: only accept from Screenshots folder
-            bool isImage = ext == ".png" || ext == ".jpg" || ext == ".jpeg";
-            if (isImage)
-            {
-                string screenshotDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Screenshots");
-                if (!e.FullPath.StartsWith(screenshotDir, StringComparison.OrdinalIgnoreCase)) return;
-            }
+            if (ext != ".pdf" && ext != ".docx" && ext != ".doc" && ext != ".lnk") return;
 
             string fileName = Path.GetFileName(e.FullPath);
             if (fileName.StartsWith("~$")) return;
