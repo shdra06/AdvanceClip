@@ -615,31 +615,63 @@
                                             </Style.Triggers>
                                         </Style>
                                     </StackPanel.Style>
-                                    <ui:SymbolIcon FontSize="12" Foreground="#9CA3AF" Margin="0,0,4,0">
+                                    <ui:SymbolIcon FontSize="12" Margin="0,0,4,0">
                                         <ui:SymbolIcon.Style>
                                             <Style TargetType="ui:SymbolIcon">
                                                 <Setter Property="Symbol" Value="Laptop24" />
+                                                <Setter Property="Foreground" Value="#60A5FA" />
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding SourceDeviceType}" Value="Mobile">
                                                         <Setter Property="Symbol" Value="Phone24"/>
+                                                        <Setter Property="Foreground" Value="#A78BFA"/>
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
                                         </ui:SymbolIcon.Style>
                                     </ui:SymbolIcon>
-                                    <TextBlock Text="{Binding SourceDeviceName}" Foreground="#9CA3AF" FontSize="11" Margin="0,0,6,0" />
-                                    <TextBlock Foreground="#6B7280" FontSize="10" VerticalAlignment="Center">
-                                        <TextBlock.Style>
-                                            <Style TargetType="TextBlock">
-                                                <Setter Property="Text" Value="☁️ Cloud"/>
+                                    <TextBlock Text="{Binding SourceDeviceName}" Foreground="#9CA3AF" FontSize="11" Margin="0,0,4,0" />
+                                    <TextBlock Text="·" Foreground="#4B5563" FontSize="11" Margin="0,0,4,0" />
+                                    <!-- Transfer method with color coding -->
+                                    <Border CornerRadius="4" Padding="4,1" Margin="0,0,0,0">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Background" Value="#1AF59E0B"/>
                                                 <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding SourceDeviceType}" Value="Mobile">
-                                                        <Setter Property="Text" Value="📱 Mobile"/>
+                                                    <DataTrigger Binding="{Binding TransferMethod}" Value="LAN">
+                                                        <Setter Property="Background" Value="#1A10B981"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding TransferMethod}" Value="ForceSend">
+                                                        <Setter Property="Background" Value="#1AEF4444"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding TransferMethod}" Value="Local">
+                                                        <Setter Property="Background" Value="#1A6366F1"/>
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
-                                        </TextBlock.Style>
-                                    </TextBlock>
+                                        </Border.Style>
+                                        <TextBlock FontSize="9" FontWeight="SemiBold">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Text" Value="☁️ Cloud"/>
+                                                    <Setter Property="Foreground" Value="#F59E0B"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding TransferMethod}" Value="LAN">
+                                                            <Setter Property="Text" Value="📡 LAN"/>
+                                                            <Setter Property="Foreground" Value="#10B981"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding TransferMethod}" Value="ForceSend">
+                                                            <Setter Property="Text" Value="🎯 Direct"/>
+                                                            <Setter Property="Foreground" Value="#EF4444"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding TransferMethod}" Value="Local">
+                                                            <Setter Property="Text" Value="📋 Local"/>
+                                                            <Setter Property="Foreground" Value="#6366F1"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </Border>
                                 </StackPanel>
                             </StackPanel>
 

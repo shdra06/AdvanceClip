@@ -316,7 +316,10 @@ namespace AdvanceClip.Classes
                         RawContent = cloudItem.Raw,
                         FileName = cloudItem.Title,
                         Extension = cloudItem.Type == "Url" ? "LINK" : "CLOUD",
-                        ItemType = cloudItem.Type == "Url" ? ClipboardItemType.Url : ClipboardItemType.Text
+                        ItemType = cloudItem.Type == "Url" ? ClipboardItemType.Url : ClipboardItemType.Text,
+                        SourceDeviceName = cloudItem.SourceDeviceName ?? "Remote",
+                        SourceDeviceType = "Mobile",
+                        TransferMethod = "Cloud"
                     };
                     clip.EvaluateSmartActions();
                     _viewModel.DroppedItems.Insert(0, clip);
@@ -508,7 +511,8 @@ namespace AdvanceClip.Classes
                     // and loads FormattedSize, Icon, SmartActions etc.
                     var clip = new ClipboardItem(filePath);
                     clip.SourceDeviceName = cloudItem.SourceDeviceName ?? "Remote";
-                    clip.SourceDeviceType = "PC";
+                    clip.SourceDeviceType = "Mobile";
+                    clip.TransferMethod = "Cloud";
 
                     // For images, the constructor already sets ItemType=Image, but we pre-load the preview at a good resolution
                     if (clip.ItemType == ClipboardItemType.Image && clip.Icon == null)
@@ -621,7 +625,10 @@ namespace AdvanceClip.Classes
                                     RawContent = raw,
                                     FileName = title,
                                     Extension = "FORCED",
-                                    ItemType = type == "Url" ? ClipboardItemType.Url : ClipboardItemType.Text
+                                    ItemType = type == "Url" ? ClipboardItemType.Url : ClipboardItemType.Text,
+                                    SourceDeviceName = source,
+                                    SourceDeviceType = "Mobile",
+                                    TransferMethod = "ForceSend"
                                 };
                                 clip.EvaluateSmartActions();
                                 _viewModel.DroppedItems.Insert(0, clip);

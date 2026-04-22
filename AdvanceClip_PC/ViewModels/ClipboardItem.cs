@@ -35,6 +35,34 @@ namespace AdvanceClip.ViewModels
 
         public string SourceDeviceName { get; set; } = "Local";
         public string SourceDeviceType { get; set; } = "PC";
+        public string TransferMethod { get; set; } = "Local"; // Local, LAN, Cloud, ForceSend
+
+        /// <summary>
+        /// Computed display badge combining transfer method emoji + device name.
+        /// Used in XAML for the transfer badge overlay.
+        /// </summary>
+        public string TransferBadge
+        {
+            get
+            {
+                string emoji = TransferMethod switch
+                {
+                    "LAN" => "📡",
+                    "Cloud" => "☁️",
+                    "ForceSend" => "🎯",
+                    _ => "📋"
+                };
+                string deviceEmoji = SourceDeviceType switch
+                {
+                    "Mobile" => "📱",
+                    "PC" => "💻",
+                    _ => ""
+                };
+                if (SourceDeviceName == "Local") return $"{emoji} Local";
+                return $"{deviceEmoji} {SourceDeviceName} · {emoji} {TransferMethod}";
+            }
+        }
+        public bool HasTransferBadge => SourceDeviceName != "Local";
 
         /// <summary>
         /// Creates a lightweight copy for Firebase sync, overriding RawContent with a download URL
@@ -52,7 +80,8 @@ namespace AdvanceClip.ViewModels
                 FormattedSize = this.FormattedSize,
                 RawContent = downloadUrl, // Override Raw with the download URL for remote sync
                 SourceDeviceName = this.SourceDeviceName,
-                SourceDeviceType = this.SourceDeviceType
+                SourceDeviceType = this.SourceDeviceType,
+                TransferMethod = this.TransferMethod
             };
         }
 
