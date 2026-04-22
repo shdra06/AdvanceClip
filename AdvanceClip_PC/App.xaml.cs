@@ -243,6 +243,13 @@ public partial class App : Application
                 // One-time cleanup: purge old GUID-based device entries from Firebase
                 _ = AdvanceClip.Classes.FirebaseSyncManager.CleanupStaleDevices();
                 
+                // Dump full network diagnostics at startup for remote debugging
+                _ = System.Threading.Tasks.Task.Run(() =>
+                {
+                    System.Threading.Thread.Sleep(8000); // Wait for Cloudflare to initialize
+                    AdvanceClip.Classes.Logger.DumpNetworkDiagnostics();
+                });
+                
                 // CRITICAL: Give the NotifyIcon (system tray) and TaskbarWindow (widget)
                 // enough time to register before hiding. The WPF-UI tray:NotifyIcon
                 // registers in the Loaded event — hiding immediately kills the registration.

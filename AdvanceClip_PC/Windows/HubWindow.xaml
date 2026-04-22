@@ -1539,6 +1539,8 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
                     
                     <StackPanel Grid.Row="0">
@@ -1546,7 +1548,7 @@
                             <TextBlock Text="Telemetry &amp; Audit Logs" FontSize="28" FontWeight="Bold" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorPrimary}" />
                             <TextBlock Text="Internal execution records, background events, and fault diagnostics." FontSize="13" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorTertiary}" Margin="0,4,0,0" TextWrapping="Wrap" />
                         </StackPanel>
-                        <Border Height="2" CornerRadius="1" HorizontalAlignment="Left" Width="60" Margin="0,8,0,20">
+                        <Border Height="2" CornerRadius="1" HorizontalAlignment="Left" Width="60" Margin="0,8,0,14">
                             <Border.Background>
                                 <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
                                     <GradientStop Color="#6366F1" Offset="0"/>
@@ -1554,18 +1556,23 @@
                                 </LinearGradientBrush>
                             </Border.Background>
                         </Border>
-                        <ui:Button Content="Refresh Logs" Appearance="Secondary" HorizontalAlignment="Left" Margin="0,0,0,16" Padding="14,7" CornerRadius="8" Click="RefreshLogs_Click" >
-                            <ui:Button.Icon><ui:SymbolIcon Symbol="ArrowSync24" FontSize="14" /></ui:Button.Icon>
-                        </ui:Button>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <ui:Button Content="Refresh Logs" Appearance="Secondary" Padding="14,7" CornerRadius="8" Margin="0,0,8,0" Click="RefreshLogs_Click">
+                                <ui:Button.Icon><ui:SymbolIcon Symbol="ArrowSync24" FontSize="14" /></ui:Button.Icon>
+                            </ui:Button>
+                            <ui:Button Content="📋 Copy Network Logs" Appearance="Primary" Padding="14,7" CornerRadius="8" Margin="0,0,8,0" Click="CopyNetworkLogs_Click" ToolTip="Copy last 200 network/Cloudflare/Firebase log lines to clipboard" />
+                            <ui:Button Content="🔍 Run Diagnostics" Appearance="Caution" Padding="14,7" CornerRadius="8" Margin="0,0,8,0" Click="RunDiagnostics_Click" ToolTip="Capture full system state: NICs, DNS, ports, Cloudflare status" />
+                            <ui:Button Content="📂 Open Logs Folder" Appearance="Secondary" Padding="14,7" CornerRadius="8" Click="OpenLogsFolder_Click" />
+                        </StackPanel>
                     </StackPanel>
 
-                    <Border Grid.Row="1" Background="#08FFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1" CornerRadius="14" Padding="0" Margin="0,0,0,16" ClipToBounds="True">
+                    <!-- Main activity log -->
+                    <Border Grid.Row="1" Background="#08FFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1" CornerRadius="14" Padding="0" Margin="0,0,0,8" ClipToBounds="True">
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="*"/>
                             </Grid.RowDefinitions>
-                            <!-- Terminal header bar -->
                             <Border Grid.Row="0" Background="#0AFFFFFF" Padding="16,8">
                                 <StackPanel Orientation="Horizontal">
                                     <Ellipse Width="10" Height="10" Fill="#EF4444" Margin="0,0,6,0"/>
@@ -1575,6 +1582,34 @@
                                 </StackPanel>
                             </Border>
                             <TextBox Grid.Row="1" x:Name="LogsTextBox" IsReadOnly="True" Background="Transparent" BorderThickness="0" FontFamily="Consolas" FontSize="13" Foreground="#10B981" TextWrapping="NoWrap" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" AcceptsReturn="True" SelectionBrush="#3310B981" Padding="16,12" />
+                        </Grid>
+                    </Border>
+
+                    <!-- Network diagnostics header -->
+                    <StackPanel Grid.Row="2" Margin="0,4,0,6">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="🌐" FontSize="16" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Network Diagnostics" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorPrimary}" VerticalAlignment="Center"/>
+                            <TextBlock Text=" — Cloudflare / Firebase / Sync events" FontSize="12" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorTertiary}" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- Network diagnostics log -->
+                    <Border Grid.Row="3" Background="#08FFFFFF" BorderBrush="#1AF59E0B" BorderThickness="1" CornerRadius="14" Padding="0" Margin="0,0,0,16" ClipToBounds="True">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <Border Grid.Row="0" Background="#0AF59E0B" Padding="16,8">
+                                <StackPanel Orientation="Horizontal">
+                                    <Ellipse Width="10" Height="10" Fill="#F59E0B" Margin="0,0,6,0"/>
+                                    <Ellipse Width="10" Height="10" Fill="#10B981" Margin="0,0,6,0"/>
+                                    <Ellipse Width="10" Height="10" Fill="#6366F1" Margin="0,0,12,0"/>
+                                    <TextBlock Text="network_diagnostics.log" FontSize="11" Foreground="#F59E0B" VerticalAlignment="Center" FontFamily="Consolas"/>
+                                </StackPanel>
+                            </Border>
+                            <TextBox Grid.Row="1" x:Name="NetLogsTextBox" IsReadOnly="True" Background="Transparent" BorderThickness="0" FontFamily="Consolas" FontSize="12" Foreground="#F59E0B" TextWrapping="NoWrap" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" AcceptsReturn="True" SelectionBrush="#33F59E0B" Padding="16,12" />
                         </Grid>
                     </Border>
                 </Grid>

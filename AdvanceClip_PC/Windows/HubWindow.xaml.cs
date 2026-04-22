@@ -8,6 +8,7 @@ using AdvanceClip.Classes;
 using AdvanceClip.ViewModels;
 using MicaWPF.Controls;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace AdvanceClip.Windows
 {
@@ -256,6 +257,7 @@ namespace AdvanceClip.Windows
         {
             try
             {
+                // Main activity log
                 string logFile = System.IO.Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.ApplicationData), "AdvanceClip", "Logs", "activity_log.txt");
                 if (System.IO.File.Exists(logFile))
                 {
@@ -266,11 +268,67 @@ namespace AdvanceClip.Windows
                 {
                     LogsTextBox.Text = "System Telemetry clean. No hardware logs recorded.";
                 }
+
+                // Network diagnostics log
+                string netLogFile = Logger.GetNetworkLogPath();
+                if (System.IO.File.Exists(netLogFile))
+                {
+                    NetLogsTextBox.Text = System.IO.File.ReadAllText(netLogFile);
+                    NetLogsTextBox.ScrollToEnd();
+                }
+                else
+                {
+                    NetLogsTextBox.Text = "No network diagnostics recorded yet.\nClick 'Run Diagnostics' to capture a snapshot.";
+                }
             }
             catch (Exception ex)
             {
                 LogsTextBox.Text = $"Failed to parse telemetry: {ex.Message}";
             }
+        }
+
+        private void CopyNetworkLogs_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                string logs = Logger.GetRecentNetworkLogs(200);
+                Clipboard.SetText(logs);
+                ToastWindow.ShowToast("📋 Network logs copied to clipboard (last 200 lines)");
+            }
+            catch (Exception ex)
+            {
+                ToastWindow.ShowToast($"❌ Failed to copy: {ex.Message}");
+            }
+        }
+
+        private void RunDiagnostics_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                Logger.DumpNetworkDiagnostics();
+                ToastWindow.ShowToast("🔍 Network diagnostics captured!");
+                // Refresh the log view after a brief delay to let the buffer flush
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(3000);
+                    Dispatcher.Invoke(() => RefreshLogs_Click(null, null));
+                });
+            }
+            catch (Exception ex)
+            {
+                ToastWindow.ShowToast($"❌ Diagnostics failed: {ex.Message}");
+            }
+        }
+
+        private void OpenLogsFolder_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                string logsDir = System.IO.Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.ApplicationData), "AdvanceClip", "Logs");
+                if (!System.IO.Directory.Exists(logsDir)) System.IO.Directory.CreateDirectory(logsDir);
+                System.Diagnostics.Process.Start("explorer.exe", logsDir);
+            }
+            catch { }
         }
 
         private string _currentFilterTag = "All";
