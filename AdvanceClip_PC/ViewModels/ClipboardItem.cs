@@ -747,24 +747,25 @@ namespace AdvanceClip.ViewModels
                                 if (ocrResult != null && ocrResult.Lines.Count >= 2)
                                 {
                                     // Collect all words with their bounding boxes
-                                    var allWords = new List<(string Text, double X, double Y, double W, double H)>();
+                                    var allWords = new List<(string Text, double X, double Y, double W, double H, double Right)>();
                                     foreach (var line in ocrResult.Lines)
                                     {
                                         foreach (var word in line.Words)
                                         {
                                             var rect = word.BoundingRect;
-                                            allWords.Add((word.Text, rect.X, rect.Y, rect.Width, rect.Height));
+                                            allWords.Add((word.Text, rect.X, rect.Y, rect.Width, rect.Height, rect.X + rect.Width));
                                         }
                                     }
                                     
-                                    if (allWords.Count >= 4) // Need at least 4 words for a table
+                                    if (allWords.Count >= 4)
                                     {
-                                        // Group words into rows by Y-coordinate proximity
+                                        // ── STEP 1: Group words into rows by Y-coordinate ──
                                         var sorted = allWords.OrderBy(w => w.Y).ToList();
-                                        var rows = new List<List<(string Text, double X, double Y)>>();
-                                        double rowThreshold = sorted.Average(w => w.H) * 0.7;
+                                        double avgHeight = sorted.Average(w => w.H);
+                                        double rowThreshold = avgHeight * 0.7;
                                         
-                                        var currentRow = new List<(string Text, double X, double Y)>();
+                                        var rows = new List<List<(string Text, double X, double W, double Right)>>();
+                                        var currentRow = new List<(string Text, double X, double W, double Right)>();
                                         double lastY = sorted[0].Y;
                                         
                                         foreach (var word in sorted)
@@ -772,67 +773,66 @@ namespace AdvanceClip.ViewModels
                                             if (Math.Abs(word.Y - lastY) > rowThreshold && currentRow.Count > 0)
                                             {
                                                 rows.Add(currentRow.OrderBy(w => w.X).ToList());
-                                                currentRow = new List<(string Text, double X, double Y)>();
+                                                currentRow = new List<(string Text, double X, double W, double Right)>();
                                             }
-                                            currentRow.Add((word.Text, word.X, word.Y));
+                                            currentRow.Add((word.Text, word.X, word.W, word.Right));
                                             lastY = word.Y;
                                         }
                                         if (currentRow.Count > 0)
                                             rows.Add(currentRow.OrderBy(w => w.X).ToList());
                                         
-                                        // Only treat as table if we have consistent column counts
                                         if (rows.Count >= 2)
                                         {
-                                            // Find the most common word count per row (= likely column count)
-                                            var countGroups = rows.GroupBy(r => r.Count).OrderByDescending(g => g.Count()).First();
-                                            int targetCols = countGroups.Key;
+                                            // ── STEP 2: Detect column separators via gap clustering ──
+                                            double avgW = allWords.Average(w => w.W);
+                                            double minGap = avgW * 1.2;
                                             
-                                            if (targetCols >= 2)
+                                            var allGaps = new List<(double Center, double Size)>();
+                                            foreach (var row in rows)
+                                                for (int gi = 0; gi < row.Count - 1; gi++)
+                                                {
+                                                    double gap = row[gi + 1].X - row[gi].Right;
+                                                    if (gap > minGap)
+                                                        allGaps.Add(((row[gi].Right + row[gi + 1].X) / 2.0, gap));
+                                                }
+                                            
+                                            var separators = new List<double>();
+                                            double clusterDist = avgW * 2.0;
+                                            foreach (var g in allGaps.OrderBy(g => g.Center))
                                             {
-                                                // Merge words in rows that have more words than target columns
-                                                // by grouping nearby X-coordinates into column buckets
-                                                
-                                                // Calculate column boundaries from header/most-common row
-                                                var refRow = rows.FirstOrDefault(r => r.Count == targetCols) ?? rows[0];
-                                                var colBoundaries = refRow.Select(w => w.X).ToList();
-                                                
-                                                // Build the JSON payload
+                                                bool merged = false;
+                                                for (int si = 0; si < separators.Count; si++)
+                                                    if (Math.Abs(g.Center - separators[si]) < clusterDist)
+                                                    { separators[si] = (separators[si] + g.Center) / 2.0; merged = true; break; }
+                                                if (!merged) separators.Add(g.Center);
+                                            }
+                                            
+                                            separators = separators
+                                                .Where(s => allGaps.Count(g => Math.Abs(g.Center - s) < clusterDist) >= Math.Max(2, rows.Count * 0.3))
+                                                .OrderBy(s => s).ToList();
+                                            int numCols = separators.Count + 1;
+                                            
+                                            if (numCols >= 2)
+                                            {
                                                 var jsonDict = new Dictionary<string, object>();
-                                                
                                                 for (int ri = 0; ri < rows.Count; ri++)
                                                 {
-                                                    var row = rows[ri];
-                                                    
-                                                    // Assign each word to its nearest column
-                                                    var columnBuckets = new string[targetCols];
-                                                    for (int c = 0; c < targetCols; c++) columnBuckets[c] = "";
-                                                    
-                                                    foreach (var word in row)
+                                                    var buckets = new string[numCols];
+                                                    for (int c = 0; c < numCols; c++) buckets[c] = "";
+                                                    foreach (var word in rows[ri])
                                                     {
-                                                        // Find nearest column boundary
-                                                        int bestCol = 0;
-                                                        double bestDist = double.MaxValue;
-                                                        for (int c = 0; c < colBoundaries.Count; c++)
-                                                        {
-                                                            double dist = Math.Abs(word.X - colBoundaries[c]);
-                                                            if (dist < bestDist)
-                                                            {
-                                                                bestDist = dist;
-                                                                bestCol = c;
-                                                            }
-                                                        }
-                                                        columnBuckets[bestCol] += (columnBuckets[bestCol].Length > 0 ? " " : "") + word.Text;
+                                                        double wc = word.X + word.W / 2.0;
+                                                        int col = 0;
+                                                        for (int si = 0; si < separators.Count; si++)
+                                                        { if (wc > separators[si]) col = si + 1; else break; }
+                                                        if (col >= numCols) col = numCols - 1;
+                                                        buckets[col] += (buckets[col].Length > 0 ? " " : "") + word.Text;
                                                     }
-                                                    
-                                                    for (int ci = 0; ci < targetCols; ci++)
-                                                    {
-                                                        string key = $"({ri},{ci})";
-                                                        jsonDict[key] = new { text = columnBuckets[ci], conf = 0.85 };
-                                                    }
+                                                    for (int ci = 0; ci < numCols; ci++)
+                                                        jsonDict[$"({ri},{ci})"] = new { text = buckets[ci].Trim(), conf = 0.90 };
                                                 }
-                                                
                                                 finalJsonPayload = System.Text.Json.JsonSerializer.Serialize(jsonDict);
-                                                Classes.Logger.LogAction("TABLE_EXTRACT", $"Windows OCR detected {rows.Count}x{targetCols} table");
+                                                Classes.Logger.LogAction("TABLE_EXTRACT", $"OCR: {rows.Count}x{numCols} table ({separators.Count} separators)");
                                             }
                                         }
                                     }
