@@ -226,67 +226,123 @@ namespace AdvanceClip
                             IDataObject data = Clipboard.GetDataObject();
                             if (data == null) return;
 
+                            // DEBUG: Log all clipboard formats to diagnose screenshot detection issues
+                            try
+                            {
+                                var formats = data.GetFormats();
+                                Classes.Logger.LogAction("CLIPBOARD", $"Formats: {string.Join(", ", formats)}");
+                            }
+                            catch { }
+
                             // Snapshot all data now while we're on the STA thread — IDataObject can't cross threads
                             string[] files = null;
                             string text = null;
                             System.Windows.Media.Imaging.BitmapSource bitmap = null;
 
+                            // STEP 1: Always try to extract bitmap FIRST — screenshots from Snipping Tool
+                            // set BOTH FileDrop AND Bitmap, but the file may not exist yet (async save).
+                            try
+                            {
+                                if (data.GetDataPresent(DataFormats.Bitmap))
+                                {
+                                    bitmap = data.GetData(DataFormats.Bitmap) as System.Windows.Media.Imaging.BitmapSource;
+                                    Classes.Logger.LogAction("CLIPBOARD", $"Bitmap via DataFormats.Bitmap: {(bitmap != null ? $"{bitmap.PixelWidth}x{bitmap.PixelHeight}" : "null")}");
+                                }
+                                if (bitmap == null && data.GetDataPresent(typeof(System.Windows.Media.Imaging.BitmapSource)))
+                                {
+                                    bitmap = data.GetData(typeof(System.Windows.Media.Imaging.BitmapSource)) as System.Windows.Media.Imaging.BitmapSource;
+                                    Classes.Logger.LogAction("CLIPBOARD", $"Bitmap via BitmapSource type: {(bitmap != null ? $"{bitmap.PixelWidth}x{bitmap.PixelHeight}" : "null")}");
+                                }
+                                if (bitmap == null && data.GetDataPresent(DataFormats.Dib))
+                                {
+                                    bitmap = data.GetData(DataFormats.Bitmap) as System.Windows.Media.Imaging.BitmapSource;
+                                    Classes.Logger.LogAction("CLIPBOARD", $"Bitmap via DIB fallback: {(bitmap != null ? $"{bitmap.PixelWidth}x{bitmap.PixelHeight}" : "null")}");
+                                }
+                                if (bitmap != null && bitmap.CanFreeze) bitmap.Freeze(); // Make thread-safe
+                            }
+                            catch (Exception bmpEx) 
+                            { 
+                                Classes.Logger.LogAction("CLIPBOARD", $"Bitmap extraction failed: {bmpEx.Message}");
+                            }
+
+                            // STEP 2: Extract file paths
                             try
                             {
                                 if (data.GetDataPresent(DataFormats.FileDrop))
                                     files = data.GetData(DataFormats.FileDrop) as string[];
                                 if ((files == null || files.Length == 0) && data.GetDataPresent("FileNameW"))
                                     files = data.GetData("FileNameW") as string[];
+                                
+                                if (files != null && files.Length > 0)
+                                    Classes.Logger.LogAction("CLIPBOARD", $"Files: {string.Join(", ", files)}");
                             }
                             catch { }
 
-                            if (files == null || files.Length == 0)
+                            // STEP 3: If we have BOTH bitmap AND files, prefer bitmap for screenshots
+                            // (Snipping Tool sets FileDrop but the file may not exist yet)
+                            if (bitmap != null && files != null && files.Length > 0)
+                            {
+                                // Check if file actually exists — if not, the bitmap is the real data
+                                bool allFilesExist = files.All(f => System.IO.File.Exists(f));
+                                if (!allFilesExist)
+                                {
+                                    Classes.Logger.LogAction("CLIPBOARD", "Files don't exist yet — using bitmap instead");
+                                    files = null; // Force bitmap path
+                                }
+                                else
+                                {
+                                    // Files exist — check if they're image files (prefer bitmap for images)
+                                    string ext = System.IO.Path.GetExtension(files[0]).ToLower();
+                                    if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".bmp" || ext == ".gif")
+                                    {
+                                        Classes.Logger.LogAction("CLIPBOARD", "Image file detected — using bitmap for richer preview");
+                                        files = null; // Force bitmap path for image files
+                                    }
+                                }
+                            }
+
+                            // STEP 4: Extract text only if no bitmap and no files
+                            if (bitmap == null && (files == null || files.Length == 0))
                             {
                                 try
                                 {
-                                    if (data.GetDataPresent(DataFormats.Bitmap) || data.GetDataPresent(typeof(System.Windows.Media.Imaging.BitmapSource)))
-                                    {
-                                        bitmap = data.GetData(typeof(System.Windows.Media.Imaging.BitmapSource)) as System.Windows.Media.Imaging.BitmapSource;
-                                        if (bitmap != null && bitmap.CanFreeze) bitmap.Freeze(); // Make thread-safe
-                                    }
+                                    if (data.GetDataPresent(DataFormats.UnicodeText))
+                                        text = data.GetData(DataFormats.UnicodeText) as string;
+                                    if (string.IsNullOrEmpty(text) && data.GetDataPresent(DataFormats.Text))
+                                        text = data.GetData(DataFormats.Text) as string;
                                 }
                                 catch { }
-
-                                if (bitmap == null)
-                                {
-                                    try
-                                    {
-                                        if (data.GetDataPresent(DataFormats.UnicodeText))
-                                            text = data.GetData(DataFormats.UnicodeText) as string;
-                                        if (string.IsNullOrEmpty(text) && data.GetDataPresent(DataFormats.Text))
-                                            text = data.GetData(DataFormats.Text) as string;
-                                    }
-                                    catch { }
-                                }
                             }
 
                             // Now dispatch to background — no more COM calls needed
                             var vm = (DropShelfViewModel)DataContext;
-                            if (files != null && files.Length > 0)
+                            if (bitmap != null && (files == null || files.Length == 0))
                             {
-                                var dataObj = new System.Windows.DataObject(DataFormats.FileDrop, files);
+                                Classes.Logger.LogAction("CLIPBOARD", $"→ Routing as BITMAP ({bitmap.PixelWidth}x{bitmap.PixelHeight})");
+                                var dataObj = new System.Windows.DataObject(typeof(System.Windows.Media.Imaging.BitmapSource), bitmap);
                                 System.Threading.Tasks.Task.Run(() =>
                                     Application.Current.Dispatcher.InvokeAsync(() => vm.HandleDrop(dataObj, false)));
                             }
-                            else if (bitmap != null)
+                            else if (files != null && files.Length > 0)
                             {
-                                var dataObj = new System.Windows.DataObject(typeof(System.Windows.Media.Imaging.BitmapSource), bitmap);
+                                Classes.Logger.LogAction("CLIPBOARD", $"→ Routing as FILES ({files.Length} items)");
+                                var dataObj = new System.Windows.DataObject(DataFormats.FileDrop, files);
                                 System.Threading.Tasks.Task.Run(() =>
                                     Application.Current.Dispatcher.InvokeAsync(() => vm.HandleDrop(dataObj, false)));
                             }
                             else if (!string.IsNullOrWhiteSpace(text))
                             {
+                                Classes.Logger.LogAction("CLIPBOARD", $"→ Routing as TEXT ({text.Length} chars)");
                                 var dataObj = new System.Windows.DataObject(DataFormats.UnicodeText, text);
                                 System.Threading.Tasks.Task.Run(() =>
                                     Application.Current.Dispatcher.InvokeAsync(() => vm.HandleDrop(dataObj, false)));
                             }
+                            else
+                            {
+                                Classes.Logger.LogAction("CLIPBOARD", "→ No actionable data found on clipboard");
+                            }
                         }
-                        catch { }
+                        catch (Exception cbEx) { Classes.Logger.LogAction("CLIPBOARD", $"Handler error: {cbEx.Message}"); }
                     };
                 }
                 _clipboardDebounceTimer.Stop();
