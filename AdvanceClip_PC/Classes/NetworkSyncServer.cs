@@ -263,8 +263,50 @@ namespace AdvanceClip.Classes
                     var clientStream = client.GetStream();
                     var targetStream = target.GetStream();
 
-                    // Bi-directional relay — when either side closes, both close
-                    using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5)); // 5min max per connection
+                    // === HTTP-AWARE PROXY: Rewrite the Host header ===
+                    // HttpListener validates Host header against its prefix.
+                    // Browser sends "Host: 192.168.1.36:8999" but HttpListener
+                    // expects "Host: localhost:18999". We MUST rewrite it.
+                    using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+
+                    // Read the initial HTTP headers from the client
+                    var headerBytes = new System.Collections.Generic.List<byte>(4096);
+                    byte[] buf = new byte[1];
+                    int headerEnd = -1;
+
+                    // Read byte-by-byte until we find \r\n\r\n (end of HTTP headers)
+                    while (headerBytes.Count < 16384) // 16KB max header size
+                    {
+                        int read = await clientStream.ReadAsync(buf, 0, 1, cts.Token);
+                        if (read == 0) return; // Client disconnected
+                        headerBytes.Add(buf[0]);
+
+                        int len = headerBytes.Count;
+                        if (len >= 4 &&
+                            headerBytes[len - 4] == (byte)'\r' &&
+                            headerBytes[len - 3] == (byte)'\n' &&
+                            headerBytes[len - 2] == (byte)'\r' &&
+                            headerBytes[len - 1] == (byte)'\n')
+                        {
+                            headerEnd = len;
+                            break;
+                        }
+                    }
+
+                    if (headerEnd <= 0) return; // No valid HTTP headers
+
+                    // Parse and rewrite the Host header
+                    string headerText = System.Text.Encoding.ASCII.GetString(headerBytes.ToArray(), 0, headerEnd);
+                    string rewritten = System.Text.RegularExpressions.Regex.Replace(
+                        headerText,
+                        @"(?i)Host:\s*[^\r\n]+",
+                        $"Host: localhost:{targetPort}");
+
+                    // Send rewritten headers to HttpListener
+                    byte[] rewrittenBytes = System.Text.Encoding.ASCII.GetBytes(rewritten);
+                    await targetStream.WriteAsync(rewrittenBytes, 0, rewrittenBytes.Length, cts.Token);
+
+                    // Now relay the rest bi-directionally (body + response)
                     var t1 = clientStream.CopyToAsync(targetStream, cts.Token);
                     var t2 = targetStream.CopyToAsync(clientStream, cts.Token);
                     await Task.WhenAny(t1, t2);
