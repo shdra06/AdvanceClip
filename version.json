@@ -1,8 +1,8 @@
 {
-  "pc_version": "1.8.4",
-  "pc_download": "https://github.com/shdra06/AdvanceClip/releases/download/v1.8.4-pc/AdvanceClip.exe",
+  "pc_version": "1.8.5",
+  "pc_download": "https://github.com/shdra06/AdvanceClip/releases/download/v1.8.5-pc/AdvanceClip.exe",
   "android_version": "1.8.2",
   "android_download": "https://github.com/shdra06/AdvanceClip/releases/download/v1.8.2/AdvanceClip_Mobile.apk",
-  "pc_changelog": "v1.8.4: Fixed Cloudflare tunnel verification (broken tunnels no longer send dead URLs), Firebase Storage auto-fallback for files/screenshots, 5-strategy HTTP server binding with port fallback, auto URL ACL registration.",
+  "pc_changelog": "v1.8.5: TCP reverse proxy for non-admin PCs (fixes LAN website 400 error), localhost-based tunnel verification (fixes DNS failure on restrictive networks), removed netsh dependency, hardened server binding.",
   "android_changelog": "v1.8.2: Fixed double/triple clipboard entries, background Firebase sync via floating ball, forced/group sync support, PDF detection improvements."
 }
