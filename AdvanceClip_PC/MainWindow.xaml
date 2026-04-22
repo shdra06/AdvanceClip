@@ -627,7 +627,19 @@
                                             </Style>
                                         </ui:SymbolIcon.Style>
                                     </ui:SymbolIcon>
-                                    <TextBlock Text="{Binding SourceDeviceName}" Foreground="#9CA3AF" FontSize="11" />
+                                    <TextBlock Text="{Binding SourceDeviceName}" Foreground="#9CA3AF" FontSize="11" Margin="0,0,6,0" />
+                                    <TextBlock Foreground="#6B7280" FontSize="10" VerticalAlignment="Center">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Text" Value="☁️ Cloud"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding SourceDeviceType}" Value="Mobile">
+                                                        <Setter Property="Text" Value="📱 Mobile"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
                                 </StackPanel>
                             </StackPanel>
 

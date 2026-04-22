@@ -279,38 +279,43 @@ export default function ConnectScreen() {
           { path: 'file:///storage/emulated/0/WhatsApp/Media/WhatsApp Images/Sent/', source: 'WhatsApp' },
           { path: 'file:///storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Images/', source: 'WhatsApp' },
           { path: 'file:///storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Video/', source: 'WhatsApp' },
+          // Additional common paths for PDFs and documents
+          { path: 'file:///storage/emulated/0/WhatsApp/Media/WhatsApp Documents/', source: 'WhatsApp', recursive: true },
+          { path: 'file:///storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Documents/', source: 'WhatsApp', recursive: true },
+          { path: 'file:///storage/emulated/0/Telegram/', source: 'Downloads', recursive: true },
+          { path: 'file:///storage/emulated/0/Android/media/org.telegram.messenger/', source: 'Downloads', recursive: true },
+          { path: 'file:///storage/emulated/0/Desktop/', source: 'Downloads', recursive: true },
+          { path: 'file:///storage/emulated/0/', source: 'Downloads', recursive: false }, // Top-level files only
         ];
 
-        const scanDir = async (dirPath: string, source: SourceFilter, depth: number = 0) => {
-          if (depth > 2) return; // Max 2 levels deep
+        const scanDir = async (dirPath: string, source: SourceFilter, depth: number = 0, maxDepth: number = 2) => {
+          if (depth > maxDepth) return;
           try {
             const check = await FileSystem.getInfoAsync(dirPath);
             if (!check.exists || !check.isDirectory) return;
             const files = await FileSystem.readDirectoryAsync(dirPath);
             for (const file of files) {
-              if (file === '.nomedia' || file.startsWith('.')) continue;
+              if (file === '.nomedia' || file.startsWith('.') || file === 'Android' || file === 'node_modules') continue;
               const fullPath = dirPath + file;
               try {
                 const fInfo = await FileSystem.getInfoAsync(fullPath);
-                if (fInfo.exists && fInfo.isDirectory && depth < 2) {
-                  await scanDir(fullPath + '/', source, depth + 1);
+                if (fInfo.exists && fInfo.isDirectory && depth < maxDepth) {
+                  await scanDir(fullPath + '/', source, depth + 1, maxDepth);
                 } else if (fInfo.exists && !fInfo.isDirectory) {
                   const lowerFile = file.toLowerCase();
                   let mediaType = '';
                   const fileSize = (fInfo as any).size || 0;
                   
                   if (lowerFile.endsWith('.pdf')) mediaType = 'pdf';
-                  else if (lowerFile.match(/\.(doc|docx|txt|xlsx|pptx|odt|rtf)$/)) mediaType = 'doc';
+                  else if (lowerFile.match(/\.(doc|docx|txt|xlsx|xls|pptx|ppt|odt|rtf|csv)$/)) mediaType = 'doc';
                   else if (lowerFile.match(/\.(mp4|avi|mkv|mov|3gp|webm)$/)) mediaType = 'video';
                   else if (lowerFile.match(/\.(jpg|jpeg|png|gif|webp|bmp|heic)$/)) mediaType = 'photo';
                   else if (lowerFile.match(/\.(apk|zip|rar|7z|tar|gz)$/)) mediaType = 'doc';
                   
-                  if (!mediaType) continue; // Skip unknown types
+                  if (!mediaType) continue;
                   
                   const modTimeMs = (fInfo.modificationTime || 0) * 1000;
                   
-                  // For PDFs and docs: no date filter (show ALL)
-                  // For images/videos: apply date filter
                   if (mediaType === 'pdf' || mediaType === 'doc') {
                     allFound.push({ id: fullPath, uri: fullPath, filename: file, creationTime: modTimeMs, mediaType, source, fileSize });
                   } else if (modTimeMs >= startDate.getTime() && modTimeMs <= endDate.getTime()) {
@@ -323,7 +328,9 @@ export default function ConnectScreen() {
         };
 
         for (const { path, source, recursive } of scanRoots) {
-          await scanDir(path, source, recursive ? 0 : 2);
+          // Use deeper recursion for Download/Documents folders
+          const maxDepth = recursive ? 4 : 0;
+          await scanDir(path, source, 0, maxDepth);
         }
       }
 

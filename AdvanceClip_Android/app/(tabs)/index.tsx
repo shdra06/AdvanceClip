@@ -435,15 +435,45 @@ export default function SyncScreen() {
         const now = Date.now();
         rawDevices = Object.keys(data).map(k => ({ ...data[k], _key: k })).filter(d => d.IsOnline && d.Timestamp && (now - d.Timestamp) < 300_000);
       }
-      // If no PC found in Firebase, probe manual IP from Settings as fallback
+      // Probe LAN reachability for each PC device from Firebase
+      for (let i = 0; i < rawDevices.length; i++) {
+        const dev = rawDevices[i];
+        if (dev.DeviceType === 'PC' && dev.LocalIp && !dev._lanVerified) {
+          try {
+            const lanIp = dev.LocalIp.trim();
+            const lanUrl = lanIp.startsWith('http') ? lanIp.replace(/\/$/, '') : `http://${lanIp.includes(':') ? lanIp : lanIp + ':8999'}`;
+            const res = await fetch(`${lanUrl}/api/health`, { method: 'GET', headers: { 'X-Advance-Client': 'MobileCompanion' }, signal: AbortSignal.timeout(1500) });
+            if (res.ok) {
+              rawDevices[i] = { ...dev, _lanVerified: true, _lanUrl: lanUrl };
+            }
+          } catch {}
+        }
+      }
+
+      // If no PC found in Firebase at all, probe manual IP from Settings as fallback
       const hasPc = rawDevices.some(d => d.DeviceType === 'PC');
       if (!hasPc && pcLocalIp) {
         try {
           const raw = pcLocalIp.trim();
           const probeUrl = raw.startsWith('http') ? raw.replace(/\/$/, '') : `http://${raw.includes(':') ? raw : raw.split(':')[0] + ':8999'}`;
           const res = await fetch(`${probeUrl}/api/health`, { method: 'GET', headers: { 'X-Advance-Client': 'MobileCompanion' }, signal: AbortSignal.timeout(2000) });
-          if (res.ok) rawDevices.push({ DeviceName: 'PC (LAN)', DeviceType: 'PC', IsOnline: true, Url: probeUrl, LocalIp: probeUrl, _key: 'local_direct', Timestamp: Date.now() });
+          if (res.ok) rawDevices.push({ DeviceName: 'PC (LAN)', DeviceType: 'PC', IsOnline: true, Url: probeUrl, LocalIp: probeUrl, _key: 'local_direct', _lanVerified: true, _lanUrl: probeUrl, Timestamp: Date.now() });
         } catch {}
+      } else if (hasPc && pcLocalIp) {
+        // Also check if the manual IP setting matches a different PC
+        const manualIp = pcLocalIp.trim();
+        const manualUrl = manualIp.startsWith('http') ? manualIp.replace(/\/$/, '') : `http://${manualIp.includes(':') ? manualIp : manualIp + ':8999'}`;
+        const existingLan = rawDevices.some(d => d._lanUrl === manualUrl);
+        if (!existingLan) {
+          try {
+            const res = await fetch(`${manualUrl}/api/health`, { method: 'GET', headers: { 'X-Advance-Client': 'MobileCompanion' }, signal: AbortSignal.timeout(1500) });
+            if (res.ok) {
+              // Update the first PC device with this LAN URL
+              const pcIdx = rawDevices.findIndex(d => d.DeviceType === 'PC');
+              if (pcIdx >= 0) rawDevices[pcIdx] = { ...rawDevices[pcIdx], _lanVerified: true, _lanUrl: manualUrl, LocalIp: manualUrl };
+            }
+          } catch {}
+        }
       }
       setActiveDevices(rawDevices);
     });
@@ -1092,6 +1122,30 @@ export default function SyncScreen() {
                         {selectedItemIds.has(item.id || '') && <IconSymbol name="checkmark" size={12} color="#FFF" />}
                       </View>
                     )}
+                    {/* Transfer method badge */}
+                    {(() => {
+                      const srcType = item.SourceDeviceType || '';
+                      const srcName = item.SourceDeviceName || '';
+                      const rawUrl = item.Raw || '';
+                      let emoji = '📋';
+                      let badgeColor = '#4C5361';
+                      if (srcType === 'Mobile' || srcName === 'Phone' || srcName === deviceName) {
+                        emoji = '📱'; badgeColor = '#8B5CF6';
+                      } else if (srcType === 'PC' || srcName.toLowerCase().includes('pc')) {
+                        emoji = '💻'; badgeColor = '#3B82F6';
+                      }
+                      // Override with transfer method
+                      if (rawUrl.includes('trycloudflare.com')) { emoji = '🌐'; badgeColor = '#F59E0B'; }
+                      else if (rawUrl.includes('firebasestorage.googleapis.com') || rawUrl.includes('firebase')) { emoji = '☁️'; badgeColor = '#F59E0B'; }
+                      else if (rawUrl.startsWith('http://192.') || rawUrl.startsWith('http://10.') || rawUrl.startsWith('http://172.')) { emoji = '📡'; badgeColor = '#10B981'; }
+                      const displayName = srcName && srcName !== deviceName ? srcName : '';
+                      return (
+                        <View style={{position: 'absolute', right: 6, top: 4, flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(15,17,21,0.85)', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2, zIndex: 5}}>
+                          <Text style={{fontSize: 10}}>{emoji}</Text>
+                          {displayName ? <Text style={{color: badgeColor, fontSize: 9, fontWeight: '700', marginLeft: 3}} numberOfLines={1}>{displayName.length > 10 ? displayName.slice(0, 10) + '…' : displayName}</Text> : null}
+                        </View>
+                      );
+                    })()}
                     <View style={{ flex: 1, padding: 4, paddingLeft: isMultiSelectMode ? 32 : 4 }}>
                       {(item.Type === 'Image' || item.Type === 'ImageLink') ? (() => {
                         const imgUri = mediaUrl || item.CachedUri || item.Raw || '';

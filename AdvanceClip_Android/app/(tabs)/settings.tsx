@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { StyleSheet, View, Text, TextInput, TouchableOpacity, SafeAreaView, KeyboardAvoidingView, Platform, Alert, Switch, NativeModules, ScrollView, ActivityIndicator } from 'react-native';
 import { useSettings } from '../../context/SettingsContext';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -44,8 +44,29 @@ export default function SettingsScreen() {
   const [changelog, setChangelog] = useState('');
   const [downloadUrl, setDownloadUrl] = useState('');
   const [downloadedApkUri, setDownloadedApkUri] = useState('');
+  const [routeDevices, setRouteDevices] = useState<any[]>([]);
 
   const { AdvanceOverlay } = NativeModules;
+
+  // Fetch active devices from Firebase for the device picker
+  useEffect(() => {
+    const fetchDevices = async () => {
+      try {
+        const res = await fetch('https://advance-sync-default-rtdb.firebaseio.com/active_devices.json');
+        if (res.ok) {
+          const data = await res.json();
+          if (data) {
+            const now = Date.now();
+            const devices = Object.keys(data).map(k => ({ ...data[k], _key: k })).filter(d => d.IsOnline && d.Timestamp && (now - d.Timestamp) < 300_000 && d.DeviceName !== deviceName);
+            setRouteDevices(devices);
+          }
+        }
+      } catch {}
+    };
+    fetchDevices();
+    const interval = setInterval(fetchDevices, 15000);
+    return () => clearInterval(interval);
+  }, [deviceName]);
 
   const handleSave = async () => {
     try {
@@ -286,7 +307,7 @@ export default function SettingsScreen() {
                 placeholderTextColor="#4C5361"
                 keyboardType="numbers-and-punctuation"
               />
-              <Text style={styles.helperText}>This IP is used for direct, high-speed physical transfers over Wi-Fi, bypassing Firebase data limits.</Text>
+              <Text style={styles.helperText}>Fallback IP for direct LAN transfers when your PC isn't auto-detected in Firebase. If your PC shows up in Active Devices, this can be left blank. Format: 192.168.x.x:8999</Text>
             </View>
 
             <View style={[styles.inputContainer, { marginTop: 20 }]}>
@@ -309,14 +330,29 @@ export default function SettingsScreen() {
                 <IconSymbol name="car" size={20} color="#F59E0B" />
                 <Text style={styles.inputLabel}>Auto-Route Destination</Text>
               </View>
-              <TextInput
-                style={styles.input}
-                value={defaultTargetInput}
-                onChangeText={setDefaultTargetInput}
-                placeholder="e.g. John's PC"
-                placeholderTextColor="#4C5361"
-              />
-              <Text style={styles.helperText}>Type a specific device name to automatically skip target selection and stealth-route payloads during Extractions.</Text>
+              {/* Device picker — shows available devices from Firebase */}
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 4 }}>
+                <TouchableOpacity
+                  style={{ backgroundColor: !defaultTargetInput ? '#F59E0B' : '#2A2F3A', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10 }}
+                  onPress={() => setDefaultTargetInput('')}
+                >
+                  <Text style={{ color: !defaultTargetInput ? '#0F1115' : '#8A8F98', fontWeight: '700', fontSize: 12 }}>Ask Every Time</Text>
+                </TouchableOpacity>
+                {routeDevices.map(d => (
+                  <TouchableOpacity
+                    key={d._key || d.DeviceName}
+                    style={{ backgroundColor: defaultTargetInput === d.DeviceName ? '#F59E0B' : '#2A2F3A', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                    onPress={() => setDefaultTargetInput(d.DeviceName)}
+                  >
+                    <Text style={{ fontSize: 12 }}>{d.DeviceType === 'PC' ? '💻' : '📱'}</Text>
+                    <Text style={{ color: defaultTargetInput === d.DeviceName ? '#0F1115' : '#FFF', fontWeight: '600', fontSize: 12 }}>{d.DeviceName}</Text>
+                  </TouchableOpacity>
+                ))}
+                {routeDevices.length === 0 && (
+                  <Text style={{ color: '#4C5361', fontSize: 11, fontStyle: 'italic', paddingVertical: 8 }}>No devices online — start your PC or another device</Text>
+                )}
+              </View>
+              <Text style={styles.helperText}>Select a default device to automatically skip target selection during Extractions. Choose "Ask Every Time" to always pick manually.</Text>
             </View>
 
             <View style={[styles.inputContainer, { marginTop: 20 }]}>
