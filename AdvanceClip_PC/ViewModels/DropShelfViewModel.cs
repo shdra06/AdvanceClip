@@ -410,6 +410,14 @@ namespace AdvanceClip.ViewModels
             catch { return raw; }
         }
 
+        private static string FormatFileSize(long bytes)
+        {
+            if (bytes < 1024) return $"{bytes}B";
+            if (bytes < 1024 * 1024) return $"{bytes / 1024}KB";
+            if (bytes < 1024L * 1024 * 1024) return $"{bytes / (1024.0 * 1024):F1}MB";
+            return $"{bytes / (1024.0 * 1024 * 1024):F1}GB";
+        }
+
         public Visibility ShelfVisibility => DroppedItems.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
 
         public void HandleDrop(IDataObject data, bool forceClipboardSync = false)
@@ -527,9 +535,10 @@ namespace AdvanceClip.ViewModels
                             if (localServer != null && !string.IsNullOrEmpty(localServer.GlobalUrl) && localServer.GlobalUrl.Contains("trycloudflare.com") && tunnelVerified)
                             {
                                 string downloadUrl = $"{localServer.GlobalUrl}/download?path={Uri.EscapeDataString(file)}";
+                                AdvanceClip.Classes.Logger.LogAction("FILE SYNC", $"Sending '{Path.GetFileName(file)}' ({FormatFileSize(fSize)}) via Cloudflare: {downloadUrl}");
                                 var syncItem = item.CloneForSync(downloadUrl);
                                 _ = AdvanceClip.Classes.FirebaseSyncManager.PushToGlobalSync(syncItem);
-                                AdvanceClip.Windows.ToastWindow.ShowToast($"File ({fSize / (1024*1024)}MB) synced via Public Link \ud83c\udf10");
+                                AdvanceClip.Windows.ToastWindow.ShowToast($"File ({FormatFileSize(fSize)}) synced via Public Link \ud83c\udf10");
                             }
                             // PRIORITY 2: Firebase Storage upload — works for files under 25MB
                             else if (fSize > 0 && fSize < 25 * 1024 * 1024)
@@ -565,7 +574,7 @@ namespace AdvanceClip.ViewModels
                             else
                             {
                                 // File too large for Firebase Storage and no working Cloudflare tunnel
-                                AdvanceClip.Classes.Logger.LogAction("FILE SYNC", $"File '{Path.GetFileName(file)}' ({fSize / (1024*1024)}MB) — no verified Cloudflare, too large for Firebase Storage.");
+                                AdvanceClip.Classes.Logger.LogAction("FILE SYNC", $"File '{Path.GetFileName(file)}' ({FormatFileSize(fSize)}) — no verified Cloudflare, too large for Firebase Storage.");
                             }
                         }
                     }
