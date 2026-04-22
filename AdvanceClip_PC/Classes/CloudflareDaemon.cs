@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace AdvanceClip.Classes
@@ -11,11 +12,11 @@ namespace AdvanceClip.Classes
     {
         private Process _cfProcess;
         private int _localPort;
-        private int _retryCount = 0;
+        private int _consecutiveFailures = 0;
         private bool _useHttp2 = false; // Start with QUIC, fallback to HTTP/2 for restricted networks
-        private const int MAX_RETRIES = 3;
-        private const int RETRY_DELAY_MS = 10_000; // 10 seconds between retries
+        private bool _stopped = false;  // True when Stop() is called — prevents auto-retry
         private const long MIN_EXE_SIZE = 10_000_000; // cloudflared.exe should be >10MB
+        private System.Timers.Timer _healthTimer;      // Periodic tunnel health monitor
 
         public string GlobalUrl { get; private set; } = "Initializing...";
         public event Action<string> GlobalUrlUpdated;
@@ -23,199 +24,276 @@ namespace AdvanceClip.Classes
         public async Task StartAsync(int localPort)
         {
             _localPort = localPort;
-            _retryCount = 0;
-            await StartTunnelWithRetry();
+            _consecutiveFailures = 0;
+            _stopped = false;
+            await StartTunnelCore();
         }
 
-        private async Task StartTunnelWithRetry()
+        private async Task StartTunnelCore()
         {
-            while (_retryCount <= MAX_RETRIES)
+            if (_stopped) return;
+
+            try
             {
-                try
+                string agentDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AdvanceClip", "agent");
+                Directory.CreateDirectory(agentDir);
+                string exePath = Path.Combine(agentDir, "cloudflared.exe");
+
+                // Download cloudflared.exe if missing or corrupted (too small = partial download)
+                if (!File.Exists(exePath) || new FileInfo(exePath).Length < MIN_EXE_SIZE)
                 {
-                    string agentDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AdvanceClip", "agent");
-                    Directory.CreateDirectory(agentDir);
-                    string exePath = Path.Combine(agentDir, "cloudflared.exe");
+                    try { if (File.Exists(exePath)) File.Delete(exePath); } catch { }
 
-                    // Download cloudflared.exe if missing or corrupted (too small = partial download)
-                    if (!File.Exists(exePath) || new FileInfo(exePath).Length < MIN_EXE_SIZE)
+                    GlobalUrl = "Downloading secure agent...";
+                    GlobalUrlUpdated?.Invoke(GlobalUrl);
+                    Logger.LogAction("CLOUDFLARE", "Downloading cloudflared.exe...");
+
+                    bool downloaded = await DownloadCloudflaredAsync(exePath);
+                    if (!downloaded)
                     {
-                        try { if (File.Exists(exePath)) File.Delete(exePath); } catch { }
-
-                        GlobalUrl = _retryCount > 0 ? $"Retrying download ({_retryCount}/{MAX_RETRIES})..." : "Downloading secure agent...";
+                        Logger.LogAction("CLOUDFLARE_ERROR", "Failed to download cloudflared.exe — will retry in 30s");
+                        GlobalUrl = "Download failed — retrying soon...";
                         GlobalUrlUpdated?.Invoke(GlobalUrl);
-                        Logger.LogAction("CLOUDFLARE", $"Downloading cloudflared.exe (attempt {_retryCount + 1})...");
+                        ScheduleRetry(30_000);
+                        return;
+                    }
+                }
 
-                        bool downloaded = await DownloadCloudflaredAsync(exePath);
-                        if (!downloaded)
+                KillExisting();
+
+                // Auto-switch protocol after repeated failures:
+                // After 2 failures with QUIC, switch to HTTP/2 (TCP 443 — more firewall-friendly)
+                // After 2 more failures with HTTP/2, switch back to QUIC
+                if (_consecutiveFailures > 0 && _consecutiveFailures % 2 == 0)
+                {
+                    _useHttp2 = !_useHttp2;
+                    Logger.LogAction("CLOUDFLARE", $"Switching protocol to {(_useHttp2 ? "HTTP/2 (TCP 443)" : "QUIC (UDP 7844)")} after {_consecutiveFailures} failures");
+                }
+
+                _cfProcess = new Process();
+                _cfProcess.StartInfo.FileName = exePath;
+                _cfProcess.StartInfo.Arguments = _useHttp2
+                    ? $"tunnel --url http://localhost:{_localPort} --no-autoupdate --protocol http2"
+                    : $"tunnel --url http://localhost:{_localPort} --no-autoupdate";
+                Logger.LogAction("CLOUDFLARE", $"Starting tunnel with protocol: {(_useHttp2 ? "HTTP/2 (TCP 443)" : "QUIC (UDP 7844)")} [attempt {_consecutiveFailures + 1}]");
+                _cfProcess.StartInfo.UseShellExecute = false;
+                _cfProcess.StartInfo.RedirectStandardError = true;
+                _cfProcess.StartInfo.CreateNoWindow = true;
+                _cfProcess.StartInfo.WindowStyle = ProcessWindowStyle.Hidden;
+
+                bool tunnelUrlReceived = false;
+
+                _cfProcess.ErrorDataReceived += (s, e) =>
+                {
+                    try
+                    {
+                        if (string.IsNullOrEmpty(e.Data)) return;
+                        // Only log errors/warnings, not verbose info lines
+                        bool isImportant = e.Data.Contains("ERR") || e.Data.Contains("WRN") || e.Data.Contains("trycloudflare.com") || e.Data.Contains("failed") || e.Data.Contains("error");
+                        if (isImportant) Logger.LogAction("CF_STDERR", e.Data);
+                        Match match = Regex.Match(e.Data, @"https://([a-zA-Z0-9-]+)\.trycloudflare\.com");
+                        if (match.Success)
                         {
-                            Logger.LogAction("CLOUDFLARE_ERROR", "Failed to download cloudflared.exe");
-                            _retryCount++;
-                            if (_retryCount <= MAX_RETRIES)
+                            string subdomain = match.Groups[1].Value.ToLower();
+                            // Skip known Cloudflare system subdomains — NOT tunnel URLs
+                            if (subdomain == "api" || subdomain == "dash" || subdomain == "login" || subdomain == "www")
                             {
-                                await Task.Delay(RETRY_DELAY_MS);
-                                continue;
+                                Logger.LogAction("CF_STDERR", $"Ignoring system URL: {match.Value}");
+                                return;
                             }
-                            GlobalUrl = "Download failed — file sync uses cloud storage.";
+                            GlobalUrl = match.Value;
+                            tunnelUrlReceived = true;
+                            _consecutiveFailures = 0; // Reset on success
+                            Logger.LogAction("CLOUDFLARE", $"Tunnel URL: {GlobalUrl}");
                             GlobalUrlUpdated?.Invoke(GlobalUrl);
-                            return;
                         }
                     }
+                    catch (Exception ex) { Logger.LogAction("CF_EVENT_ERROR", ex.Message); }
+                };
 
-                    KillExisting();
+                _cfProcess.EnableRaisingEvents = true;
+                _cfProcess.Exited += (s, e) =>
+                {
+                    if (_stopped) return; // Don't retry if we intentionally stopped
+                    int exitCode = -1;
+                    try { exitCode = _cfProcess?.ExitCode ?? -1; } catch { }
+                    Logger.LogAction("CLOUDFLARE", $"Process exited (code: {exitCode}). Will auto-restart...");
+                    _consecutiveFailures++;
+                    StopHealthMonitor();
+                    int delay = GetRetryDelay();
+                    GlobalUrl = $"Reconnecting in {delay / 1000}s...";
+                    GlobalUrlUpdated?.Invoke(GlobalUrl);
+                    ScheduleRetry(delay);
+                };
 
-                    _cfProcess = new Process();
-                    _cfProcess.StartInfo.FileName = exePath;
-                    _cfProcess.StartInfo.Arguments = _useHttp2
-                        ? $"tunnel --url http://localhost:{_localPort} --no-autoupdate --protocol http2"
-                        : $"tunnel --url http://localhost:{_localPort} --no-autoupdate";
-                    Logger.LogAction("CLOUDFLARE", $"Starting tunnel with protocol: {(_useHttp2 ? "HTTP/2 (TCP 443)" : "QUIC (UDP 7844)")}");
-                    _cfProcess.StartInfo.UseShellExecute = false;
-                    _cfProcess.StartInfo.RedirectStandardError = true;
-                    _cfProcess.StartInfo.CreateNoWindow = true;
-                    _cfProcess.StartInfo.WindowStyle = ProcessWindowStyle.Hidden;
+                _cfProcess.Start();
+                _cfProcess.BeginErrorReadLine();
+                Logger.LogAction("CLOUDFLARE", "Spawned Global Web Tunnel.");
 
-                    bool tunnelUrlReceived = false;
+                // Wait up to 30s for the tunnel URL to appear
+                for (int i = 0; i < 60; i++)
+                {
+                    await Task.Delay(500);
+                    if (tunnelUrlReceived) break;
+                    if (_cfProcess.HasExited) break;
+                }
 
-                    _cfProcess.ErrorDataReceived += (s, e) =>
+                if (tunnelUrlReceived)
+                {
+                    // Verify the tunnel actually proxies traffic by self-pinging
+                    // Give tunnel extra time to fully establish the proxy before first ping
+                    await Task.Delay(5000);
+                    
+                    bool verified = false;
+                    using var verifyClient = new HttpClient() { Timeout = TimeSpan.FromSeconds(15) };
+                    for (int v = 0; v < 6; v++)
                     {
                         try
                         {
-                            if (string.IsNullOrEmpty(e.Data)) return;
-                            // Only log errors/warnings, not verbose info lines
-                            bool isImportant = e.Data.Contains("ERR") || e.Data.Contains("WRN") || e.Data.Contains("trycloudflare.com") || e.Data.Contains("failed") || e.Data.Contains("error");
-                            if (isImportant) Logger.LogAction("CF_STDERR", e.Data);
-                            Match match = Regex.Match(e.Data, @"https://([a-zA-Z0-9-]+)\.trycloudflare\.com");
-                            if (match.Success)
+                            await Task.Delay(2000);
+                            Logger.LogAction("CLOUDFLARE", $"Verifying tunnel (attempt {v + 1}/6)...");
+                            var pingResp = await verifyClient.GetAsync($"{GlobalUrl}/api/health");
+                            if (pingResp.IsSuccessStatusCode)
                             {
-                                string subdomain = match.Groups[1].Value.ToLower();
-                                // Skip known Cloudflare system subdomains — NOT tunnel URLs
-                                if (subdomain == "api" || subdomain == "dash" || subdomain == "login" || subdomain == "www")
-                                {
-                                    Logger.LogAction("CF_STDERR", $"Ignoring system URL: {match.Value}");
-                                    return;
-                                }
-                                GlobalUrl = match.Value;
-                                tunnelUrlReceived = true;
-                                Logger.LogAction("CLOUDFLARE", $"Tunnel URL: {GlobalUrl}");
-                                GlobalUrlUpdated?.Invoke(GlobalUrl);
+                                verified = true;
+                                Logger.LogAction("CLOUDFLARE", $"✅ Tunnel verified working: {GlobalUrl}");
+                                break;
                             }
+                            Logger.LogAction("CLOUDFLARE", $"Tunnel verify attempt {v + 1}/6: HTTP {(int)pingResp.StatusCode}");
                         }
-                        catch (Exception ex) { Logger.LogAction("CF_EVENT_ERROR", ex.Message); }
-                    };
-
-                    _cfProcess.EnableRaisingEvents = true;
-                    _cfProcess.Exited += (s, e) =>
-                    {
-                        Logger.LogAction("CLOUDFLARE", $"Process exited (code: {_cfProcess?.ExitCode}). Will retry...");
-                        // Auto-retry on crash after a delay
-                        _ = Task.Run(async () =>
+                        catch (Exception pingEx)
                         {
-                            await Task.Delay(RETRY_DELAY_MS);
-                            _retryCount++;
-                            if (_retryCount <= MAX_RETRIES)
-                            {
-                                Logger.LogAction("CLOUDFLARE", $"Auto-retry {_retryCount}/{MAX_RETRIES}...");
-                                GlobalUrl = $"Reconnecting ({_retryCount}/{MAX_RETRIES})...";
-                                GlobalUrlUpdated?.Invoke(GlobalUrl);
-                                await StartTunnelWithRetry();
-                            }
-                            else
-                            {
-                                GlobalUrl = "Tunnel unavailable — file sync uses cloud storage.";
-                                GlobalUrlUpdated?.Invoke(GlobalUrl);
-                            }
-                        });
-                    };
-
-                    _cfProcess.Start();
-                    _cfProcess.BeginErrorReadLine();
-                    Logger.LogAction("CLOUDFLARE", "Spawned Global Web Tunnel.");
-
-                    // Wait up to 30s for the tunnel URL to appear
-                    for (int i = 0; i < 60; i++)
-                    {
-                        await Task.Delay(500);
-                        if (tunnelUrlReceived) break;
-                        if (_cfProcess.HasExited) break;
-                    }
-
-                    if (tunnelUrlReceived)
-                    {
-                        // Verify the tunnel actually proxies traffic by self-pinging
-                        // Give tunnel extra time to fully establish the proxy before first ping
-                        // Cloudflare quick tunnels on slow WiFi can take 10-15s to fully warm up
-                        await Task.Delay(8000);
-                        
-                        bool verified = false;
-                        using var verifyClient = new HttpClient() { Timeout = TimeSpan.FromSeconds(15) };
-                        for (int v = 0; v < 10; v++)
-                        {
-                            try
-                            {
-                                await Task.Delay(3000); // Wait between pings — be patient on slow networks
-                                Logger.LogAction("CLOUDFLARE", $"Verifying tunnel (attempt {v + 1}/10)...");
-                                var pingResp = await verifyClient.GetAsync($"{GlobalUrl}/api/health");
-                                if (pingResp.IsSuccessStatusCode)
-                                {
-                                    verified = true;
-                                    Logger.LogAction("CLOUDFLARE", $"✅ Tunnel verified working: {GlobalUrl}");
-                                    break;
-                                }
-                                Logger.LogAction("CLOUDFLARE", $"Tunnel verify attempt {v + 1}/10: HTTP {(int)pingResp.StatusCode}");
-                            }
-                            catch (Exception pingEx)
-                            {
-                                Logger.LogAction("CLOUDFLARE", $"Tunnel verify attempt {v + 1}/10 failed: {pingEx.Message}");
-                            }
-                        }
-
-                        if (verified)
-                        {
-                            return; // Success!
-                        }
-                        else
-                        {
-                            // DON'T kill the tunnel — keep it alive and trust it.
-                            // Cloudflare returns 400 during warmup on slow WiFi; the tunnel IS functional
-                            // for actual file downloads even if the self-ping fails via Cloudflare CDN.
-                            Logger.LogAction("CLOUDFLARE", $"⚠️ Tunnel verification inconclusive but keeping tunnel alive: {GlobalUrl}");
-                            Logger.LogAction("CLOUDFLARE", "Tunnel will be used for file sync — Cloudflare CDN may need more time to propagate.");
-                            // Push the URL anyway — it will likely work for actual file downloads
-                            GlobalUrlUpdated?.Invoke(GlobalUrl);
-                            return; // Keep the tunnel alive — don't restart!
+                            Logger.LogAction("CLOUDFLARE", $"Tunnel verify attempt {v + 1}/6 failed: {pingEx.Message}");
                         }
                     }
 
-                    if (_cfProcess.HasExited)
+                    // Keep the tunnel alive regardless — Cloudflare CDN sometimes needs more propagation time
+                    if (!verified)
                     {
-                        Logger.LogAction("CLOUDFLARE", "Process exited before providing tunnel URL.");
-                        // The Exited handler will retry, so just return
-                        return;
+                        Logger.LogAction("CLOUDFLARE", $"⚠️ Tunnel verification inconclusive but keeping tunnel alive: {GlobalUrl}");
                     }
-
-                    // Tunnel still running but no URL yet — keep it alive, URL might come later
-                    Logger.LogAction("CLOUDFLARE", "Tunnel process running but no URL yet — keeping alive.");
+                    
+                    GlobalUrlUpdated?.Invoke(GlobalUrl);
+                    StartHealthMonitor(); // Begin periodic health checks
                     return;
                 }
-                catch (Exception ex)
+
+                if (_cfProcess.HasExited)
                 {
-                    Logger.LogAction("CLOUDFLARE_ERROR", $"Attempt {_retryCount + 1} failed: {ex.Message}");
-                    _retryCount++;
-                    if (_retryCount <= MAX_RETRIES)
+                    // The Exited handler will schedule retry
+                    Logger.LogAction("CLOUDFLARE", "Process exited before providing tunnel URL.");
+                    return;
+                }
+
+                // Tunnel still running but no URL yet — could be slow network
+                // Wait another 30s for the URL
+                Logger.LogAction("CLOUDFLARE", "No URL yet — waiting an extra 30s...");
+                for (int i = 0; i < 60; i++)
+                {
+                    await Task.Delay(500);
+                    if (tunnelUrlReceived)
                     {
-                        GlobalUrl = $"Retrying ({_retryCount}/{MAX_RETRIES})...";
                         GlobalUrlUpdated?.Invoke(GlobalUrl);
-                        await Task.Delay(RETRY_DELAY_MS);
+                        StartHealthMonitor();
+                        return;
+                    }
+                    if (_cfProcess.HasExited) return; // Exited handler deals with retry
+                }
+
+                // Still no URL — kill and retry with different protocol
+                Logger.LogAction("CLOUDFLARE", "Tunnel started but no URL received after 60s — killing and retrying...");
+                _consecutiveFailures++;
+                KillExisting();
+                int retryDelay = GetRetryDelay();
+                ScheduleRetry(retryDelay);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogAction("CLOUDFLARE_ERROR", $"Startup error: {ex.Message}");
+                _consecutiveFailures++;
+                ScheduleRetry(GetRetryDelay());
+            }
+        }
+
+        /// <summary>
+        /// Periodic health monitor: every 60s, ping the tunnel.
+        /// If 3 consecutive pings fail, kill and restart the tunnel.
+        /// </summary>
+        private int _healthFailCount = 0;
+        private void StartHealthMonitor()
+        {
+            StopHealthMonitor();
+            _healthFailCount = 0;
+            _healthTimer = new System.Timers.Timer(60_000); // Every 60s
+            _healthTimer.Elapsed += async (s, e) =>
+            {
+                if (_stopped || string.IsNullOrEmpty(GlobalUrl) || !GlobalUrl.Contains("trycloudflare.com")) return;
+                try
+                {
+                    using var client = new HttpClient() { Timeout = TimeSpan.FromSeconds(10) };
+                    var resp = await client.GetAsync($"{GlobalUrl}/api/health");
+                    if (resp.IsSuccessStatusCode)
+                    {
+                        _healthFailCount = 0; // Healthy
                     }
                     else
                     {
-                        GlobalUrl = "Tunnel unavailable — file sync uses cloud storage.";
-                        GlobalUrlUpdated?.Invoke(GlobalUrl);
-                        return;
+                        _healthFailCount++;
+                        Logger.LogAction("CLOUDFLARE HEALTH", $"Ping failed ({_healthFailCount}/3): HTTP {(int)resp.StatusCode}");
                     }
                 }
-            }
+                catch (Exception ex)
+                {
+                    _healthFailCount++;
+                    Logger.LogAction("CLOUDFLARE HEALTH", $"Ping failed ({_healthFailCount}/3): {ex.Message}");
+                }
+
+                if (_healthFailCount >= 3)
+                {
+                    Logger.LogAction("CLOUDFLARE HEALTH", "🔄 Tunnel appears dead — auto-restarting...");
+                    StopHealthMonitor();
+                    _consecutiveFailures++;
+                    GlobalUrl = "Restarting tunnel...";
+                    GlobalUrlUpdated?.Invoke(GlobalUrl);
+                    KillExisting();
+                    await Task.Delay(3000);
+                    _ = Task.Run(() => StartTunnelCore());
+                }
+            };
+            _healthTimer.AutoReset = true;
+            _healthTimer.Start();
+            Logger.LogAction("CLOUDFLARE HEALTH", "Health monitor started (60s interval)");
+        }
+
+        private void StopHealthMonitor()
+        {
+            try { _healthTimer?.Stop(); _healthTimer?.Dispose(); } catch { }
+            _healthTimer = null;
+        }
+
+        /// <summary>
+        /// Calculate retry delay with exponential backoff: 5s, 10s, 20s, 30s, 30s, 30s...
+        /// Never gives up — tunnel is critical for cross-network file sync.
+        /// </summary>
+        private int GetRetryDelay()
+        {
+            int baseDelay = 5_000;
+            int delay = baseDelay * (int)Math.Pow(2, Math.Min(_consecutiveFailures, 3)); // Cap at 40s
+            return Math.Min(delay, 30_000); // Never more than 30s
+        }
+
+        private void ScheduleRetry(int delayMs)
+        {
+            if (_stopped) return;
+            _ = Task.Run(async () =>
+            {
+                try { await Task.Delay(delayMs); } catch { return; }
+                if (!_stopped)
+                {
+                    Logger.LogAction("CLOUDFLARE", $"Auto-retry #{_consecutiveFailures} after {delayMs}ms...");
+                    await StartTunnelCore();
+                }
+            });
         }
 
         private async Task<bool> DownloadCloudflaredAsync(string exePath)
@@ -276,7 +354,8 @@ namespace AdvanceClip.Classes
 
         public void Stop()
         {
-            _retryCount = MAX_RETRIES + 1; // Prevent auto-retry
+            _stopped = true; // Prevents all auto-retry logic
+            StopHealthMonitor();
             KillExisting();
             GlobalUrl = "Offline";
             GlobalUrlUpdated?.Invoke(GlobalUrl);
