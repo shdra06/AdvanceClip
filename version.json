@@ -1,7 +1,7 @@
 {
   "pc_version": "1.8.1",
-  "pc_download": "https://github.com/shdra06/AdvanceClip/releases/download/v1.8.1/AdvanceClip.exe",
-  "android_version": "1.8.1",
-  "android_download": "https://github.com/shdra06/AdvanceClip/releases/download/v1.8.1/AdvanceClip_Mobile.apk",
-  "changelog": "v1.8.1: Fixed screenshot detection (bitmap-first extraction), removed duplicate screenshots, fixed LAN URL leaks in sync, replaced broken Firebase Storage upload, patient tunnel verification, increased clipboard debounce."
+  "pc_download": "https://github.com/shdra06/AdvanceClip/releases/download/v1.8.2/AdvanceClip.exe",
+  "android_version": "1.8.2",
+  "android_download": "https://github.com/shdra06/AdvanceClip/releases/download/v1.8.2/AdvanceClip_Mobile.apk",
+  "changelog": "v1.8.2: Fixed double/triple clipboard entries, background Firebase sync via floating ball, forced/group sync support, PDF detection improvements."
 }

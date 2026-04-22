@@ -143,10 +143,13 @@ export default function SyncScreen() {
   // ─── Device Discovery ───
   const [activeDevices, setActiveDevices] = useState<any[]>([]);
 
-  // ─── Screenshot Detection (works with or without overlay service) ───
+  // ─── Screenshot Detection (ONLY when overlay service is NOT running) ───
+  // When floating ball is active, OverlayService.startScreenshotPoll() handles detection.
   const lastScreenshotTsRef = useRef<number>(Date.now());
   useEffect(() => {
     if (Platform.OS !== 'android') return;
+    // Skip — OverlayService handles screenshot detection when floating ball is active
+    if (isFloatingBallEnabled && AdvanceOverlay) return;
     const screenshotPoll = setInterval(async () => {
       // Try native overlay first, fallback to MediaLibrary polling
       if (AdvanceOverlay) {
@@ -264,7 +267,7 @@ export default function SyncScreen() {
       }
     }, 3000);
     return () => clearInterval(screenshotPoll);
-  }, [deviceName, isGlobalSyncEnabled, activeDevices]);
+  }, [deviceName, isGlobalSyncEnabled, activeDevices, isFloatingBallEnabled]);
 
   // ─── UI State ───
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -364,6 +367,11 @@ export default function SyncScreen() {
 
   // ─── Firebase Listeners ───
   useEffect(() => {
+    // Only listen to Firebase when global sync is enabled
+    if (!isGlobalSyncEnabled) {
+      setClips([]);
+      return;
+    }
     const clipsRef = query(ref(database, 'clipboard'), orderByChild('Timestamp'), limitToLast(30));
     const unsubscribeFeed = onValue(clipsRef, (snapshot) => {
       if (snapshot.exists()) {
@@ -441,7 +449,7 @@ export default function SyncScreen() {
     });
 
     return () => { unsubscribeFeed(); unsubscribeNodes(); };
-  }, []);
+  }, [isGlobalSyncEnabled]);
 
   // ─── Local PC Polling ───
   useEffect(() => {
@@ -638,6 +646,8 @@ export default function SyncScreen() {
   };
 
   useEffect(() => {
+    // Skip foreground media check when floating ball is active — OverlayService handles it
+    if (isFloatingBallEnabled && AdvanceOverlay) return;
     handleForegroundClipboardCheck();
     handleForegroundMediaCheck();
     const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {

@@ -49,18 +49,23 @@ class OverlayService : Service() {
     private var autoHideRunnable: Runnable? = null
     private var clipboardListener: ClipboardManager.OnPrimaryClipChangedListener? = null
     private var lastAutoClipTime: Long = 0
-    private var isSettingClipboard = false
+    internal var isSettingClipboard = false
     private var lastProcessedScreenshotTs: Long = 0
     private val screenshotPollHandler = Handler(Looper.getMainLooper())
+    private val firebasePollHandler = Handler(Looper.getMainLooper())
+    private val forcedSyncPollHandler = Handler(Looper.getMainLooper())
+    private var lastFirebaseTs: Long = 0
 
     companion object {
         var clipboardItems: String = "[]"
         var ballSizeDp: Int = 48
         var autoHideDelayMs: Long = 3000L
         var lastCopiedText: String = ""
+        var deviceName: String = "Mobile"
         var instance: OverlayService? = null
         const val CHANNEL_ID = "advanceclip_overlay"
         const val NOTIF_ID = 1001
+        const val FIREBASE_BASE = "https://advance-sync-default-rtdb.firebaseio.com"
         const val FIREBASE_DB_URL = "https://advance-sync-default-rtdb.firebaseio.com/clipboard.json"
         const val FIREBASE_STORAGE_BUCKET = "advance-sync.firebasestorage.app"
     }
@@ -132,6 +137,10 @@ class OverlayService : Service() {
 
         // Poll for screenshots from ScreenshotObserver — auto-upload to Firebase
         startScreenshotPoll()
+        // Poll Firebase for incoming clipboard items (works even when app is backgrounded)
+        startFirebasePoll()
+        // Poll for forced sync items (group sync — works regardless of global sync toggle)
+        startForcedSyncPoll()
     }
 
     private fun scheduleAutoHide() {
@@ -560,11 +569,212 @@ class OverlayService : Service() {
         screenshotPollHandler.postDelayed(pollRunnable, 2000)
     }
 
+    /**
+     * Poll Firebase Realtime DB for new clipboard items every 5 seconds.
+     * This runs in the background via the overlay service — syncs even when the app is backgrounded.
+     */
+    private fun startFirebasePoll() {
+        val pollRunnable = object : Runnable {
+            override fun run() {
+                Thread {
+                    try {
+                        val url = "$FIREBASE_BASE/clipboard.json?orderBy=%22Timestamp%22&limitToLast=5"
+                        val conn = URL(url).openConnection() as HttpURLConnection
+                        conn.requestMethod = "GET"
+                        conn.connectTimeout = 8000
+                        conn.readTimeout = 8000
+                        if (conn.responseCode == 200) {
+                            val body = conn.inputStream.bufferedReader().readText()
+                            if (body != "null" && body.isNotEmpty()) {
+                                val data = org.json.JSONObject(body)
+                                val keys = data.keys()
+                                var latestTs: Long = 0
+                                var latestRaw = ""
+                                var latestType = ""
+                                var latestSource = ""
+                                var latestTitle = ""
+                                val newItems = mutableListOf<org.json.JSONObject>()
+
+                                while (keys.hasNext()) {
+                                    val key = keys.next()
+                                    val item = data.getJSONObject(key)
+                                    val ts = item.optLong("Timestamp", 0)
+                                    val source = item.optString("SourceDeviceName", "")
+                                    // Skip our own items
+                                    if (source == deviceName || source == "Phone" || source == "Mobile") continue
+                                    if (ts > lastFirebaseTs) {
+                                        newItems.add(item)
+                                        if (ts > latestTs) {
+                                            latestTs = ts
+                                            latestRaw = item.optString("Raw", "")
+                                            latestType = item.optString("Type", "Text")
+                                            latestSource = source
+                                            latestTitle = item.optString("Title", "")
+                                        }
+                                    }
+                                }
+
+                                if (latestTs > lastFirebaseTs && latestRaw.isNotEmpty()) {
+                                    lastFirebaseTs = latestTs
+
+                                    // Auto-copy text to clipboard
+                                    if (latestType == "Text" || latestType == "Code" || latestType == "Url") {
+                                        Handler(Looper.getMainLooper()).post {
+                                            try {
+                                                isSettingClipboard = true
+                                                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                                cm.setPrimaryClip(ClipData.newPlainText("AdvanceClip", latestRaw))
+                                                lastCopiedText = latestRaw
+                                                Handler(Looper.getMainLooper()).postDelayed({ isSettingClipboard = false }, 500)
+                                                Toast.makeText(this@OverlayService, "\uD83D\uDCCB ${latestRaw.take(40)}...", Toast.LENGTH_SHORT).show()
+                                            } catch(e: Exception) {}
+                                        }
+                                    } else if (latestType == "Image" || latestType == "ImageLink") {
+                                        Handler(Looper.getMainLooper()).post {
+                                            Toast.makeText(this@OverlayService, "\uD83D\uDDBC\uFE0F Image from $latestSource", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } else if (latestType == "Pdf" || latestType == "Document" || latestType == "File") {
+                                        Handler(Looper.getMainLooper()).post {
+                                            Toast.makeText(this@OverlayService, "\uD83D\uDCC4 ${latestTitle.take(30)} from $latestSource", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+
+                                    // Add to overlay clip list
+                                    Handler(Looper.getMainLooper()).post {
+                                        try {
+                                            val arr = org.json.JSONArray(clipboardItems)
+                                            for (item in newItems) {
+                                                val obj = org.json.JSONObject()
+                                                obj.put("Raw", item.optString("Raw", ""))
+                                                obj.put("Title", item.optString("Title", item.optString("Raw", "").take(60)))
+                                                obj.put("Type", item.optString("Type", "Text"))
+                                                obj.put("SourceDeviceName", item.optString("SourceDeviceName", "Cloud"))
+                                                obj.put("DownloadUrl", item.optString("DownloadUrl", ""))
+                                                // Insert at position 0
+                                                val newArr = org.json.JSONArray()
+                                                newArr.put(obj)
+                                                for (i in 0 until Math.min(arr.length(), 19)) {
+                                                    newArr.put(arr.getJSONObject(i))
+                                                }
+                                                clipboardItems = newArr.toString()
+                                            }
+                                            pulseBall()
+                                        } catch(e: Exception) {}
+                                    }
+                                }
+                            }
+                        }
+                        conn.disconnect()
+                    } catch(e: Exception) {}
+                }.start()
+                firebasePollHandler.postDelayed(this, 5000)
+            }
+        }
+        // Initialize lastFirebaseTs to now so we don't process old items
+        lastFirebaseTs = System.currentTimeMillis()
+        firebasePollHandler.postDelayed(pollRunnable, 3000)
+    }
+
+    /**
+     * Poll for forced/group sync items — works regardless of global sync toggle.
+     * Checks forced_sync/{deviceId} for items sent directly to this device.
+     */
+    private fun startForcedSyncPoll() {
+        val pollRunnable = object : Runnable {
+            override fun run() {
+                Thread {
+                    try {
+                        val deviceId = "Mobile_${deviceName.replace(Regex("[^a-zA-Z0-9_]"), "_")}"
+                        val url = "$FIREBASE_BASE/forced_sync/$deviceId.json"
+                        val conn = URL(url).openConnection() as HttpURLConnection
+                        conn.requestMethod = "GET"
+                        conn.connectTimeout = 5000
+                        conn.readTimeout = 5000
+                        if (conn.responseCode == 200) {
+                            val body = conn.inputStream.bufferedReader().readText()
+                            if (body != "null" && body.isNotEmpty() && body != "{}" ) {
+                                val data = org.json.JSONObject(body)
+                                val keys = data.keys()
+                                val keysToDelete = mutableListOf<String>()
+
+                                while (keys.hasNext()) {
+                                    val key = keys.next()
+                                    val item = data.getJSONObject(key)
+                                    val raw = item.optString("Raw", "")
+                                    val type = item.optString("Type", "Text")
+                                    val source = item.optString("SourceDeviceName", "")
+                                    val title = item.optString("Title", "")
+                                    keysToDelete.add(key)
+
+                                    if (raw.isNotEmpty()) {
+                                        // Auto-copy text
+                                        if (type == "Text" || type == "Code" || type == "Url") {
+                                            Handler(Looper.getMainLooper()).post {
+                                                try {
+                                                    isSettingClipboard = true
+                                                    val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                                    cm.setPrimaryClip(ClipData.newPlainText("AdvanceClip", raw))
+                                                    lastCopiedText = raw
+                                                    Handler(Looper.getMainLooper()).postDelayed({ isSettingClipboard = false }, 500)
+                                                    Toast.makeText(this@OverlayService, "\uD83D\uDCE9 Force-synced from $source", Toast.LENGTH_SHORT).show()
+                                                } catch(e: Exception) {}
+                                            }
+                                        } else {
+                                            Handler(Looper.getMainLooper()).post {
+                                                Toast.makeText(this@OverlayService, "\uD83D\uDCE9 $title from $source", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+
+                                        // Add to overlay clip list
+                                        Handler(Looper.getMainLooper()).post {
+                                            try {
+                                                val arr = org.json.JSONArray(clipboardItems)
+                                                val obj = org.json.JSONObject()
+                                                obj.put("Raw", raw)
+                                                obj.put("Title", title.ifEmpty { raw.take(60) })
+                                                obj.put("Type", type)
+                                                obj.put("SourceDeviceName", source)
+                                                obj.put("DownloadUrl", item.optString("DownloadUrl", ""))
+                                                val newArr = org.json.JSONArray()
+                                                newArr.put(obj)
+                                                for (i in 0 until Math.min(arr.length(), 19)) {
+                                                    newArr.put(arr.getJSONObject(i))
+                                                }
+                                                clipboardItems = newArr.toString()
+                                                pulseBall()
+                                            } catch(e: Exception) {}
+                                        }
+                                    }
+                                }
+
+                                // Delete consumed entries
+                                for (key in keysToDelete) {
+                                    try {
+                                        val delConn = URL("$FIREBASE_BASE/forced_sync/$deviceId/$key.json").openConnection() as HttpURLConnection
+                                        delConn.requestMethod = "DELETE"
+                                        delConn.connectTimeout = 5000
+                                        delConn.responseCode
+                                        delConn.disconnect()
+                                    } catch(e: Exception) {}
+                                }
+                            }
+                        }
+                        conn.disconnect()
+                    } catch(e: Exception) {}
+                }.start()
+                forcedSyncPollHandler.postDelayed(this, 3000)
+            }
+        }
+        forcedSyncPollHandler.postDelayed(pollRunnable, 4000)
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         instance = null
         autoHideRunnable?.let { autoHideHandler.removeCallbacks(it) }
         screenshotPollHandler.removeCallbacksAndMessages(null)
+        firebasePollHandler.removeCallbacksAndMessages(null)
+        forcedSyncPollHandler.removeCallbacksAndMessages(null)
         try { val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager; clipboardListener?.let { cm.removePrimaryClipChangedListener(it) } } catch(e: Exception) {}
         clipboardListener = null
         try { if (panelView != null) windowManager?.removeView(panelView) } catch(e: Exception) {}

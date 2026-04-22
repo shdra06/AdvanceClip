@@ -9,6 +9,11 @@ import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.Arguments
+import android.content.ClipboardManager
+import android.content.ClipData
+import android.content.Context
+import android.os.Handler
+import android.os.Looper
 
 class AdvanceOverlayModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
 
@@ -103,5 +108,29 @@ class AdvanceOverlayModule(reactContext: ReactApplicationContext) : ReactContext
         } else {
             promise.resolve(null)
         }
+    }
+
+    @ReactMethod
+    fun setDeviceName(name: String) {
+        OverlayService.deviceName = name
+    }
+
+    @ReactMethod
+    fun setPcUrl(url: String) {
+        // Reserved for future LAN relay from overlay
+    }
+
+    @ReactMethod
+    fun setClipboardSuppressed(text: String) {
+        // Set clipboard without triggering the overlay listener
+        try {
+            OverlayService.instance?.let { service ->
+                service.isSettingClipboard = true
+                val cm = service.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                cm.setPrimaryClip(ClipData.newPlainText("AdvanceClip", text))
+                OverlayService.lastCopiedText = text
+                Handler(Looper.getMainLooper()).postDelayed({ service.isSettingClipboard = false }, 500)
+            }
+        } catch(e: Exception) {}
     }
 }
