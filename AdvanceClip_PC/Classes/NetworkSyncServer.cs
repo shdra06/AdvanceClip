@@ -211,39 +211,10 @@ namespace AdvanceClip.Classes
         }
 
         /// <summary>
-        /// Silently registers a URL ACL so HttpListener can bind without admin privileges.
-        /// Uses netsh — runs hidden, does NOT prompt UAC for localhost bindings.
+        /// URL ACL registration removed — netsh requires admin privileges which can hang or 
+        /// trigger UAC prompts. The 5-strategy bind fallback handles permissions gracefully.
         /// </summary>
-        private void EnsureUrlAcl(int port)
-        {
-            try
-            {
-                string user = System.Security.Principal.WindowsIdentity.GetCurrent().Name;
-                // Register both localhost and + (all interfaces)
-                string[] urls = { $"http://localhost:{port}/", $"http://+:{port}/" };
-                foreach (var url in urls)
-                {
-                    try
-                    {
-                        var psi = new System.Diagnostics.ProcessStartInfo
-                        {
-                            FileName = "netsh",
-                            Arguments = $"http add urlacl url={url} user=\"{user}\"",
-                            CreateNoWindow = true,
-                            WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden,
-                            UseShellExecute = false,
-                            RedirectStandardOutput = true,
-                            RedirectStandardError = true
-                        };
-                        var p = System.Diagnostics.Process.Start(psi);
-                        p?.WaitForExit(5000);
-                        // Don't log success — this runs silently. Only log failures.
-                    }
-                    catch { } // Ignore — netsh may fail if already registered or no admin
-                }
-            }
-            catch { }
-        }
+        private void EnsureUrlAcl(int port) { /* no-op */ }
 
         public void Stop()
         {
