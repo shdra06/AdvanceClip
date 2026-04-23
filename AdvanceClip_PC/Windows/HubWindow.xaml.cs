@@ -154,6 +154,8 @@ namespace AdvanceClip.Windows
                 if (tag == "Network")
                 {
                     RefreshDevices_Click(null, null);
+                    RefreshQRCode();
+                    RefreshPairedDevicesList();
                     // Auto-populate server diagnostics
                     if (ServerDiagnosticsLog != null)
                     {
@@ -1032,6 +1034,74 @@ namespace AdvanceClip.Windows
         {
             SettingsManager.Save();
             ApplyTheme();
+        }
+
+        // ═══ QR Code Pairing Handlers ═══
+
+        private void RefreshQRCode()
+        {
+            try
+            {
+                if (PairingQRImage == null) return;
+                string localUrl = _viewModel.LocalServer?.DisplayUrl ?? "";
+                string globalUrl = _viewModel.LocalServer?.GlobalUrl ?? "";
+                string pin = SettingsManager.Current.WebClientPinToken;
+
+                var qr = DevicePairingManager.GenerateQRCode(localUrl, globalUrl, pin, 250);
+                if (qr != null)
+                {
+                    PairingQRImage.Source = qr;
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogAction("QR", $"Refresh failed: {ex.Message}");
+            }
+        }
+
+        private void RefreshPairedDevicesList()
+        {
+            try
+            {
+                var devices = DevicePairingManager.GetPairedDevices();
+                PairedDevicesPanel.ItemsSource = devices;
+                NoPairedDevicesText.Visibility = devices.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogAction("QR", $"Refresh paired list failed: {ex.Message}");
+            }
+        }
+
+        private void RegenerateQR_Click(object sender, RoutedEventArgs e)
+        {
+            DevicePairingManager.RegeneratePairingKey();
+            RefreshQRCode();
+            Windows.ToastWindow.ShowToast("New QR code generated! ✅");
+        }
+
+        private void CopyPairingInfo_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                string localUrl = _viewModel.LocalServer?.DisplayUrl ?? "";
+                string globalUrl = _viewModel.LocalServer?.GlobalUrl ?? "";
+                string pin = SettingsManager.Current.WebClientPinToken;
+                string payload = DevicePairingManager.BuildQRPayload(localUrl, globalUrl, pin);
+                System.Windows.Clipboard.SetText(payload);
+                Windows.ToastWindow.ShowToast("Pairing info copied! 📋");
+            }
+            catch { }
+        }
+
+        private void RemovePairedDevice_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is System.Windows.Controls.Button btn && btn.Tag is string deviceId)
+            {
+                DevicePairingManager.RemoveDevice(deviceId);
+                RefreshPairedDevicesList();
+                Windows.ToastWindow.ShowToast("Device removed ✕");
+            }
         }
     }
 

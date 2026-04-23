@@ -13,7 +13,7 @@
 - **Priority**: Medium
 
 ---
-
+maths equation solver 
 ## Future Ideas
 
 ### 4. Clipboard History Search

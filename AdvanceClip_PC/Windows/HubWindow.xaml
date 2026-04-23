@@ -953,6 +953,93 @@
                                 </StackPanel>
                             </Border>
 
+                            <!-- QUICK PAIR QR CODE -->
+                            <Border Style="{StaticResource PremiumSettingStyle}" Visibility="{Binding Source={x:Static settings:SettingsManager.Current}, Path=EnableLocalNetworkSync, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8" HorizontalAlignment="Center">
+                                        <Border Width="28" Height="28" CornerRadius="7" Margin="0,0,10,0">
+                                            <Border.Background>
+                                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                    <GradientStop Color="#6366F1" Offset="0"/>
+                                                    <GradientStop Color="#A78BFA" Offset="1"/>
+                                                </LinearGradientBrush>
+                                            </Border.Background>
+                                            <ui:SymbolIcon Symbol="QrCode24" FontSize="14" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+                                        <TextBlock Text="Quick Pair" FontWeight="Bold" FontSize="18" Foreground="#A78BFA" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                    <TextBlock Text="Scan this QR code with ClipFlow Mobile to instantly pair your phone." Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorTertiary}" FontSize="12" Margin="0,0,0,16" TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" />
+
+                                    <!-- QR Code Display -->
+                                    <Border Background="White" CornerRadius="16" Padding="12" HorizontalAlignment="Center" Margin="0,0,0,16">
+                                        <Border.Effect>
+                                            <DropShadowEffect Color="#6366F1" BlurRadius="30" Opacity="0.2" Direction="0" ShadowDepth="0" />
+                                        </Border.Effect>
+                                        <Image x:Name="PairingQRImage" Width="200" Height="200" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                                    </Border>
+
+                                    <!-- Action Buttons -->
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,16">
+                                        <ui:Button Content="🔄 Regenerate QR" Appearance="Secondary" Padding="14,8" CornerRadius="10" Click="RegenerateQR_Click" Margin="0,0,8,0" FontSize="11"/>
+                                        <ui:Button Content="📋 Copy Pairing Info" Appearance="Secondary" Padding="14,8" CornerRadius="10" Click="CopyPairingInfo_Click" FontSize="11"/>
+                                    </StackPanel>
+
+                                    <!-- Paired Devices List -->
+                                    <Border BorderThickness="0,1,0,0" BorderBrush="#11FFFFFF" Margin="0,4,0,14" />
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                        <Border Width="8" Height="8" CornerRadius="4" Background="#10B981" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="Paired Devices" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorSecondary}" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                    <ItemsControl x:Name="PairedDevicesPanel">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Background="#08FFFFFF" CornerRadius="8" Padding="10,8" Margin="0,0,0,4">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <ui:SymbolIcon Grid.Column="0" FontSize="16" Foreground="#A78BFA" Margin="0,0,10,0" VerticalAlignment="Center">
+                                                            <ui:SymbolIcon.Style>
+                                                                <Style TargetType="ui:SymbolIcon">
+                                                                    <Setter Property="Symbol" Value="Phone24"/>
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding DeviceType}" Value="PC">
+                                                                            <Setter Property="Symbol" Value="Desktop24"/>
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding DeviceType}" Value="Browser">
+                                                                            <Setter Property="Symbol" Value="Globe24"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </ui:SymbolIcon.Style>
+                                                        </ui:SymbolIcon>
+                                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding DeviceName}" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorPrimary}"/>
+                                                            <TextBlock FontSize="9" Foreground="#A78BFA88">
+                                                                <TextBlock.Text>
+                                                                    <MultiBinding StringFormat="{}Paired {0:MMM dd} • Last seen {1:MMM dd HH:mm}">
+                                                                        <Binding Path="PairedAt"/>
+                                                                        <Binding Path="LastSeen"/>
+                                                                    </MultiBinding>
+                                                                </TextBlock.Text>
+                                                            </TextBlock>
+                                                        </StackPanel>
+                                                        <TextBlock Grid.Column="2" Text="{Binding LastKnownIP}" FontSize="9" Foreground="#30FFFFFF" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                        <Button Grid.Column="3" Content="✕" Tag="{Binding DeviceId}" Click="RemovePairedDevice_Click" 
+                                                                Padding="4,2" FontSize="10" Background="Transparent" BorderThickness="0" 
+                                                                Foreground="#EF4444" Cursor="Hand" ToolTip="Remove device" VerticalAlignment="Center"/>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <TextBlock x:Name="NoPairedDevicesText" Text="No devices paired yet — scan the QR code above" FontSize="10" Foreground="#20FFFFFF" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                                </StackPanel>
+                            </Border>
+
                             <!-- RESTART SERVER + DIAGNOSTICS -->
                             <Border Style="{StaticResource PremiumSettingStyle}" Visibility="{Binding Source={x:Static settings:SettingsManager.Current}, Path=EnableLocalNetworkSync, Converter={StaticResource BooleanToVisibilityConverter}}">
                                 <StackPanel>

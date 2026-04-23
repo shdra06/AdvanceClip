@@ -74,6 +74,10 @@ namespace AdvanceClip.Classes
 
         private int _colorScheme = 0; // 0=Dark, 1=Light
         public int ColorScheme { get => _colorScheme; set => SetProperty(ref _colorScheme, value); }
+
+        // QR Pairing
+        private string _pairingKey = "";
+        public string PairingKey { get => _pairingKey; set => SetProperty(ref _pairingKey, value); }
     }
 
     public static class SettingsManager

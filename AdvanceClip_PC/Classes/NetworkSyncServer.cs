@@ -429,14 +429,55 @@ namespace AdvanceClip.Classes
                     // File downloads must be PUBLIC (no auth) — Cloudflare tunnel passes these
                     await ServeFileDownload(req, res);
                 }
+                else if (path == "/api/pair" && req.HttpMethod == "POST")
+                {
+                    // QR Code pairing — validates pairing key and registers device
+                    await HandlePairRequest(req, res);
+                }
+                else if (path == "/api/discover" && req.HttpMethod == "GET")
+                {
+                    // Paired device discovery — returns current connection URLs
+                    string pairingKey = req.Headers["X-Pairing-Key"] ?? req.QueryString["key"];
+                    if (DevicePairingManager.IsDevicePaired(pairingKey))
+                    {
+                        string deviceId = req.Headers["X-Device-Id"] ?? "";
+                        string remoteIp = req.RemoteEndPoint?.Address?.ToString() ?? "";
+                        if (!string.IsNullOrEmpty(deviceId))
+                            DevicePairingManager.TouchDevice(deviceId, remoteIp);
+
+                        var info = new
+                        {
+                            status = "ok",
+                            localUrl = DisplayUrl,
+                            globalUrl = GlobalUrl ?? "",
+                            pin = SettingsManager.Current.WebClientPinToken,
+                            deviceName = SettingsManager.Current.DeviceName ?? Environment.MachineName
+                        };
+                        byte[] json = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(info));
+                        res.StatusCode = 200;
+                        res.ContentType = "application/json";
+                        res.OutputStream.Write(json, 0, json.Length);
+                        res.Close();
+                    }
+                    else
+                    {
+                        byte[] err = Encoding.UTF8.GetBytes("{\"error\":\"Invalid pairing key\"}");
+                        res.StatusCode = 403;
+                        res.ContentType = "application/json";
+                        res.OutputStream.Write(err, 0, err.Length);
+                        res.Close();
+                    }
+                }
                 else
                 {
                     // HARD SECURE AUTHENTICATION BARRIER
                     string providedPin = req.Headers["Authorization"]?.Replace("Bearer ", "") ?? req.QueryString["pin"];
+                    string pairingKey = req.Headers["X-Pairing-Key"] ?? req.QueryString["key"];
                     
                     bool isNativeMobileCompanion = req.Headers["User-Agent"]?.Contains("AdvanceClipMobile_Native") == true || req.Headers["X-Advance-Client"] == "MobileCompanion" || req.Headers["X-Advance-Client"] == "DesktopSync";
+                    bool isPairedDevice = DevicePairingManager.IsDevicePaired(pairingKey);
                     
-                    if (!isNativeMobileCompanion && (string.IsNullOrEmpty(providedPin) || providedPin != SettingsManager.Current.WebClientPinToken))
+                    if (!isNativeMobileCompanion && !isPairedDevice && (string.IsNullOrEmpty(providedPin) || providedPin != SettingsManager.Current.WebClientPinToken))
                     {
                         byte[] err = Encoding.UTF8.GetBytes("{\"error\":\"401 Unauthorized - Invalid PIN\"}");
                         res.StatusCode = 401;
@@ -1426,6 +1467,73 @@ namespace AdvanceClip.Classes
             catch (HttpListenerException ex) { Logger.LogAction("DOWNLOAD", $"Client disconnected: {ex.Message}"); }
             catch (IOException ex) { Logger.LogAction("DOWNLOAD", $"Pipe broken: {ex.Message}"); }
             catch (Exception ex) { Logger.LogAction("DOWNLOAD ERROR", $"{ex.GetType().Name}: {ex.Message}"); }
+            finally
+            {
+                try { res.Close(); } catch { }
+            }
+        }
+
+        // ═══ QR Code Pairing Handler ═══
+        private async Task HandlePairRequest(HttpListenerRequest req, HttpListenerResponse res)
+        {
+            try
+            {
+                string body;
+                using (var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8))
+                {
+                    body = await reader.ReadToEndAsync();
+                }
+
+                var pairData = JsonSerializer.Deserialize<JsonElement>(body);
+                string pairingKey = pairData.TryGetProperty("key", out var k) ? k.GetString() : "";
+                string deviceId = pairData.TryGetProperty("deviceId", out var di) ? di.GetString() : "";
+                string deviceName = pairData.TryGetProperty("deviceName", out var dn) ? dn.GetString() : "Unknown";
+                string deviceType = pairData.TryGetProperty("deviceType", out var dt) ? dt.GetString() : "Mobile";
+                string remoteIp = req.RemoteEndPoint?.Address?.ToString() ?? "unknown";
+
+                if (string.IsNullOrEmpty(deviceId))
+                    deviceId = $"{deviceName}_{remoteIp}";
+
+                bool success = DevicePairingManager.TryPairDevice(pairingKey, deviceId, deviceName, deviceType, remoteIp);
+
+                if (success)
+                {
+                    var response = new
+                    {
+                        status = "paired",
+                        deviceName = SettingsManager.Current.DeviceName ?? Environment.MachineName,
+                        deviceId = SettingsManager.Current.DeviceId ?? Environment.MachineName,
+                        localUrl = DisplayUrl,
+                        globalUrl = GlobalUrl ?? "",
+                        pin = SettingsManager.Current.WebClientPinToken
+                    };
+                    byte[] json = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(response));
+                    res.StatusCode = 200;
+                    res.ContentType = "application/json";
+                    res.OutputStream.Write(json, 0, json.Length);
+
+                    // Show toast on PC
+                    System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                    {
+                        AdvanceClip.Windows.ToastWindow.ShowToast($"📱 {deviceName} paired successfully!");
+                    });
+                }
+                else
+                {
+                    byte[] err = Encoding.UTF8.GetBytes("{\"error\":\"Invalid pairing key\"}");
+                    res.StatusCode = 403;
+                    res.ContentType = "application/json";
+                    res.OutputStream.Write(err, 0, err.Length);
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogAction("PAIR ERROR", ex.Message);
+                byte[] err = Encoding.UTF8.GetBytes($"{{\"error\":\"{ex.Message}\"}}");
+                res.StatusCode = 500;
+                res.ContentType = "application/json";
+                try { res.OutputStream.Write(err, 0, err.Length); } catch { }
+            }
             finally
             {
                 try { res.Close(); } catch { }
