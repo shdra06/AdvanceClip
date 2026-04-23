@@ -76,6 +76,25 @@ namespace AdvanceClip
             _viewModel = vm;
             InitializeComponent();
 
+            // Register global hotkeys EAGERLY in constructor — do NOT wait for Loaded event.
+            // EnsureHandle() forces HWND creation so hotkeys work immediately on app start.
+            var interop = new WindowInteropHelper(this);
+            interop.EnsureHandle();
+            var hwnd = interop.Handle;
+            if (hwnd != IntPtr.Zero)
+            {
+                HwndSource.FromHwnd(hwnd)?.AddHook(HwndHook);
+                AddClipboardFormatListener(hwnd);
+                RegisterHotKey(hwnd, HOTKEY_ID, MOD_ALT, 0x43); // Alt+C
+
+                if (Classes.SettingsManager.Current.EnableQuickPasteHotkeys)
+                {
+                    for (int i = 1; i <= 9; i++)
+                        RegisterHotKey(hwnd, HOTKEY_QUICKPASTE_BASE + i, MOD_ALT, (uint)(0x30 + i));
+                    RegisterHotKey(hwnd, HOTKEY_QUICKPASTE_BASE + 10, MOD_ALT, 0x30); // Alt+0
+                }
+            }
+
             this.SizeChanged += (s, e) =>
             {
                 if (_isEdgeLocked && e.HeightChanged && this.ActualHeight > 0)
@@ -154,24 +173,10 @@ namespace AdvanceClip
 
         private void MicaWindow_Loaded(object sender, RoutedEventArgs e)
         {
-            var interopHelper = new WindowInteropHelper(this);
-            interopHelper.EnsureHandle(); // Force HWND even if Window is hidden instantly
-            var handle = interopHelper.Handle;
-            
+            // DWM border styling — must happen after window is shown
+            var handle = new WindowInteropHelper(this).Handle;
             if (handle != IntPtr.Zero)
             {
-                HwndSource.FromHwnd(handle)?.AddHook(HwndHook);
-                AddClipboardFormatListener(handle);
-                RegisterHotKey(handle, HOTKEY_ID, MOD_ALT, 0x43); // Alt+C
-
-                // Register Alt+1 through Alt+9 for Quick Paste
-                if (Classes.SettingsManager.Current.EnableQuickPasteHotkeys)
-                {
-                    for (int i = 1; i <= 9; i++)
-                        RegisterHotKey(handle, HOTKEY_QUICKPASTE_BASE + i, MOD_ALT, (uint)(0x30 + i)); // Alt+1 through Alt+9
-                    RegisterHotKey(handle, HOTKEY_QUICKPASTE_BASE + 10, MOD_ALT, 0x30); // Alt+0 = 10th item
-                }
-
                 System.Threading.Tasks.Task.Delay(50).ContinueWith(_ =>
                 {
                     Dispatcher.Invoke(() =>
