@@ -120,6 +120,12 @@ namespace AdvanceClip
         [DllImport("kernel32.dll")]
         internal static extern uint GetCurrentProcessId();
 
+        [DllImport("user32.dll")]
+        private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+
+        [DllImport("kernel32.dll")]
+        private static extern uint GetCurrentThreadId();
+
         public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
         [DllImport("user32.dll")]
@@ -222,21 +228,43 @@ namespace AdvanceClip
                     int index = hotkeyId - HOTKEY_QUICKPASTE_BASE - 1; // 0-based
                     if (index < _viewModel.DroppedItems.Count)
                     {
-                        // Capture the CURRENT foreground window right now — this is where paste should go
-                        _previousForegroundWindow = GetTargetForegroundWindow();
-                        
+                        // Capture the target window BEFORE anything else
+                        IntPtr targetWindow = GetForegroundWindow();
                         var item = _viewModel.DroppedItems[index];
                         
-                        // Paste FIRST, toast AFTER — toast steals focus and breaks SetForegroundWindow
-                        _ = CopyItemAndPaste(item, hideWindow: false).ContinueWith(_ =>
+                        // Set clipboard directly — no async, no delays
+                        SetWritingClipboard(true);
+                        try
                         {
-                            Dispatcher.InvokeAsync(() =>
+                            if (!string.IsNullOrEmpty(item.RawContent))
+                                System.Windows.Clipboard.SetText(item.RawContent);
+                            else if (!string.IsNullOrEmpty(item.FilePath))
                             {
-                                string preview = (item.RawContent ?? item.FileName ?? "item");
-                                if (preview.Length > 35) preview = preview.Substring(0, 35) + "...";
-                                Windows.ToastWindow.ShowToast($"Pasted #{index + 1}: {preview}");
-                            });
-                        });
+                                var dropList = new System.Collections.Specialized.StringCollection();
+                                dropList.Add(item.FilePath);
+                                System.Windows.Clipboard.SetFileDropList(dropList);
+                            }
+                        }
+                        catch { }
+
+                        // Force-restore focus using AttachThreadInput trick
+                        // Windows blocks SetForegroundWindow from background processes,
+                        // but attaching to the target's input thread bypasses this restriction
+                        uint targetThreadId = GetWindowThreadProcessId(targetWindow, out _);
+                        uint ourThreadId = GetCurrentThreadId();
+                        if (targetThreadId != ourThreadId)
+                            AttachThreadInput(ourThreadId, targetThreadId, true);
+                        
+                        SetForegroundWindow(targetWindow);
+                        
+                        if (targetThreadId != ourThreadId)
+                            AttachThreadInput(ourThreadId, targetThreadId, false);
+
+                        // Fire Ctrl+V immediately
+                        keybd_event(VK_CONTROL, 0, 0, 0);
+                        keybd_event(VK_V, 0, 0, 0);
+                        keybd_event(VK_V, 0, KEYEVENTF_KEYUP, 0);
+                        keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0);
                     }
                     handled = true;
                 }
