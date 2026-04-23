@@ -168,7 +168,8 @@ namespace AdvanceClip
                 if (Classes.SettingsManager.Current.EnableQuickPasteHotkeys)
                 {
                     for (int i = 1; i <= 9; i++)
-                        RegisterHotKey(handle, HOTKEY_QUICKPASTE_BASE + i, MOD_ALT, (uint)(0x30 + i)); // 0x31=1, 0x39=9
+                        RegisterHotKey(handle, HOTKEY_QUICKPASTE_BASE + i, MOD_ALT, (uint)(0x30 + i)); // Alt+1 through Alt+9
+                    RegisterHotKey(handle, HOTKEY_QUICKPASTE_BASE + 10, MOD_ALT, 0x30); // Alt+0 = 10th item
                 }
 
                 System.Threading.Tasks.Task.Delay(50).ContinueWith(_ =>
@@ -206,6 +207,7 @@ namespace AdvanceClip
                     UnregisterHotKey(handle, HOTKEY_ID);
                     for (int i = 1; i <= 9; i++)
                         UnregisterHotKey(handle, HOTKEY_QUICKPASTE_BASE + i);
+                    UnregisterHotKey(handle, HOTKEY_QUICKPASTE_BASE + 10); // Alt+0
                     HwndSource.FromHwnd(handle)?.RemoveHook(HwndHook);
                 }
             }
@@ -224,9 +226,10 @@ namespace AdvanceClip
                     ShowNearPosition(workArea.Left + workArea.Width - 380, workArea.Top + workArea.Height, 1, true, true);
                     handled = true;
                 }
-                else if (hotkeyId >= HOTKEY_QUICKPASTE_BASE + 1 && hotkeyId <= HOTKEY_QUICKPASTE_BASE + 9)
+                else if (hotkeyId >= HOTKEY_QUICKPASTE_BASE + 1 && hotkeyId <= HOTKEY_QUICKPASTE_BASE + 10)
                 {
-                    int index = hotkeyId - HOTKEY_QUICKPASTE_BASE - 1; // 0-based
+                    // Alt+1=item0, Alt+2=item1, ..., Alt+9=item8, Alt+0=item9
+                    int index = hotkeyId == HOTKEY_QUICKPASTE_BASE + 10 ? 9 : (hotkeyId - HOTKEY_QUICKPASTE_BASE - 1);
                     if (index < _viewModel.DroppedItems.Count)
                     {
                         // Capture the target window — filter out our own window
