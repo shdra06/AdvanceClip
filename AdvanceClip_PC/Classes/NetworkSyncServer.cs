@@ -1409,12 +1409,15 @@ namespace AdvanceClip.Classes
                     ? $"inline; filename=\"{safeFileName}\""
                     : $"attachment; filename=\"{safeFileName}\"");
                 res.AddHeader("Cache-Control", "no-store");
+                res.AddHeader("Access-Control-Allow-Origin", "*");
+                res.AddHeader("Accept-Ranges", "bytes");
 
                 res.StatusCode = 200;
                 res.ContentLength64 = fileSize;
 
                 // High-performance streaming — 1MB buffer reduces syscall overhead for large files
-                using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1048576, FileOptions.SequentialScan);
+                // FileShare.ReadWrite allows serving files even when other apps have them open
+                using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 1048576, FileOptions.SequentialScan);
                 await fs.CopyToAsync(res.OutputStream, 1048576); // 1MB chunks for maximum throughput
                 await res.OutputStream.FlushAsync();
 

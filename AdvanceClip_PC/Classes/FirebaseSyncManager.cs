@@ -71,6 +71,13 @@ namespace AdvanceClip.Classes
 
                 if (isFile)
                 {
+                    // Skip incomplete/locked download files
+                    string ext = Path.GetExtension(item.FilePath).ToLowerInvariant();
+                    if (ext is ".crdownload" or ".part" or ".tmp" or ".download" or ".partial")
+                    {
+                        Logger.LogAction("FIREBASE SYNC", $"Skipped incomplete download: {item.FileName}");
+                        return;
+                    }
                     // If tunnel not ready yet, wait up to 30s before proceeding
                     if (string.IsNullOrEmpty(CachedGlobalUrl) || !CachedGlobalUrl.Contains("trycloudflare.com"))
                     {

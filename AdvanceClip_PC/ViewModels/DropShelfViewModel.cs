@@ -524,7 +524,27 @@ namespace AdvanceClip.ViewModels
 
                         if (!isGlobalDownload)
                         {
-                            long fSize = 0; try { fSize = new FileInfo(file).Length; } catch { }
+                            // Skip incomplete/temporary downloads — these are locked by browsers
+                            string fileExt = Path.GetExtension(file).ToLowerInvariant();
+                            if (fileExt is ".crdownload" or ".part" or ".tmp" or ".download" or ".partial")
+                            {
+                                AdvanceClip.Classes.Logger.LogAction("FILE SYNC", $"Skipped incomplete download: {Path.GetFileName(file)}");
+                                goto SkipFileSync;
+                            }
+
+                            // Verify file is accessible before attempting sync
+                            long fSize = 0;
+                            try
+                            {
+                                using var probe = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                                fSize = probe.Length;
+                            }
+                            catch (IOException)
+                            {
+                                AdvanceClip.Classes.Logger.LogAction("FILE SYNC", $"Skipped locked file: {Path.GetFileName(file)}");
+                                goto SkipFileSync;
+                            }
+                            catch { }
                             var localServer = LocalServer;
                             
 
@@ -575,7 +595,9 @@ namespace AdvanceClip.ViewModels
                             {
                                 // File too large for Firebase Storage and no working Cloudflare tunnel
                                 AdvanceClip.Classes.Logger.LogAction("FILE SYNC", $"File '{Path.GetFileName(file)}' ({FormatFileSize(fSize)}) — no verified Cloudflare, too large for Firebase Storage.");
+                                AdvanceClip.Windows.ToastWindow.ShowToast($"⚠️ {Path.GetFileName(file)} ({FormatFileSize(fSize)}) — waiting for Cloudflare tunnel. Copy again when tunnel is active.");
                             }
+                            SkipFileSync:;
                         }
                     }
                     
