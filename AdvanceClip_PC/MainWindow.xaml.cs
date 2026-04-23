@@ -986,6 +986,10 @@ namespace AdvanceClip
         {
             try
             {
+                // Use the safety-timer version so the flag stays true until the clipboard
+                // change notification has been processed (prevents duplicate-to-top reorder)
+                SetWritingClipboard(true);
+
                 if (!string.IsNullOrEmpty(clipboardObj.FilePath))
                 {
                     var dataObj = new DataObject();
@@ -1018,21 +1022,17 @@ namespace AdvanceClip
                     dropEffect.Write(moveEffect, 0, moveEffect.Length);
                     dataObj.SetData("Preferred DropEffect", dropEffect);
 
-                    _isWritingClipboard = true;
-                    for(int retry=0; retry<5; retry++) {
+                    for(int retry=0; retry<3; retry++) {
                         try { System.Windows.Clipboard.SetDataObject(dataObj, true); break; }
-                        catch { await System.Threading.Tasks.Task.Delay(20); }
+                        catch { await System.Threading.Tasks.Task.Delay(15); }
                     }
-                    _isWritingClipboard = false;
                 }
                 else if (!string.IsNullOrEmpty(clipboardObj.RawContent))
                 {
-                    _isWritingClipboard = true;
-                    for(int retry=0; retry<5; retry++) {
+                    for(int retry=0; retry<3; retry++) {
                         try { System.Windows.Clipboard.SetText(clipboardObj.RawContent); break; }
-                        catch { await System.Threading.Tasks.Task.Delay(20); }
+                        catch { await System.Threading.Tasks.Task.Delay(15); }
                     }
-                    _isWritingClipboard = false;
                 }
             }
             catch { }
@@ -1043,7 +1043,8 @@ namespace AdvanceClip
                 _isDragHovering = false;
             }
 
-            await System.Threading.Tasks.Task.Delay(200);
+            // Minimal delay — just enough for the target window to receive focus
+            await System.Threading.Tasks.Task.Delay(hideWindow ? 80 : 30);
 
             if (_previousForegroundWindow != IntPtr.Zero)
             {
@@ -1057,12 +1058,12 @@ namespace AdvanceClip
                 }
                 
                 SetForegroundWindow(_previousForegroundWindow);
-                await System.Threading.Tasks.Task.Delay(80);
+                await System.Threading.Tasks.Task.Delay(50);
                 
                 if (GetForegroundWindow() != _previousForegroundWindow)
                 {
                     SetForegroundWindow(_previousForegroundWindow);
-                    await System.Threading.Tasks.Task.Delay(80);
+                    await System.Threading.Tasks.Task.Delay(30);
                 }
             }
 
