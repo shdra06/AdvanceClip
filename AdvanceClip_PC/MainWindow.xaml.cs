@@ -590,15 +590,21 @@ namespace AdvanceClip
             int currentToken = ++_spawnToken;
 
             // Give keyboard focus to the ListView so arrow keys + Enter work immediately
+            // Delay slightly more than the 50ms sort to ensure list is stable
             if (stealFocus && _viewModel.DroppedItems.Count > 0)
             {
-                Dispatcher.InvokeAsync(() =>
+                Dispatcher.InvokeAsync(async () =>
                 {
-                    ShelfListView.Focus();
-                    Keyboard.Focus(ShelfListView);
-                    ShelfListView.SelectedIndex = 0;
-                    var container = ShelfListView.ItemContainerGenerator.ContainerFromIndex(0) as ListViewItem;
-                    container?.Focus();
+                    await System.Threading.Tasks.Task.Delay(100); // wait for SortForContext to finish
+                    if (_viewModel.DroppedItems.Count > 0)
+                    {
+                        ShelfListView.Focus();
+                        Keyboard.Focus(ShelfListView);
+                        ShelfListView.SelectedIndex = 0;
+                        ShelfListView.ScrollIntoView(ShelfListView.Items[0]);
+                        var container = ShelfListView.ItemContainerGenerator.ContainerFromIndex(0) as ListViewItem;
+                        container?.Focus();
+                    }
                 }, System.Windows.Threading.DispatcherPriority.Input);
             }
         }
