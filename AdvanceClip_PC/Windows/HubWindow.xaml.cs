@@ -24,6 +24,7 @@ namespace AdvanceClip.Windows
             DataContext = _viewModel;
             InitializeComponent();
             _viewModel.DroppedItems.CollectionChanged += DroppedItems_CollectionChanged;
+            ApplyTheme();
 
             // Show real version from assembly
             string v = UpdateManager.CurrentVersion;
@@ -446,6 +447,9 @@ namespace AdvanceClip.Windows
 
         private void SearchBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
         {
+            if (SearchPlaceholderPanel != null)
+                SearchPlaceholderPanel.Visibility = string.IsNullOrEmpty(SearchBox.Text) ? Visibility.Visible : Visibility.Collapsed;
+            
             if (HubListView != null)
             {
                 ApplyFilters();
@@ -933,6 +937,102 @@ namespace AdvanceClip.Windows
         public string LocalIp { get; set; } = "";
         public string GlobalUrl { get; set; } = "";
         public string ConnectionInfo => !string.IsNullOrEmpty(GlobalUrl) ? "🌐 Cloudflare Active" : !string.IsNullOrEmpty(LocalIp) ? "📡 LAN" : "";
+    }
+
+    public partial class HubWindow
+    {
+        // ═══ Theme & Appearance Handlers ═══
+
+        private void ApplyTheme()
+        {
+            try
+            {
+                // Wallpaper preview
+                string wallpaperPath = SettingsManager.Current.ClipboardWallpaperPath;
+                if (!string.IsNullOrEmpty(wallpaperPath) && System.IO.File.Exists(wallpaperPath))
+                {
+                    var bmp = new System.Windows.Media.Imaging.BitmapImage();
+                    bmp.BeginInit();
+                    bmp.UriSource = new Uri(wallpaperPath, UriKind.Absolute);
+                    bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                    bmp.DecodePixelWidth = 400;
+                    bmp.EndInit();
+                    bmp.Freeze();
+                    WallpaperPreviewImg.Source = bmp;
+                    NoWallpaperText.Visibility = Visibility.Collapsed;
+                }
+                else
+                {
+                    WallpaperPreviewImg.Source = null;
+                    NoWallpaperText.Visibility = Visibility.Visible;
+                }
+
+                // Blur
+                if (SettingsManager.Current.EnableBlurBehind)
+                    this.SystemBackdropType = MicaWPF.Core.Enums.BackdropType.Mica;
+                else
+                    this.SystemBackdropType = MicaWPF.Core.Enums.BackdropType.None;
+
+                // Color scheme — swap theme dictionaries at runtime
+                string targetTheme = SettingsManager.Current.ColorScheme == 1 ? "Light" : "Dark";
+                try
+                {
+                    var mergedDicts = Application.Current.Resources.MergedDictionaries;
+                    // Find and replace the WPF-UI ThemeDictionary
+                    for (int i = 0; i < mergedDicts.Count; i++)
+                    {
+                        var dict = mergedDicts[i];
+                        if (dict is Wpf.Ui.Markup.ThemesDictionary td)
+                        {
+                            td.Theme = targetTheme == "Light" ? Wpf.Ui.Appearance.ApplicationTheme.Light : Wpf.Ui.Appearance.ApplicationTheme.Dark;
+                        }
+                        else if (dict is MicaWPF.Styles.ThemeDictionary md)
+                        {
+                            md.Theme = targetTheme == "Light" ? MicaWPF.Core.Enums.WindowsTheme.Light : MicaWPF.Core.Enums.WindowsTheme.Dark;
+                        }
+                    }
+                }
+                catch { /* Theme switching may not be supported on all versions */ }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogAction("THEME", $"Apply failed: {ex.Message}");
+            }
+        }
+
+        private void ChooseWallpaper_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new Microsoft.Win32.OpenFileDialog
+            {
+                Title = "Choose Clipboard Wallpaper",
+                Filter = "Image Files|*.png;*.jpg;*.jpeg;*.bmp;*.webp|All Files|*.*"
+            };
+            if (dialog.ShowDialog() == true)
+            {
+                SettingsManager.Current.ClipboardWallpaperPath = dialog.FileName;
+                SettingsManager.Save();
+                ApplyTheme();
+            }
+        }
+
+        private void RemoveWallpaper_Click(object sender, RoutedEventArgs e)
+        {
+            SettingsManager.Current.ClipboardWallpaperPath = "";
+            SettingsManager.Save();
+            ApplyTheme();
+        }
+
+        private void BlurToggle_Changed(object sender, RoutedEventArgs e)
+        {
+            SettingsManager.Save();
+            ApplyTheme();
+        }
+
+        private void ColorScheme_Changed(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        {
+            SettingsManager.Save();
+            ApplyTheme();
+        }
     }
 
     public class GroupDisplayItem

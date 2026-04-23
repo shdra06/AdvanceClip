@@ -64,6 +64,16 @@ namespace AdvanceClip.Classes
 
         private bool _enableQuickPasteHotkeys = true;
         public bool EnableQuickPasteHotkeys { get => _enableQuickPasteHotkeys; set => SetProperty(ref _enableQuickPasteHotkeys, value); }
+
+        // Theme & Appearance
+        private string _clipboardWallpaperPath = "";
+        public string ClipboardWallpaperPath { get => _clipboardWallpaperPath; set => SetProperty(ref _clipboardWallpaperPath, value); }
+
+        private bool _enableBlurBehind = true;
+        public bool EnableBlurBehind { get => _enableBlurBehind; set => SetProperty(ref _enableBlurBehind, value); }
+
+        private int _colorScheme = 0; // 0=Dark, 1=Light
+        public int ColorScheme { get => _colorScheme; set => SetProperty(ref _colorScheme, value); }
     }
 
     public static class SettingsManager
