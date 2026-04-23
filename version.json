@@ -1,8 +1,8 @@
 {
-  "pc_version": "1.9.1",
-  "pc_download": "https://github.com/shdra06/AdvanceClip/releases/download/v1.9.1-pc/AdvanceClip.exe",
+  "pc_version": "1.9.2",
+  "pc_download": "https://github.com/shdra06/AdvanceClip/releases/download/v1.9.2-pc/AdvanceClip.exe",
   "android_version": "1.8.2",
   "android_download": "https://github.com/shdra06/AdvanceClip/releases/download/v1.8.2/AdvanceClip_Mobile.apk",
-  "pc_changelog": "v1.9.1: Instant Alt+1-9,0 quick paste (AttachThreadInput force-focus, Alt key release fix), selected item border, auto-select first item on Alt+C, download client redirect fix, log auto-cleanup.",
+  "pc_changelog": "v1.9.2: New ClipFlow branding & icon, Alt+0 for 10th item, hotkeys work on startup, auto-select first item on Alt+C, selected item border, download redirect fix.",
   "android_changelog": "v1.8.2: Fixed double/triple clipboard entries, background Firebase sync via floating ball, forced/group sync support, PDF detection improvements."
 }
