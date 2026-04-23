@@ -396,7 +396,7 @@ namespace AdvanceClip.Classes
                     filePath = Path.Combine(extractPath, $"{Path.GetFileNameWithoutExtension(basePath)}_{counter++}{Path.GetExtension(basePath)}");
                 }
 
-                System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
                 {
                     progressClip = new ClipboardItem
                     {
@@ -448,7 +448,7 @@ namespace AdvanceClip.Classes
                             if (attempt > 0)
                             {
                                 Logger.LogAction("FIREBASE SSE", $"Download retry {attempt + 1}/{maxRetries} after {retryDelays[attempt - 1]}ms...");
-                                System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                                System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
                                 {
                                     if (progressClip != null)
                                         progressClip.RawContent = $"🔄 Retry {attempt + 1}/{maxRetries} — {cloudItem.Title}";
@@ -482,7 +482,7 @@ namespace AdvanceClip.Classes
                     {
                         string nextUrl = urlsToTry[urlsToTry.IndexOf(tryUrl) + 1];
                         Logger.LogAction("FIREBASE SSE", $"Primary URL failed — trying fallback: {nextUrl}");
-                        System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                        System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
                         {
                             if (progressClip != null)
                                 progressClip.RawContent = $"🔄 Trying alternate download source — {cloudItem.Title}";
@@ -503,9 +503,9 @@ namespace AdvanceClip.Classes
                     : "unknown";
 
                 using (var contentStream = await response.Content.ReadAsStreamAsync())
-                using (var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None, 81920))
+                using (var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None, 262144))
                 {
-                    byte[] buffer = new byte[81920];
+                    byte[] buffer = new byte[262144]; // 256KB buffer for better throughput
                     long totalRead = 0;
                     int bytesRead;
                     DateTime lastProgressUpdate = DateTime.MinValue;
@@ -515,7 +515,7 @@ namespace AdvanceClip.Classes
                         await fileStream.WriteAsync(buffer, 0, bytesRead);
                         totalRead += bytesRead;
 
-                        if ((DateTime.Now - lastProgressUpdate).TotalMilliseconds > 500 && progressClip != null)
+                        if ((DateTime.Now - lastProgressUpdate).TotalMilliseconds > 400 && progressClip != null)
                         {
                             lastProgressUpdate = DateTime.Now;
                             string readStr = totalRead > 1_073_741_824 ? $"{totalRead / 1_073_741_824.0:F1}GB" : $"{totalRead / 1_048_576.0:F1}MB";
@@ -524,19 +524,14 @@ namespace AdvanceClip.Classes
                                 ? $"⬇️ {pct}% — {readStr}/{totalSizeStr} — {cloudItem.Title}"
                                 : $"⬇️ {readStr} — {cloudItem.Title}";
 
-                            System.Windows.Application.Current.Dispatcher.Invoke(() =>
-                            {
-                                if (progressClip != null)
-                                {
-                                    progressClip.RawContent = statusText;
-                                    progressClip.FileName = $"{cloudItem.Title} ({pct}%)";
-                                }
-                            });
+                            // Non-blocking — don't stall the download waiting for UI
+                            progressClip.RawContent = statusText;
+                            progressClip.FileName = $"{cloudItem.Title} ({pct}%)";
                         }
                     }
                 }
 
-                System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
                 {
                     if (progressClip != null)
                     {
@@ -548,20 +543,16 @@ namespace AdvanceClip.Classes
                         ? $"{fileInfo.Length / 1_073_741_824.0:F1} GB"
                         : $"{fileInfo.Length / 1_048_576.0:F1} MB";
 
-                    System.Windows.Clipboard.SetFileDropList(new System.Collections.Specialized.StringCollection { filePath });
+                    try { System.Windows.Clipboard.SetFileDropList(new System.Collections.Specialized.StringCollection { filePath }); } catch { }
                     AdvanceClip.Windows.ToastWindow.ShowToast($"✅ {cloudItem.Title} ({sizeStr}) from {cloudItem.SourceDeviceName}");
 
-                    // Use path constructor — auto-classifies by extension (Image/PDF/Document/Archive/Video/Audio/Code)
-                    // and loads FormattedSize, Icon, SmartActions etc.
                     var clip = new ClipboardItem(filePath);
                     clip.SourceDeviceName = cloudItem.SourceDeviceName ?? "Remote";
                     clip.SourceDeviceType = "Mobile";
-                    // Detect if file was downloaded via Cloudflare tunnel
                     bool isCfDownload = (!string.IsNullOrEmpty(cloudItem.Raw) && cloudItem.Raw.Contains(".trycloudflare.com")) ||
                                         (!string.IsNullOrEmpty(cloudItem.SenderUrl) && cloudItem.SenderUrl.Contains(".trycloudflare.com"));
                     clip.TransferMethod = isCfDownload ? "Cloudflare" : "Cloud";
 
-                    // For images, the constructor already sets ItemType=Image, but we pre-load the preview at a good resolution
                     if (clip.ItemType == ClipboardItemType.Image && clip.Icon == null)
                     {
                         try
@@ -589,7 +580,7 @@ namespace AdvanceClip.Classes
             catch (Exception ex)
             {
                 Logger.LogAction("FIREBASE SSE", $"File Download Error: {ex.Message} | URL: {cloudItem.Raw}");
-                System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
                 {
                     if (progressClip != null)
                     {

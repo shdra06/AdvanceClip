@@ -28,7 +28,21 @@ namespace AdvanceClip.ViewModels
     {
         public DateTime DateCopied { get; set; } = DateTime.Now;
         public string FilePath { get; set; } = string.Empty;
-        public string FileName { get; set; } = string.Empty;
+
+        private string _fileName = string.Empty;
+        public string FileName
+        {
+            get => _fileName;
+            set
+            {
+                if (_fileName != value)
+                {
+                    _fileName = value;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(FileName)));
+                }
+            }
+        }
+
         public string Extension { get; set; } = string.Empty;
         
         public string AssociatedContextTitle { get; set; } = string.Empty;
@@ -117,7 +131,20 @@ namespace AdvanceClip.ViewModels
         
         // Universal Support enhancements
         public ClipboardItemType ItemType { get; set; } = ClipboardItemType.File;
-        public string RawContent { get; set; } = string.Empty;
+
+        private string _rawContent = string.Empty;
+        public string RawContent
+        {
+            get => _rawContent;
+            set
+            {
+                if (_rawContent != value)
+                {
+                    _rawContent = value;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(RawContent)));
+                }
+            }
+        }
         public bool IsImagePreview => ItemType == ClipboardItemType.Image || ItemType == ClipboardItemType.QRCode;
         public bool IsDocPreview => ItemType == ClipboardItemType.Document && (Extension == ".DOCX" || Extension == ".DOC" || Extension == ".TXT");
         public bool IsPdfPreview => ItemType == ClipboardItemType.Pdf;

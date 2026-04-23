@@ -345,16 +345,19 @@ namespace AdvanceClip.ViewModels
                             }
                             else if (d.ItemType == ClipboardItemType.Image && !string.IsNullOrEmpty(d.FilePath) && File.Exists(d.FilePath))
                             {
-                                Application.Current.Dispatcher.Invoke(() => {
+                                string imagePath = d.FilePath;
+                                var capturedD = d;
+                                System.Threading.Tasks.Task.Run(() => {
                                     try 
                                     {
                                         var bmp = new BitmapImage();
                                         bmp.BeginInit();
                                         bmp.CacheOption = BitmapCacheOption.OnLoad;
-                                        bmp.UriSource = new Uri(d.FilePath);
+                                        bmp.DecodePixelWidth = 250;
+                                        bmp.UriSource = new Uri(imagePath);
                                         bmp.EndInit();
                                         bmp.Freeze();
-                                        d.Icon = bmp;
+                                        Application.Current.Dispatcher.InvokeAsync(() => capturedD.Icon = bmp);
                                     } catch { }
                                 });
                             }
