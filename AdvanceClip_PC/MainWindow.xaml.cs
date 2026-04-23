@@ -226,10 +226,17 @@ namespace AdvanceClip
                         _previousForegroundWindow = GetTargetForegroundWindow();
                         
                         var item = _viewModel.DroppedItems[index];
-                        string preview = (item.RawContent ?? item.FileName ?? "item");
-                        if (preview.Length > 35) preview = preview.Substring(0, 35) + "...";
-                        Windows.ToastWindow.ShowToast($"Quick Paste #{index + 1}: {preview}");
-                        _ = CopyItemAndPaste(item, hideWindow: false);
+                        
+                        // Paste FIRST, toast AFTER — toast steals focus and breaks SetForegroundWindow
+                        _ = CopyItemAndPaste(item, hideWindow: false).ContinueWith(_ =>
+                        {
+                            Dispatcher.InvokeAsync(() =>
+                            {
+                                string preview = (item.RawContent ?? item.FileName ?? "item");
+                                if (preview.Length > 35) preview = preview.Substring(0, 35) + "...";
+                                Windows.ToastWindow.ShowToast($"Pasted #{index + 1}: {preview}");
+                            });
+                        });
                     }
                     handled = true;
                 }
