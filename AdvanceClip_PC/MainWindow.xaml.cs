@@ -540,6 +540,19 @@ namespace AdvanceClip
             }
 
             int currentToken = ++_spawnToken;
+
+            // Give keyboard focus to the ListView so arrow keys + Enter work immediately
+            if (stealFocus && _viewModel.DroppedItems.Count > 0)
+            {
+                Dispatcher.InvokeAsync(() =>
+                {
+                    ShelfListView.Focus();
+                    Keyboard.Focus(ShelfListView);
+                    ShelfListView.SelectedIndex = 0;
+                    var container = ShelfListView.ItemContainerGenerator.ContainerFromIndex(0) as ListViewItem;
+                    container?.Focus();
+                }, System.Windows.Threading.DispatcherPriority.Input);
+            }
         }
 
         private static bool _isInternalDragSource = false;
@@ -799,14 +812,33 @@ namespace AdvanceClip
                 _ = CopyItemAndPaste(selected, hideWindow: true);
                 e.Handled = true;
             }
+            else if (e.Key == Key.Escape)
+            {
+                this.Hide();
+                e.Handled = true;
+            }
             else if (e.Key == Key.Down || e.Key == Key.Up)
             {
-                // Auto-select first item if nothing selected
                 if (ShelfListView.SelectedIndex < 0 && _viewModel.DroppedItems.Count > 0)
                 {
+                    // Nothing selected yet — auto-select first item
                     ShelfListView.SelectedIndex = 0;
                     var container = ShelfListView.ItemContainerGenerator.ContainerFromIndex(0) as ListViewItem;
                     container?.Focus();
+                    e.Handled = true;
+                }
+                else
+                {
+                    // Let WPF move the selection naturally, then focus the new container
+                    int currentIdx = ShelfListView.SelectedIndex;
+                    int newIdx = e.Key == Key.Down
+                        ? Math.Min(currentIdx + 1, _viewModel.DroppedItems.Count - 1)
+                        : Math.Max(currentIdx - 1, 0);
+
+                    ShelfListView.SelectedIndex = newIdx;
+                    var container = ShelfListView.ItemContainerGenerator.ContainerFromIndex(newIdx) as ListViewItem;
+                    container?.Focus();
+                    ShelfListView.ScrollIntoView(ShelfListView.SelectedItem);
                     e.Handled = true;
                 }
             }

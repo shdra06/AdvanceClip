@@ -88,7 +88,7 @@
                   HorizontalContentAlignment="Stretch"
                   VirtualizingStackPanel.IsVirtualizing="True" VirtualizingStackPanel.VirtualizationMode="Recycling"
                   VirtualizingPanel.CacheLengthUnit="Item" VirtualizingPanel.CacheLength="10,10"
-                  KeyDown="ShelfListView_KeyDown">
+                  PreviewKeyDown="ShelfListView_KeyDown">
             <ListView.ItemContainerStyle>
                 <Style TargetType="ListViewItem">
                     <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
