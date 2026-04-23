@@ -64,6 +64,7 @@ namespace AdvanceClip.Classes
 
             try
             {
+
                 // For files: always wait for Cloudflare tunnel first — it's the only reliable cross-network URL
                 bool isFile = !string.IsNullOrEmpty(item.FilePath) && File.Exists(item.FilePath);
                 string downloadUrl = "";
@@ -109,6 +110,7 @@ namespace AdvanceClip.Classes
                 if (isFile && string.IsNullOrEmpty(downloadUrl))
                 {
                     // No working Cloudflare — try Firebase Storage upload
+
                     Logger.LogAction("FIREBASE SYNC", $"Cloudflare unavailable — uploading '{item.FileName}' to Firebase Storage...");
                     string storageUrl = await UploadFileToStorageAsync(item.FilePath);
                     if (!string.IsNullOrEmpty(storageUrl))
@@ -126,6 +128,7 @@ namespace AdvanceClip.Classes
                         System.Windows.Application.Current.Dispatcher.InvokeAsync(() => {
                             AdvanceClip.Windows.ToastWindow.ShowToast($"⚠️ {item.FileName} — Cloudflare offline, can't share remotely");
                         });
+
                         return; // Skip this file — don't push an unreachable URL to Firebase
                     }
                 }
@@ -153,6 +156,7 @@ namespace AdvanceClip.Classes
                 
                 if (response.IsSuccessStatusCode)
                 {
+
                     Logger.LogAction("FIREBASE SYNC", $"Pushed item to global cloud as '{deviceName}'");
                     
                     // Auto-delete: 90s for text, 30min for files (need time to download large files)
@@ -181,6 +185,7 @@ namespace AdvanceClip.Classes
             }
             catch (Exception ex)
             {
+
                 Logger.LogAction("FIREBASE ERROR", ex.Message);
             }
         }

@@ -222,6 +222,9 @@ namespace AdvanceClip
                     int index = hotkeyId - HOTKEY_QUICKPASTE_BASE - 1; // 0-based
                     if (index < _viewModel.DroppedItems.Count)
                     {
+                        // Capture the CURRENT foreground window right now — this is where paste should go
+                        _previousForegroundWindow = GetTargetForegroundWindow();
+                        
                         var item = _viewModel.DroppedItems[index];
                         string preview = (item.RawContent ?? item.FileName ?? "item");
                         if (preview.Length > 35) preview = preview.Substring(0, 35) + "...";

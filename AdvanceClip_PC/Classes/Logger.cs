@@ -16,7 +16,10 @@ namespace AdvanceClip.Classes
         private static readonly ConcurrentQueue<string> _buffer = new();
         private static readonly ConcurrentQueue<string> _netBuffer = new();
         private static Timer _flushTimer;
+        private static Timer _cleanupTimer;
         private static readonly object _flushLock = new();
+        private const int MAX_LOG_LINES = 500; // Keep last 500 lines per file
+        private const int CLEANUP_INTERVAL_MS = 5 * 60_000; // 5 minutes
 
         // Network log categories — any LogAction with these prefixes goes to network_diagnostics.txt
         private static readonly string[] NET_CATEGORIES = {
@@ -36,6 +39,29 @@ namespace AdvanceClip.Classes
             
             // Flush buffer to disk every 2 seconds on a background thread
             _flushTimer = new Timer(_ => FlushBuffer(), null, 2000, 2000);
+            
+            // Auto-clean logs every 5 minutes — keep only last 500 lines
+            _cleanupTimer = new Timer(_ => TruncateLogs(), null, CLEANUP_INTERVAL_MS, CLEANUP_INTERVAL_MS);
+        }
+
+        private static void TruncateLogs()
+        {
+            TruncateLogFile(LogFile);
+            TruncateLogFile(NetLogFile);
+        }
+
+        private static void TruncateLogFile(string path)
+        {
+            try
+            {
+                if (!File.Exists(path)) return;
+                var lines = File.ReadAllLines(path);
+                if (lines.Length > MAX_LOG_LINES)
+                {
+                    File.WriteAllLines(path, lines.Skip(lines.Length - MAX_LOG_LINES));
+                }
+            }
+            catch { }
         }
 
         public static void LogAction(string actionType, string details)
