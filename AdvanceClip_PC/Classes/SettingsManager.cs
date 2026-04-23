@@ -61,6 +61,9 @@ namespace AdvanceClip.Classes
         
         private string _deviceId = $"PC_{System.Environment.MachineName}_{System.Environment.UserName}".Replace(" ", "_");
         public string DeviceId { get => _deviceId; set => SetProperty(ref _deviceId, value); }
+
+        private bool _enableQuickPasteHotkeys = true;
+        public bool EnableQuickPasteHotkeys { get => _enableQuickPasteHotkeys; set => SetProperty(ref _enableQuickPasteHotkeys, value); }
     }
 
     public static class SettingsManager

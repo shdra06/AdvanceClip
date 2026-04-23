@@ -52,8 +52,14 @@ namespace AdvanceClip
         public static extern bool UnregisterHotKey(IntPtr hWnd, int id);
 
         private const int HOTKEY_ID = 9000;
+        private const int HOTKEY_QUICKPASTE_BASE = 9001; // 9001-9009 for Alt+1 through Alt+9
         private const uint MOD_ALT = 0x0001;
         private const int WM_HOTKEY = 0x0312;
+
+        // Hover preview popup state
+        private System.Windows.Threading.DispatcherTimer? _hoverPreviewTimer;
+        private ClipboardItem? _hoveredItem;
+        private Windows.PreviewPopup? _activePreviewPopup;
 
         protected override void OnSourceInitialized(EventArgs e)
         {
@@ -151,6 +157,13 @@ namespace AdvanceClip
                 AddClipboardFormatListener(handle);
                 RegisterHotKey(handle, HOTKEY_ID, MOD_ALT, 0x43); // Alt+C
 
+                // Register Alt+1 through Alt+9 for Quick Paste
+                if (Classes.SettingsManager.Current.EnableQuickPasteHotkeys)
+                {
+                    for (int i = 1; i <= 9; i++)
+                        RegisterHotKey(handle, HOTKEY_QUICKPASTE_BASE + i, MOD_ALT, (uint)(0x30 + i)); // 0x31=1, 0x39=9
+                }
+
                 System.Threading.Tasks.Task.Delay(50).ContinueWith(_ =>
                 {
                     Dispatcher.Invoke(() =>
@@ -184,6 +197,8 @@ namespace AdvanceClip
                 {
                     RemoveClipboardFormatListener(handle);
                     UnregisterHotKey(handle, HOTKEY_ID);
+                    for (int i = 1; i <= 9; i++)
+                        UnregisterHotKey(handle, HOTKEY_QUICKPASTE_BASE + i);
                     HwndSource.FromHwnd(handle)?.RemoveHook(HwndHook);
                 }
             }
@@ -193,11 +208,28 @@ namespace AdvanceClip
 
         private IntPtr HwndHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
         {
-            if (msg == WM_HOTKEY && wParam.ToInt32() == HOTKEY_ID)
+            if (msg == WM_HOTKEY)
             {
-                var workArea = SystemParameters.WorkArea;
-                ShowNearPosition(workArea.Left + workArea.Width - 380, workArea.Top + workArea.Height, 1, true, true);
-                handled = true;
+                int hotkeyId = wParam.ToInt32();
+                if (hotkeyId == HOTKEY_ID)
+                {
+                    var workArea = SystemParameters.WorkArea;
+                    ShowNearPosition(workArea.Left + workArea.Width - 380, workArea.Top + workArea.Height, 1, true, true);
+                    handled = true;
+                }
+                else if (hotkeyId >= HOTKEY_QUICKPASTE_BASE + 1 && hotkeyId <= HOTKEY_QUICKPASTE_BASE + 9)
+                {
+                    int index = hotkeyId - HOTKEY_QUICKPASTE_BASE - 1; // 0-based
+                    if (index < _viewModel.DroppedItems.Count)
+                    {
+                        var item = _viewModel.DroppedItems[index];
+                        string preview = (item.RawContent ?? item.FileName ?? "item");
+                        if (preview.Length > 35) preview = preview.Substring(0, 35) + "...";
+                        Windows.ToastWindow.ShowToast($"Quick Paste #{index + 1}: {preview}");
+                        _ = CopyItemAndPaste(item, hideWindow: false);
+                    }
+                    handled = true;
+                }
             }
             else if (msg == WM_CLIPBOARDUPDATE)
             {
@@ -762,6 +794,22 @@ namespace AdvanceClip
                 }
                 e.Handled = true;
             }
+            else if (e.Key == Key.Enter && ShelfListView.SelectedItem is ClipboardItem selected)
+            {
+                _ = CopyItemAndPaste(selected, hideWindow: true);
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Down || e.Key == Key.Up)
+            {
+                // Auto-select first item if nothing selected
+                if (ShelfListView.SelectedIndex < 0 && _viewModel.DroppedItems.Count > 0)
+                {
+                    ShelfListView.SelectedIndex = 0;
+                    var container = ShelfListView.ItemContainerGenerator.ContainerFromIndex(0) as ListViewItem;
+                    container?.Focus();
+                    e.Handled = true;
+                }
+            }
         }
 
         private void NotifyIconQuit_Click(object sender, RoutedEventArgs e)
@@ -888,99 +936,105 @@ namespace AdvanceClip
                 var clipboardObj = itemContainer.DataContext as ClipboardItem;
                 if (clipboardObj != null)
                 {
-                    try
-                    {
-                        if (!string.IsNullOrEmpty(clipboardObj.FilePath))
-                        {
-                            var dataObj = new DataObject();
-                            
-                            var dropList = new System.Collections.Specialized.StringCollection();
-                            dropList.Add(clipboardObj.FilePath);
-                            dataObj.SetFileDropList(dropList);
-                            dataObj.SetData(DataFormats.StringFormat, clipboardObj.FilePath);
-                            dataObj.SetData(DataFormats.Text, clipboardObj.FilePath);
-                            dataObj.SetData("FileNameW", new string[] { clipboardObj.FilePath });
-                            dataObj.SetData("FileName", new string[] { clipboardObj.FilePath });
-                            try { dataObj.SetData("text/uri-list", "file:///" + clipboardObj.FilePath.Replace("\\", "/")); } catch { }
-                            
-                            if (clipboardObj.ItemType == ClipboardItemType.Image)
-                            {
-                                try
-                                {
-                                    var bmp = new BitmapImage();
-                                    bmp.BeginInit();
-                                    bmp.UriSource = new Uri(clipboardObj.FilePath);
-                                    bmp.CacheOption = BitmapCacheOption.OnLoad;
-                                    bmp.EndInit();
-                                    dataObj.SetImage(bmp);
-                                }
-                                catch { }
-                            }
-                            
-                            // Explicit Win32 Shell 'Copy' Effect override (Required for Windows Explorer Paste)
-                            byte[] moveEffect = new byte[] { 5, 0, 0, 0 }; // DragDropEffects.Copy
-                            System.IO.MemoryStream dropEffect = new System.IO.MemoryStream();
-                            dropEffect.Write(moveEffect, 0, moveEffect.Length);
-                            dataObj.SetData("Preferred DropEffect", dropEffect);
-
-                            _isWritingClipboard = true;
-                            for(int retry=0; retry<5; retry++) {
-                                try { System.Windows.Clipboard.SetDataObject(dataObj, true); break; }
-                                catch { await System.Threading.Tasks.Task.Delay(20); }
-                            }
-                            _isWritingClipboard = false;
-                        }
-                        else if (!string.IsNullOrEmpty(clipboardObj.RawContent))
-                        {
-                            _isWritingClipboard = true;
-                            for(int retry=0; retry<5; retry++) {
-                                try { System.Windows.Clipboard.SetText(clipboardObj.RawContent); break; }
-                                catch { await System.Threading.Tasks.Task.Delay(20); }
-                            }
-                            _isWritingClipboard = false;
-                        }
-                    }
-                    catch { } 
-
-                    // Mimic Native Windows Clipboard by hiding the popup immediately upon selection!
-                    this.Hide();
-                    _isDragHovering = false;
-
-                    // Wait for the Hide to fully process and window to release input focus
-                    await System.Threading.Tasks.Task.Delay(200);
-
-                    // Throw absolute unmanaged focus to the prior text box exactly before firing Native Windows Keyboard injection natively!
-                    if (_previousForegroundWindow != IntPtr.Zero)
-                    {
-                        var sbTitle = new System.Text.StringBuilder(256);
-                        GetWindowText(_previousForegroundWindow, sbTitle, 256);
-                        string contextTitle = sbTitle.ToString();
-                        
-                        if (!string.IsNullOrWhiteSpace(contextTitle))
-                        {
-                            clipboardObj.AssociatedContextTitle = contextTitle;
-                        }
-                        
-                        SetForegroundWindow(_previousForegroundWindow);
-                        await System.Threading.Tasks.Task.Delay(80);
-                        
-                        // Retry focus if the OS didn't switch fast enough
-                        if (GetForegroundWindow() != _previousForegroundWindow)
-                        {
-                            SetForegroundWindow(_previousForegroundWindow);
-                            await System.Threading.Tasks.Task.Delay(80);
-                        }
-                    }
-
-                    // Send Ctrl+V
-                    keybd_event(VK_CONTROL, 0, 0, 0);
-                    keybd_event(VK_V, 0, 0, 0);
-                    keybd_event(VK_V, 0, KEYEVENTF_KEYUP, 0);
-                    keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0);
-
+                    _ = CopyItemAndPaste(clipboardObj, hideWindow: true);
                     e.Handled = true;
                 }
             }
+        }
+
+        /// <summary>
+        /// Copies a ClipboardItem to the system clipboard, optionally hides the shelf,
+        /// restores focus to the previous window, and simulates Ctrl+V.
+        /// Reused by: mouse click, Enter key, and Alt+N global hotkeys.
+        /// </summary>
+        private async System.Threading.Tasks.Task CopyItemAndPaste(ClipboardItem clipboardObj, bool hideWindow)
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(clipboardObj.FilePath))
+                {
+                    var dataObj = new DataObject();
+                    
+                    var dropList = new System.Collections.Specialized.StringCollection();
+                    dropList.Add(clipboardObj.FilePath);
+                    dataObj.SetFileDropList(dropList);
+                    dataObj.SetData(DataFormats.StringFormat, clipboardObj.FilePath);
+                    dataObj.SetData(DataFormats.Text, clipboardObj.FilePath);
+                    dataObj.SetData("FileNameW", new string[] { clipboardObj.FilePath });
+                    dataObj.SetData("FileName", new string[] { clipboardObj.FilePath });
+                    try { dataObj.SetData("text/uri-list", "file:///" + clipboardObj.FilePath.Replace("\\", "/")); } catch { }
+                    
+                    if (clipboardObj.ItemType == ClipboardItemType.Image)
+                    {
+                        try
+                        {
+                            var bmp = new BitmapImage();
+                            bmp.BeginInit();
+                            bmp.UriSource = new Uri(clipboardObj.FilePath);
+                            bmp.CacheOption = BitmapCacheOption.OnLoad;
+                            bmp.EndInit();
+                            dataObj.SetImage(bmp);
+                        }
+                        catch { }
+                    }
+                    
+                    byte[] moveEffect = new byte[] { 5, 0, 0, 0 };
+                    System.IO.MemoryStream dropEffect = new System.IO.MemoryStream();
+                    dropEffect.Write(moveEffect, 0, moveEffect.Length);
+                    dataObj.SetData("Preferred DropEffect", dropEffect);
+
+                    _isWritingClipboard = true;
+                    for(int retry=0; retry<5; retry++) {
+                        try { System.Windows.Clipboard.SetDataObject(dataObj, true); break; }
+                        catch { await System.Threading.Tasks.Task.Delay(20); }
+                    }
+                    _isWritingClipboard = false;
+                }
+                else if (!string.IsNullOrEmpty(clipboardObj.RawContent))
+                {
+                    _isWritingClipboard = true;
+                    for(int retry=0; retry<5; retry++) {
+                        try { System.Windows.Clipboard.SetText(clipboardObj.RawContent); break; }
+                        catch { await System.Threading.Tasks.Task.Delay(20); }
+                    }
+                    _isWritingClipboard = false;
+                }
+            }
+            catch { }
+
+            if (hideWindow)
+            {
+                this.Hide();
+                _isDragHovering = false;
+            }
+
+            await System.Threading.Tasks.Task.Delay(200);
+
+            if (_previousForegroundWindow != IntPtr.Zero)
+            {
+                var sbTitle = new System.Text.StringBuilder(256);
+                GetWindowText(_previousForegroundWindow, sbTitle, 256);
+                string contextTitle = sbTitle.ToString();
+                
+                if (!string.IsNullOrWhiteSpace(contextTitle))
+                {
+                    clipboardObj.AssociatedContextTitle = contextTitle;
+                }
+                
+                SetForegroundWindow(_previousForegroundWindow);
+                await System.Threading.Tasks.Task.Delay(80);
+                
+                if (GetForegroundWindow() != _previousForegroundWindow)
+                {
+                    SetForegroundWindow(_previousForegroundWindow);
+                    await System.Threading.Tasks.Task.Delay(80);
+                }
+            }
+
+            keybd_event(VK_CONTROL, 0, 0, 0);
+            keybd_event(VK_V, 0, 0, 0);
+            keybd_event(VK_V, 0, KEYEVENTF_KEYUP, 0);
+            keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0);
         }
 
         private void ShelfListView_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -1333,5 +1387,61 @@ $word.Quit()
                 AdvanceClip.Windows.ToastWindow.ShowToast($"❌ PDF to Word error: {ex.Message}");
             }
         }
+
+        // ═══ Feature 4: Hover Preview Popup ═══
+
+        internal void CardBorder_MouseEnter(object sender, System.Windows.Input.MouseEventArgs e)
+        {
+            _activePreviewPopup?.ClosePreview();
+            _activePreviewPopup = null;
+
+            var border = sender as System.Windows.FrameworkElement;
+            var item = border?.DataContext as ClipboardItem;
+            if (item == null) return;
+
+            // Only show preview for long text items (>100 chars)
+            bool isLongText = !string.IsNullOrEmpty(item.RawContent) && item.RawContent.Length > 100 
+                              && (item.ItemType == ClipboardItemType.Text || item.ItemType == ClipboardItemType.Code);
+            if (!isLongText) return;
+
+            _hoveredItem = item;
+            if (_hoverPreviewTimer == null)
+            {
+                _hoverPreviewTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1000) };
+                _hoverPreviewTimer.Tick += HoverPreviewTimer_Tick;
+            }
+            _hoverPreviewTimer.Stop();
+            _hoverPreviewTimer.Start();
+        }
+
+        internal void CardBorder_MouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
+        {
+            _hoverPreviewTimer?.Stop();
+            _hoveredItem = null;
+            _activePreviewPopup?.ClosePreview();
+            _activePreviewPopup = null;
+        }
+
+        private void HoverPreviewTimer_Tick(object? sender, EventArgs e)
+        {
+            _hoverPreviewTimer?.Stop();
+            if (_hoveredItem == null || string.IsNullOrEmpty(_hoveredItem.RawContent)) return;
+
+            GetCursorPos(out POINT pt);
+            var source = PresentationSource.FromVisual(this);
+            double dpiScaleX = source?.CompositionTarget?.TransformFromDevice.M11 ?? 1.0;
+            double dpiScaleY = source?.CompositionTarget?.TransformFromDevice.M22 ?? 1.0;
+            double x = pt.X * dpiScaleX + 20;
+            double y = pt.Y * dpiScaleY - 40;
+
+            _activePreviewPopup = new Windows.PreviewPopup(_hoveredItem.RawContent, x, y);
+            _activePreviewPopup.Show();
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct POINT { public int X; public int Y; }
+
+        [DllImport("user32.dll")]
+        private static extern bool GetCursorPos(out POINT lpPoint);
     }
 }
