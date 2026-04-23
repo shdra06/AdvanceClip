@@ -88,6 +88,7 @@
                   HorizontalContentAlignment="Stretch"
                   VirtualizingStackPanel.IsVirtualizing="True" VirtualizingStackPanel.VirtualizationMode="Recycling"
                   VirtualizingPanel.CacheLengthUnit="Item" VirtualizingPanel.CacheLength="10,10"
+                  AlternationCount="10"
                   PreviewKeyDown="ShelfListView_KeyDown">
             <ListView.ItemContainerStyle>
                 <Style TargetType="ListViewItem">
@@ -240,6 +241,13 @@
                             </Grid.ColumnDefinitions>
 
 
+                            <!-- Hotkey position badge (Alt+1 through Alt+0) -->
+                            <Border Grid.Column="0" Grid.ColumnSpan="2" Grid.Row="0" Grid.RowSpan="2" 
+                                    HorizontalAlignment="Left" VerticalAlignment="Top" Margin="4,4,0,0" Panel.ZIndex="6"
+                                    CornerRadius="4" Padding="4,1" Background="#CC3B82F6" MinWidth="18">
+                                <TextBlock FontSize="9" Foreground="White" FontWeight="Bold" HorizontalAlignment="Center"
+                                           Text="{Binding Path=(ItemsControl.AlternationIndex), RelativeSource={RelativeSource AncestorType=ListViewItem}, Converter={StaticResource HotkeyIndexConverter}}"/>
+                            </Border>
 
                             <!-- Inline Action Buttons (Hover triggers overlaying Slide) -->
                             <Border Grid.Column="0" Grid.ColumnSpan="2" Grid.Row="0" Grid.RowSpan="2" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,4,4,0" Panel.ZIndex="5" CornerRadius="8" Padding="2">

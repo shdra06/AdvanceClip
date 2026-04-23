@@ -38,6 +38,7 @@
 
             <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
             <local:StringToVisibilityConverter x:Key="StringToVisibilityConverter"/>
+            <local:HotkeyIndexConverter x:Key="HotkeyIndexConverter"/>
 
             <!-- Accent Solid Colors for borders/glows -->
             <SolidColorBrush x:Key="AccentBlue" Color="#3B82F6" />

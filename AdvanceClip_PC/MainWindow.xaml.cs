@@ -30,6 +30,7 @@ namespace AdvanceClip
         private const int KEYEVENTF_KEYUP = 0x0002;
         private const int VK_CONTROL = 0x11;
         private const int VK_V = 0x56;
+        private const int VK_MENU = 0x12; // Alt key
 
         [DllImport("dwmapi.dll")]
         public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
@@ -228,8 +229,8 @@ namespace AdvanceClip
                     int index = hotkeyId - HOTKEY_QUICKPASTE_BASE - 1; // 0-based
                     if (index < _viewModel.DroppedItems.Count)
                     {
-                        // Capture the target window BEFORE anything else
-                        IntPtr targetWindow = GetForegroundWindow();
+                        // Capture the target window — filter out our own window
+                        IntPtr targetWindow = GetTargetForegroundWindow();
                         var item = _viewModel.DroppedItems[index];
                         
                         // Set clipboard directly — no async, no delays
@@ -248,8 +249,6 @@ namespace AdvanceClip
                         catch { }
 
                         // Force-restore focus using AttachThreadInput trick
-                        // Windows blocks SetForegroundWindow from background processes,
-                        // but attaching to the target's input thread bypasses this restriction
                         uint targetThreadId = GetWindowThreadProcessId(targetWindow, out _);
                         uint ourThreadId = GetCurrentThreadId();
                         if (targetThreadId != ourThreadId)
@@ -260,11 +259,19 @@ namespace AdvanceClip
                         if (targetThreadId != ourThreadId)
                             AttachThreadInput(ourThreadId, targetThreadId, false);
 
-                        // Fire Ctrl+V immediately
-                        keybd_event(VK_CONTROL, 0, 0, 0);
-                        keybd_event(VK_V, 0, 0, 0);
-                        keybd_event(VK_V, 0, KEYEVENTF_KEYUP, 0);
-                        keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0);
+                        // Release Alt key FIRST — user is still holding it from Alt+N,
+                        // otherwise the target app receives Alt+Ctrl+V instead of Ctrl+V
+                        keybd_event((byte)VK_MENU, 0, KEYEVENTF_KEYUP, 0);
+
+                        // Fire Ctrl+V after a short async pause for key state to propagate
+                        _ = Task.Run(async () =>
+                        {
+                            await Task.Delay(50);
+                            keybd_event((byte)VK_CONTROL, 0, 0, 0);
+                            keybd_event((byte)VK_V, 0, 0, 0);
+                            keybd_event((byte)VK_V, 0, KEYEVENTF_KEYUP, 0);
+                            keybd_event((byte)VK_CONTROL, 0, KEYEVENTF_KEYUP, 0);
+                        });
                     }
                     handled = true;
                 }
