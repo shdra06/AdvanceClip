@@ -1,4 +1,4 @@
-# AdvanceClip — Feature Ideas
+# ClipFlow  — Feature Ideas
 
 ## Planned Features
 
@@ -69,7 +69,9 @@
 - Select multiple shelf items → drag them all out at once
 - Creates a zip on-the-fly for multiple files
 - Text items merge into a .txt file
+12. Smart SearchType to search clipboard history by meaning, not just text match
+13. auto foramte the code if detected
 
----
+---  
 
 *Last updated: 2026-04-23*

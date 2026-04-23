@@ -27,7 +27,7 @@
 
         <tray:NotifyIcon
             FocusOnLeftClick="False"
-            Icon="pack://application:,,,/Resources/AdvanceClipLogo.ico"
+            Icon="pack://application:,,,/Resources/ClipFlowLogo.ico"
             MenuOnRightClick="True"
             LeftClick="nIcon_LeftClick"
             TooltipText="AdvanceClip">

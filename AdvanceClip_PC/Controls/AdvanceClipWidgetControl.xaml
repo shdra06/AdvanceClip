@@ -10,7 +10,7 @@
     <Grid Name="WidgetGrid" Background="Transparent" MouseLeftButtonDown="WidgetGrid_MouseLeftButtonDown" Cursor="Hand">
         <Border Name="WidgetBorder" Background="#11FFFFFF" CornerRadius="8" Padding="6,4">
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Center">
-                <Image Source="/Resources/AdvanceClipLogo.png" Width="20" Height="20" RenderOptions.BitmapScalingMode="HighQuality"/>
+                <Image Source="/Resources/ClipFlowIcon.png" Width="20" Height="20" RenderOptions.BitmapScalingMode="HighQuality"/>
                 <TextBlock Foreground="White" FontSize="14" FontWeight="SemiBold" Text="Clip" Margin="6,0,0,0" VerticalAlignment="Center"/>
             </StackPanel>
         </Border>
