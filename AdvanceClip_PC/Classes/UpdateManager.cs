@@ -17,6 +17,11 @@ namespace AdvanceClip.Classes
         private const string VERSION_URL = "https://raw.githubusercontent.com/shdra06/AdvanceClip/main/version.json";
 
         private static readonly HttpClient _client = new HttpClient() { Timeout = TimeSpan.FromSeconds(15) };
+        private static readonly HttpClient _downloadClient = new HttpClient(new HttpClientHandler
+        {
+            AllowAutoRedirect = true,
+            MaxAutomaticRedirections = 10
+        }) { Timeout = TimeSpan.FromMinutes(10) };
 
         public static string CurrentVersion => Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.0.0";
 
@@ -108,7 +113,7 @@ namespace AdvanceClip.Classes
                 StatusChanged?.Invoke("Downloading update...");
                 Logger.LogAction("UPDATE", $"Downloading from {DownloadUrl}");
 
-                var response = await _client.GetAsync(DownloadUrl, HttpCompletionOption.ResponseHeadersRead);
+                var response = await _downloadClient.GetAsync(DownloadUrl, HttpCompletionOption.ResponseHeadersRead);
                 response.EnsureSuccessStatusCode();
 
                 long totalBytes = response.Content.Headers.ContentLength ?? -1;
