@@ -238,6 +238,10 @@ public partial class App : Application
             {
                 _mainWinInstance = new MainWindow();
                 MainWindow = _mainWinInstance;
+                
+                // Load persisted clipboard history (text + images survive restarts)
+                (_mainWinInstance.DataContext as ViewModels.DropShelfViewModel)?.LoadPersistedHistory();
+                
                 MainWindow.Show();
                 
                 // One-time cleanup: purge old GUID-based device entries from Firebase

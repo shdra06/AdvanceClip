@@ -19,6 +19,62 @@ namespace AdvanceClip.ViewModels
         public ObservableCollection<ClipboardItem> DroppedItems { get; } = new ObservableCollection<ClipboardItem>();
         private Stack<System.Collections.Generic.List<ClipboardItem>> _deletedItemsHistory = new Stack<System.Collections.Generic.List<ClipboardItem>>();
 
+        /// <summary>
+        /// Loads persisted clipboard history from disk and rebuilds Icon previews.
+        /// Called once at app startup.
+        /// </summary>
+        public void LoadPersistedHistory()
+        {
+            var items = Classes.ClipboardHistoryManager.LoadHistory();
+            foreach (var item in items)
+            {
+                // Rebuild BitmapImage icon from persisted FilePath
+                if ((item.ItemType == ClipboardItemType.Image || item.ItemType == ClipboardItemType.QRCode)
+                    && !string.IsNullOrEmpty(item.FilePath) && File.Exists(item.FilePath))
+                {
+                    try
+                    {
+                        var bmp = new BitmapImage();
+                        bmp.BeginInit();
+                        bmp.CacheOption = BitmapCacheOption.OnLoad;
+                        bmp.DecodePixelWidth = 250;
+                        bmp.UriSource = new Uri(item.FilePath);
+                        bmp.EndInit();
+                        bmp.Freeze();
+                        item.Icon = bmp;
+                    }
+                    catch { }
+                }
+                else if (item.ItemType == ClipboardItemType.File || item.ItemType == ClipboardItemType.Document ||
+                         item.ItemType == ClipboardItemType.Pdf || item.ItemType == ClipboardItemType.Archive ||
+                         item.ItemType == ClipboardItemType.Video || item.ItemType == ClipboardItemType.Audio ||
+                         item.ItemType == ClipboardItemType.Presentation)
+                {
+                    if (!string.IsNullOrEmpty(item.FilePath))
+                        item.Icon = GetIcon(item.FilePath);
+                }
+
+                item.EvaluateSmartActions();
+                DroppedItems.Add(item);
+            }
+            OnPropertyChanged(nameof(ShelfVisibility));
+
+            // Wire up auto-save on any collection change
+            DroppedItems.CollectionChanged += (s, e) =>
+            {
+                Classes.ClipboardHistoryManager.SaveHistoryDebounced(DroppedItems);
+            };
+        }
+
+        /// <summary>
+        /// Triggers a debounced save of the current clipboard history.
+        /// Call after property changes on items (pin, etc.)
+        /// </summary>
+        private void PersistHistory()
+        {
+            Classes.ClipboardHistoryManager.SaveHistoryDebounced(DroppedItems);
+        }
+
         // Pre-compiled regex patterns for text classification — avoids recompilation on every clipboard event
         private static readonly Regex _rxTerminal = new Regex(@"(PS C:\\|~\$|root@|npm run|npm install|git clone|git commit|sudo |apt-get|docker run)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex _rxCode = new Regex(@"(#include\s|<iostream>|<stdio\.h>|std::|printf\(|public class |private void |int main\(\)|using namespace |def\s+\w+\(|import\s+(os|sys|java|React)|class\s+[A-Z]\w*|Console\.WriteLine|=>\s*\{|\{""|\[\{""|<\/?(html|div|span|script|style|body|head)|function\s+\w+\(|console\.log\(|require\()", RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -216,8 +272,9 @@ namespace AdvanceClip.ViewModels
                 DroppedItems.Remove(item);
                 OnPropertyChanged(nameof(ShelfVisibility));
 
-                // Cleanup: delete backing temp file to prevent %TEMP% bloat
+                // Cleanup: delete backing file (temp or persistent image)
                 CleanupTempFile(item.FilePath);
+                Classes.ClipboardHistoryManager.DeletePersistentImage(item);
             }
         }
 
@@ -246,6 +303,7 @@ namespace AdvanceClip.ViewModels
             {
                 item.IsPinned = !item.IsPinned;
                 SavePinnedItems();
+                PersistHistory(); // Save pin state change
                 
                 // The user explicitly requested Pinned items to remain strictly invisible to the Delete feature
                 // WITHOUT physically sorting them to the top of the Stack anymore.
@@ -663,7 +721,7 @@ namespace AdvanceClip.ViewModels
 
                     System.Threading.Tasks.Task.Run(() => 
                     {
-                        string tempFile = Path.Combine(Path.GetTempPath(), $"AdvanceClip_ImageDrop_{Guid.NewGuid().ToString().Substring(0, 4)}.png");
+                        string tempFile = Classes.ClipboardHistoryManager.GetPersistentImagePath();
                         
                         try
                         {

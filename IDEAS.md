@@ -2,20 +2,8 @@
 
 ## Planned Features
 
-### 1. Quick Paste Hotkeys
-- **Hotkeys**: `Alt+1` through `Alt+9` to instantly paste the Nth item from the shelf
-- **Behavior**: Pastes directly into the active app without opening the DropShelf
-- Copy item content to clipboard + simulate Ctrl+V paste
-- Show a brief toast: "Pasted item #3: meeting_notes.pdf"
-- **Priority**: High
 
-### 2. Item Preview Popup
-- Hover over a card for 1s → shows full-size image or full text in a popup
-- Avoids needing to double-click/open items
-- For images: full resolution preview with zoom
-- For text: complete content with word wrap
-- For files: file properties (size, date, path)
-- **Priority**: High
+
 
 ### 3. Smart Clipboard Chaining
 - Select multiple items → right-click "Merge & Copy"
@@ -44,10 +32,7 @@
 - JSON/XML prettify, Base64 encode/decode
 - Regex find & replace
 
-### 7. Link Preview Cards
-- When you copy a URL, auto-fetch page title + favicon
-- Display rich preview card instead of raw text
-- Show Open Graph image if available
+7) add a graph maker
 
 ### 8. Color Picker Detection
 - Detect hex/RGB color codes in clipboard (#FF5733, rgb(255,87,51))

@@ -903,6 +903,38 @@ namespace AdvanceClip
             }
         }
 
+        private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            string query = SearchBox.Text.Trim();
+            SearchPlaceholder.Visibility = string.IsNullOrEmpty(query) ? Visibility.Visible : Visibility.Collapsed;
+
+            var view = System.Windows.Data.CollectionViewSource.GetDefaultView(ShelfListView.ItemsSource);
+            if (view == null) return;
+
+            if (string.IsNullOrEmpty(query))
+            {
+                view.Filter = null;
+            }
+            else
+            {
+                view.Filter = obj =>
+                {
+                    if (obj is ViewModels.ClipboardItem item)
+                    {
+                        // Search in FileName (which contains text preview) and RawContent
+                        bool matchName = !string.IsNullOrEmpty(item.FileName) &&
+                                         item.FileName.Contains(query, StringComparison.OrdinalIgnoreCase);
+                        bool matchContent = !string.IsNullOrEmpty(item.RawContent) &&
+                                            item.RawContent.Contains(query, StringComparison.OrdinalIgnoreCase);
+                        bool matchExtension = !string.IsNullOrEmpty(item.Extension) &&
+                                              item.Extension.Contains(query, StringComparison.OrdinalIgnoreCase);
+                        return matchName || matchContent || matchExtension;
+                    }
+                    return false;
+                };
+            }
+        }
+
         private void NotifyIconQuit_Click(object sender, RoutedEventArgs e)
         {
             _hubWindowInstance?.ForceShutdownRelease();
