@@ -10,10 +10,10 @@ namespace AdvanceClip.Classes
     public class DocumentSniffer
     {
         private List<FileSystemWatcher> _watchers = new List<FileSystemWatcher>();
-        private DropShelfViewModel _viewModel;
+        private FlyShelfViewModel _viewModel;
         private System.Collections.Concurrent.ConcurrentDictionary<string, byte> _recentlyTriggeredFiles = new System.Collections.Concurrent.ConcurrentDictionary<string, byte>();
 
-        public DocumentSniffer(DropShelfViewModel viewModel)
+        public DocumentSniffer(FlyShelfViewModel viewModel)
         {
             _viewModel = viewModel;
         }

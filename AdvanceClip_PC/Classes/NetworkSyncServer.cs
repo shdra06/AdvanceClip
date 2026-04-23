@@ -16,7 +16,7 @@ namespace AdvanceClip.Classes
         private HttpListener _listener;
         private Thread _listenerThread;
         private bool _isRunning = false;
-        private DropShelfViewModel _viewModel;
+        private FlyShelfViewModel _viewModel;
         private CloudflareDaemon _cfDaemon = new CloudflareDaemon();
         private System.Timers.Timer _heartbeatTimer;
         private System.Net.Sockets.TcpListener _proxyListener = null;
@@ -27,7 +27,7 @@ namespace AdvanceClip.Classes
         public string GlobalUrl => _cfDaemon.GlobalUrl;
         public int CurrentPort { get; private set; } = 3000;
 
-        public NetworkSyncServer(DropShelfViewModel viewModel)
+        public NetworkSyncServer(FlyShelfViewModel viewModel)
         {
             _viewModel = viewModel;
             _cfDaemon.GlobalUrlUpdated += (url) => { 
@@ -826,7 +826,7 @@ namespace AdvanceClip.Classes
                             System.Windows.Clipboard.SetFileDropList(fileList);
                             AdvanceClip.Windows.ToastWindow.ShowToast($"📋 {rawName} copied to clipboard");
                             
-                            // Insert proper file entry into DropShelf (clickable → opens in default app)
+                            // Insert proper file entry into FlyShelf (clickable → opens in default app)
                             var clip = new ClipboardItem
                             {
                                 RawContent = finalPath,
@@ -1101,7 +1101,7 @@ namespace AdvanceClip.Classes
 
                 System.Windows.Application.Current.Dispatcher.InvokeAsync(() => {
                     AdvanceClip.Windows.ToastWindow.ShowToast($"✅ {rawName} ({sizeStr}) received!");
-                    // Auto-copy to clipboard + insert into DropShelf
+                    // Auto-copy to clipboard + insert into FlyShelf
                     try
                     {
                         var fileList = new System.Collections.Specialized.StringCollection { finalPath };

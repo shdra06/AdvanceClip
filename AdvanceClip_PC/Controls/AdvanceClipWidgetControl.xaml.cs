@@ -28,7 +28,7 @@ namespace AdvanceClip.Controls
             {
                 var point = PointToScreen(e.GetPosition(this));
                 bool isMode1 = false;
-                if (_mainWindow.DataContext is AdvanceClip.ViewModels.DropShelfViewModel vm && vm.CurrentMode == 1)
+                if (_mainWindow.DataContext is AdvanceClip.ViewModels.FlyShelfViewModel vm && vm.CurrentMode == 1)
                 {
                     isMode1 = true;
                 }

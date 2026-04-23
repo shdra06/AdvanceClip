@@ -5,7 +5,7 @@
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml" xmlns:tray="http://schemas.lepo.co/wpfui/2022/xaml/tray"
         xmlns:vm="clr-namespace:AdvanceClip.ViewModels"
         xmlns:settings="clr-namespace:AdvanceClip.Classes"
-        Title="DropShelf" 
+        Title="FlyShelf" 
         Width="{Binding Source={x:Static settings:SettingsManager.Current}, Path=MiniFormWidth}" 
         Opacity="1"
         MaxHeight="260" SizeToContent="Height" MinHeight="100" BorderThickness="0"
@@ -22,7 +22,6 @@
     <Grid Margin="0" MouseLeftButtonDown="Header_MouseLeftButtonDown" Background="#01000000">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
@@ -31,12 +30,12 @@
             Icon="pack://application:,,,/Resources/ClipFlowLogo.ico"
             MenuOnRightClick="True"
             LeftClick="nIcon_LeftClick"
-            TooltipText="AdvanceClip">
+            TooltipText="ClipFlow">
             <tray:NotifyIcon.Menu>
                 <ContextMenu>
                     <MenuItem Header="Open Advance Hub" Click="OpenApp_Click" />
                     <Separator />
-                    <MenuItem Header="Quit AdvanceClip" Click="NotifyIconQuit_Click" />
+                    <MenuItem Header="Quit ClipFlow" Click="NotifyIconQuit_Click" />
                 </ContextMenu>
             </tray:NotifyIcon.Menu>
         </tray:NotifyIcon>
@@ -79,18 +78,7 @@
             </StackPanel>
         </Grid>
 
-        <!-- Search Box -->
-        <Border Grid.Row="1" Margin="14,0,14,6" CornerRadius="10" Background="#0AFFFFFF" BorderBrush="#15FFFFFF" BorderThickness="1" Padding="0">
-            <Grid>
-                <TextBlock Name="SearchPlaceholder" Text="Search clipboard..." Foreground="#50FFFFFF" FontSize="12.5" 
-                           VerticalAlignment="Center" Margin="10,0,0,0" IsHitTestVisible="False"/>
-                <TextBox Name="SearchBox" Background="Transparent" BorderThickness="0" Foreground="White" FontSize="12.5"
-                         Padding="8,7" CaretBrush="White" VerticalAlignment="Center"
-                         TextChanged="SearchBox_TextChanged"/>
-            </Grid>
-        </Border>
-
-        <ListView Name="ShelfListView" Grid.Row="2" ItemsSource="{Binding DroppedItems}" Background="#01000000" BorderThickness="0" Margin="12,0,12,12"
+        <ListView Name="ShelfListView" Grid.Row="1" ItemsSource="{Binding DroppedItems}" Background="#01000000" BorderThickness="0" Margin="12,0,12,12"
                   ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Hidden"
                   ScrollViewer.CanContentScroll="False" VirtualizingPanel.ScrollUnit="Pixel"
                   SelectionMode="Extended" MouseMove="ShelfListView_MouseMove" PreviewMouseLeftButtonDown="ShelfListView_PreviewMouseLeftButtonDown"

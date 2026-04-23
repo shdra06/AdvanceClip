@@ -240,7 +240,7 @@ public partial class App : Application
                 MainWindow = _mainWinInstance;
                 
                 // Load persisted clipboard history (text + images survive restarts)
-                (_mainWinInstance.DataContext as ViewModels.DropShelfViewModel)?.LoadPersistedHistory();
+                (_mainWinInstance.DataContext as ViewModels.FlyShelfViewModel)?.LoadPersistedHistory();
                 
                 MainWindow.Show();
                 
@@ -385,10 +385,10 @@ public partial class App : Application
                             _instance?.Dispatcher.InvokeAsync(async () => 
                             {
                                 // Selection Detection Guard: Wait for the user to finish highlighting
-                                // or dragging before spawning the DropShelf to prevent mid-workflow interruption!
+                                // or dragging before spawning the FlyShelf to prevent mid-workflow interruption!
                                 await System.Threading.Tasks.Task.Delay(300);
 
-                                // Removed the active drag check because it blocked users from drag-and-dropping physical files into the DropShelf via mouse shake!
+                                // Removed the active drag check because it blocked users from drag-and-dropping physical files into the FlyShelf via mouse shake!
                                 // The window spawns without stealing focus (stealFocus = false), safely preserving the OS drag payload.
 
                                 _instance.LaunchClipboardManager(triggerX, triggerY, false, 0, false);

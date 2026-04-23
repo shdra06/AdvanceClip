@@ -17,12 +17,12 @@ namespace AdvanceClip.Classes
         private static readonly HttpClient _pollClient = new HttpClient() { Timeout = TimeSpan.FromSeconds(10) };
         private const string FIREBASE_BASE = "https://advance-sync-default-rtdb.firebaseio.com";
         private const string CLIPBOARD_URL = FIREBASE_BASE + "/clipboard.json";
-        private DropShelfViewModel _viewModel;
+        private FlyShelfViewModel _viewModel;
         private long _lastProcessedTimestamp = 0;
         private CancellationTokenSource? _cts = null;
         private HashSet<string> _processedIds = new HashSet<string>();
 
-        public FirebaseListener(DropShelfViewModel viewModel)
+        public FirebaseListener(FlyShelfViewModel viewModel)
         {
             _viewModel = viewModel;
         }

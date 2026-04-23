@@ -16,9 +16,9 @@ namespace AdvanceClip.Windows
     public partial class PdfMergeWindow : MicaWindow
     {
         public ObservableCollection<PdfMergeItem> MergeItems { get; set; }
-        private DropShelfViewModel _viewModel;
+        private FlyShelfViewModel _viewModel;
 
-        public PdfMergeWindow(List<ClipboardItem> pdfsToMerge, DropShelfViewModel vm)
+        public PdfMergeWindow(List<ClipboardItem> pdfsToMerge, FlyShelfViewModel vm)
         {
             InitializeComponent();
             _viewModel = vm;

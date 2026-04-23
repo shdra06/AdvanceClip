@@ -1403,7 +1403,7 @@
                                     </StackPanel>
                                 </Border>
 
-                                <!-- ROW 2, COL 2: DropShelf Size -->
+                                <!-- ROW 2, COL 2: FlyShelf Size -->
                                 <Border Grid.Row="2" Grid.Column="2" Style="{StaticResource PremiumSettingStyle}">
                                     <StackPanel>
                                         <Grid Margin="0,0,0,4">
@@ -1422,15 +1422,15 @@
                                                     <ui:SymbolIcon Symbol="SquareMultiple24" Foreground="White" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                                 </Border>
                                                 <StackPanel VerticalAlignment="Center">
-                                                    <TextBlock Text="DropShelf Size" FontWeight="Bold" FontSize="14" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorPrimary}"/>
+                                                    <TextBlock Text="FlyShelf Size" FontWeight="Bold" FontSize="14" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorPrimary}"/>
                                                     <TextBlock Text="Mouse Shake mini" FontSize="10" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorTertiary}"/>
                                                 </StackPanel>
                                             </StackPanel>
                                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                                <ui:Button Appearance="Secondary" Click="PreviewDropShelfSize_Click" ToolTip="Preview" Padding="6,4" CornerRadius="8" Margin="0,0,4,0">
+                                                <ui:Button Appearance="Secondary" Click="PreviewFlyShelfSize_Click" ToolTip="Preview" Padding="6,4" CornerRadius="8" Margin="0,0,4,0">
                                                     <ui:Button.Icon><ui:SymbolIcon Symbol="Eye24" FontSize="12" /></ui:Button.Icon>
                                                 </ui:Button>
-                                                <ui:Button Appearance="Secondary" Click="ResetDropShelfSize_Click" ToolTip="Reset" Padding="6,4" CornerRadius="8">
+                                                <ui:Button Appearance="Secondary" Click="ResetFlyShelfSize_Click" ToolTip="Reset" Padding="6,4" CornerRadius="8">
                                                     <ui:Button.Icon><ui:SymbolIcon Symbol="ArrowReset24" FontSize="12" /></ui:Button.Icon>
                                                 </ui:Button>
                                             </StackPanel>

@@ -81,7 +81,7 @@ namespace AdvanceClip.ViewModels
 
         /// <summary>
         /// Creates a lightweight copy for Firebase sync, overriding RawContent with a download URL
-        /// without mutating the original item displayed in the DropShelf.
+        /// without mutating the original item displayed in the FlyShelf.
         /// </summary>
         public ClipboardItem CloneForSync(string downloadUrl)
         {
@@ -490,7 +490,7 @@ namespace AdvanceClip.ViewModels
                 else
                 {
                     // Fallback to anonymous Temp Storage explicitly for Text Blocks dragged natively from Non-Path Apps 
-                    sandboxDir = Path.Combine(Path.GetTempPath(), "DropShelf_Sandbox", Guid.NewGuid().ToString().Substring(0, 6));
+                    sandboxDir = Path.Combine(Path.GetTempPath(), "FlyShelf_Sandbox", Guid.NewGuid().ToString().Substring(0, 6));
                     Directory.CreateDirectory(sandboxDir);
                     
                     string filename = string.IsNullOrEmpty(FileName) ? "snippet.txt" : FileName;
@@ -671,7 +671,7 @@ namespace AdvanceClip.ViewModels
                                     var dataObj = new System.Windows.DataObject();
                                     dataObj.SetData(System.Windows.DataFormats.FileDrop, new string[] { targetPdf });
                                     var mainWin = System.Windows.Application.Current.MainWindow as AdvanceClip.MainWindow;
-                                    (mainWin?.DataContext as AdvanceClip.ViewModels.DropShelfViewModel)?.HandleDrop(dataObj, true);
+                                    (mainWin?.DataContext as AdvanceClip.ViewModels.FlyShelfViewModel)?.HandleDrop(dataObj, true);
                                     
                                     AdvanceClip.Windows.ToastWindow.ShowToast("Format Synthesized Successfully ✅");
                                 });

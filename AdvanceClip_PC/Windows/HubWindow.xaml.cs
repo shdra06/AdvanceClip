@@ -14,11 +14,11 @@ namespace AdvanceClip.Windows
 {
     public partial class HubWindow : MicaWindow
     {
-        private DropShelfViewModel _viewModel;
+        private FlyShelfViewModel _viewModel;
         private UpdateManager _updateManager = new UpdateManager();
         private bool _updateDownloaded = false;
 
-        public HubWindow(DropShelfViewModel viewModel)
+        public HubWindow(FlyShelfViewModel viewModel)
         {
             _viewModel = viewModel;
             DataContext = _viewModel;
@@ -191,7 +191,7 @@ namespace AdvanceClip.Windows
             SettingsManager.Save();
         }
 
-        private void ResetDropShelfSize_Click(object sender, RoutedEventArgs e)
+        private void ResetFlyShelfSize_Click(object sender, RoutedEventArgs e)
         {
             SettingsManager.Current.MiniFormWidth = 260;
             SettingsManager.Current.MiniFormHeight = 260;
@@ -204,7 +204,7 @@ namespace AdvanceClip.Windows
         private void ClipH_Plus(object sender, RoutedEventArgs e) { SettingsManager.Current.MediumFormHeight = Math.Min(700, SettingsManager.Current.MediumFormHeight + 25); }
         private void ClipH_Minus(object sender, RoutedEventArgs e) { SettingsManager.Current.MediumFormHeight = Math.Max(300, SettingsManager.Current.MediumFormHeight - 25); }
 
-        // DropShelf +/- steppers
+        // FlyShelf +/- steppers
         private void DropW_Plus(object sender, RoutedEventArgs e) { SettingsManager.Current.MiniFormWidth = Math.Min(400, SettingsManager.Current.MiniFormWidth + 20); }
         private void DropW_Minus(object sender, RoutedEventArgs e) { SettingsManager.Current.MiniFormWidth = Math.Max(180, SettingsManager.Current.MiniFormWidth - 20); }
         private void DropH_Plus(object sender, RoutedEventArgs e) { SettingsManager.Current.MiniFormHeight = Math.Min(350, SettingsManager.Current.MiniFormHeight + 25); }
@@ -219,7 +219,7 @@ namespace AdvanceClip.Windows
             this.WindowStartupLocation = WindowStartupLocation.CenterScreen;
         }
 
-        private void PreviewDropShelfSize_Click(object sender, RoutedEventArgs e)
+        private void PreviewFlyShelfSize_Click(object sender, RoutedEventArgs e)
         {
             try
             {
@@ -345,7 +345,7 @@ namespace AdvanceClip.Windows
         {
             try
             {
-                var vm = DataContext as AdvanceClip.ViewModels.DropShelfViewModel;
+                var vm = DataContext as AdvanceClip.ViewModels.FlyShelfViewModel;
                 if (vm?.LocalServer == null) { ToastWindow.ShowToast("❌ Server instance not found"); return; }
 
                 ServerDiagnosticsLog.Text = "⏳ Stopping server...\n";

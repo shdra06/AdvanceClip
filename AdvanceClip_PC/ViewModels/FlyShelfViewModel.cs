@@ -14,7 +14,7 @@ using System.Text.Json;
 
 namespace AdvanceClip.ViewModels
 {
-    public class DropShelfViewModel : INotifyPropertyChanged
+    public class FlyShelfViewModel : INotifyPropertyChanged
     {
         public ObservableCollection<ClipboardItem> DroppedItems { get; } = new ObservableCollection<ClipboardItem>();
         private Stack<System.Collections.Generic.List<ClipboardItem>> _deletedItemsHistory = new Stack<System.Collections.Generic.List<ClipboardItem>>();
@@ -89,8 +89,8 @@ namespace AdvanceClip.ViewModels
                 _currentMode = value;
                 OnPropertyChanged(nameof(CurrentMode));
                 OnPropertyChanged(nameof(IsMiniMode));
-                OnPropertyChanged(nameof(CurrentDropShelfMaxHeight));
-                OnPropertyChanged(nameof(CurrentDropShelfWidth));
+                OnPropertyChanged(nameof(CurrentFlyShelfMaxHeight));
+                OnPropertyChanged(nameof(CurrentFlyShelfWidth));
             }
         }
         
@@ -98,7 +98,7 @@ namespace AdvanceClip.ViewModels
         public bool IsMediumMode => CurrentMode == 1;
         public bool IsFullMode => CurrentMode == 2;
 
-        public int CurrentDropShelfMaxHeight
+        public int CurrentFlyShelfMaxHeight
         {
             get
             {
@@ -108,7 +108,7 @@ namespace AdvanceClip.ViewModels
             }
         }
         
-        public int CurrentDropShelfWidth
+        public int CurrentFlyShelfWidth
         {
             get
             {
@@ -153,7 +153,7 @@ namespace AdvanceClip.ViewModels
             OnPropertyChanged(nameof(LocalServer));
         }
 
-        public DropShelfViewModel()
+        public FlyShelfViewModel()
         {
             ClearCommand = new RelayCommand(ClearShelf);
             RemoveItemCommand = new RelayCommand<ClipboardItem>(RemoveItem);
@@ -231,8 +231,8 @@ namespace AdvanceClip.ViewModels
                          e.PropertyName == nameof(AdvanceClip.Classes.AdvanceSettings.MediumFormWidth) ||
                          e.PropertyName == nameof(AdvanceClip.Classes.AdvanceSettings.MediumFormHeight))
                 {
-                    OnPropertyChanged(nameof(CurrentDropShelfMaxHeight));
-                    OnPropertyChanged(nameof(CurrentDropShelfWidth));
+                    OnPropertyChanged(nameof(CurrentFlyShelfMaxHeight));
+                    OnPropertyChanged(nameof(CurrentFlyShelfWidth));
                 }
             };
             

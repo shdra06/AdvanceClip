@@ -16,7 +16,7 @@ namespace AdvanceClip
     public partial class MainWindow : MicaWindow
     {
         private Point _dragStartPoint;
-        private readonly DropShelfViewModel _viewModel;
+        private readonly FlyShelfViewModel _viewModel;
         private int _spawnToken = 0;
         private bool _isDragHovering = false;
         private bool _didDragOut = false;
@@ -71,7 +71,7 @@ namespace AdvanceClip
 
         public MainWindow()
         {
-            var vm = new DropShelfViewModel();
+            var vm = new FlyShelfViewModel();
             this.DataContext = vm;
             _viewModel = vm;
             InitializeComponent();
@@ -111,9 +111,9 @@ namespace AdvanceClip
 
             _viewModel.PropertyChanged += (s, e) =>
             {
-                if (e.PropertyName == nameof(DropShelfViewModel.CurrentDropShelfMaxHeight))
+                if (e.PropertyName == nameof(FlyShelfViewModel.CurrentFlyShelfMaxHeight))
                 {
-                    this.MaxHeight = _viewModel.CurrentDropShelfMaxHeight;
+                    this.MaxHeight = _viewModel.CurrentFlyShelfMaxHeight;
                     this.UpdateLayout();
                     
                     if (_isEdgeLocked && this.ActualHeight > 0)
@@ -400,7 +400,7 @@ namespace AdvanceClip
                             }
 
                             // Now dispatch to background — no more COM calls needed
-                            var vm = (DropShelfViewModel)DataContext;
+                            var vm = (FlyShelfViewModel)DataContext;
                             if (bitmap != null && (files == null || files.Length == 0))
                             {
                                 Classes.Logger.LogAction("CLIPBOARD", $"→ Routing as BITMAP ({bitmap.PixelWidth}x{bitmap.PixelHeight})");
@@ -498,7 +498,7 @@ namespace AdvanceClip
                             if (cName != "Shell_TrayWnd" && cName != "Shell_SecondaryTrayWnd" && cName != "WorkerW" && cName != "Progman")
                             {
                                 GetWindowText(wnd, sb, 256);
-                                if (sb.Length > 0 && sb.ToString() != "AdvanceClip" && sb.ToString() != "DropShelf" && sb.ToString() != "Program Manager")
+                                if (sb.Length > 0 && sb.ToString() != "AdvanceClip" && sb.ToString() != "FlyShelf" && sb.ToString() != "Program Manager")
                                 {
                                     target = wnd;
                                     return false; 
@@ -543,8 +543,8 @@ namespace AdvanceClip
             this.ShowInTaskbar = false;
 
             _viewModel.CurrentMode = mode;
-            this.MaxHeight = _viewModel.CurrentDropShelfMaxHeight;
-            this.Width = _viewModel.CurrentDropShelfWidth;
+            this.MaxHeight = _viewModel.CurrentFlyShelfMaxHeight;
+            this.Width = _viewModel.CurrentFlyShelfWidth;
 
             var workArea = SystemParameters.WorkArea;
             double safeWidth = double.IsNaN(this.Width) ? 360 : this.Width;
@@ -713,7 +713,7 @@ namespace AdvanceClip
             {
                 if (e.ClickCount == 2)
                 {
-                    return; // Never maximize the DropShelf
+                    return; // Never maximize the FlyShelf
                 }
 
                 _isEdgeLocked = false;
@@ -903,37 +903,7 @@ namespace AdvanceClip
             }
         }
 
-        private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
-        {
-            string query = SearchBox.Text.Trim();
-            SearchPlaceholder.Visibility = string.IsNullOrEmpty(query) ? Visibility.Visible : Visibility.Collapsed;
 
-            var view = System.Windows.Data.CollectionViewSource.GetDefaultView(ShelfListView.ItemsSource);
-            if (view == null) return;
-
-            if (string.IsNullOrEmpty(query))
-            {
-                view.Filter = null;
-            }
-            else
-            {
-                view.Filter = obj =>
-                {
-                    if (obj is ViewModels.ClipboardItem item)
-                    {
-                        // Search in FileName (which contains text preview) and RawContent
-                        bool matchName = !string.IsNullOrEmpty(item.FileName) &&
-                                         item.FileName.Contains(query, StringComparison.OrdinalIgnoreCase);
-                        bool matchContent = !string.IsNullOrEmpty(item.RawContent) &&
-                                            item.RawContent.Contains(query, StringComparison.OrdinalIgnoreCase);
-                        bool matchExtension = !string.IsNullOrEmpty(item.Extension) &&
-                                              item.Extension.Contains(query, StringComparison.OrdinalIgnoreCase);
-                        return matchName || matchContent || matchExtension;
-                    }
-                    return false;
-                };
-            }
-        }
 
         private void NotifyIconQuit_Click(object sender, RoutedEventArgs e)
         {
