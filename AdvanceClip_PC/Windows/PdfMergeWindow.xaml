@@ -145,6 +145,9 @@
             </StackPanel>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                 <ui:Button Content="Cancel" Appearance="Secondary" Margin="0,0,12,0" Padding="20,8" Click="Cancel_Click" />
+                <ui:Button x:Name="SaveAsBtn" Content="Save As" Appearance="Secondary" Margin="0,0,12,0" Padding="20,8" Click="SaveAs_Click" ToolTip="Merge and save to a custom location">
+                    <ui:Button.Icon><ui:SymbolIcon Symbol="Save24" /></ui:Button.Icon>
+                </ui:Button>
                 <ui:Button x:Name="MergeBtn" Content="Merge PDFs" Appearance="Primary" Padding="20,8" Click="Merge_Click">
                     <ui:Button.Icon><ui:SymbolIcon Symbol="DocumentCopy24" /></ui:Button.Icon>
                 </ui:Button>

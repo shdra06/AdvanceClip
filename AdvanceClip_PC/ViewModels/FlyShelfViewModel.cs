@@ -57,6 +57,10 @@ namespace AdvanceClip.ViewModels
                         item.Icon = GetIcon(item.FilePath);
                 }
 
+                // Heal legacy items: card UI binds to FileName, so if it's empty the card looks blank
+                if (string.IsNullOrWhiteSpace(item.FileName) && !string.IsNullOrWhiteSpace(item.RawContent))
+                    item.FileName = item.RawContent.Length > 800 ? item.RawContent.Substring(0, 800) + "..." : item.RawContent;
+
                 item.EvaluateSmartActions();
                 DroppedItems.Add(item);
             }
@@ -910,6 +914,9 @@ namespace AdvanceClip.ViewModels
                             return;
                         }
                         DroppedItems.Remove(existingMatch);
+                        // Heal FileName if empty (legacy items from before fix)
+                        if (string.IsNullOrWhiteSpace(existingMatch.FileName) && !string.IsNullOrWhiteSpace(existingMatch.RawContent))
+                            existingMatch.FileName = existingMatch.RawContent.Length > 800 ? existingMatch.RawContent.Substring(0, 800) + "..." : existingMatch.RawContent;
                         DroppedItems.Insert(0, existingMatch);
                         AdvanceClip.Classes.Logger.LogAction("DRAG IN", $"Bumped existing item to top (dedup, pinned={existingMatch.IsPinned})");
                         return;
@@ -1009,6 +1016,9 @@ namespace AdvanceClip.ViewModels
                             {
                                 item.ItemType = ClipboardItemType.Text;
                                 item.Extension = "TEXT";
+                                // CRITICAL: FileName is what the card UI displays — must be set or card is blank
+                                string displayText = capturedText.Trim();
+                                item.FileName = displayText.Length > 800 ? displayText.Substring(0, 800) + "..." : displayText;
                             }
                         }
                         

@@ -129,6 +129,35 @@ namespace AdvanceClip.Windows
             this.Close();
         }
 
+        private void SaveAs_Click(object sender, RoutedEventArgs e)
+        {
+            var validItems = MergeItems.Where(m => m.IsValid).ToList();
+            int totalSelectedPages = validItems.Sum(m => m.GetSelectedPageIndices().Count);
+
+            if (totalSelectedPages < 1)
+            {
+                MessageBox.Show("No pages selected to merge.", "Merge Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            string defaultName = OutputNameBox.Text.Trim();
+            if (string.IsNullOrEmpty(defaultName)) defaultName = $"Merged_{DateTime.Now:yyyyMMdd_HHmmss}";
+            if (!defaultName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) defaultName += ".pdf";
+
+            var dlg = new SaveFileDialog
+            {
+                Filter = "PDF Files|*.pdf",
+                FileName = defaultName,
+                Title = "Save Merged PDF As",
+                DefaultExt = ".pdf"
+            };
+
+            if (dlg.ShowDialog() == true)
+            {
+                DoMerge(dlg.FileName);
+            }
+        }
+
         private async void Merge_Click(object sender, RoutedEventArgs e)
         {
             var validItems = MergeItems.Where(m => m.IsValid).ToList();
@@ -140,15 +169,23 @@ namespace AdvanceClip.Windows
                 return;
             }
 
-            MergeBtn.IsEnabled = false;
-            MergeBtn.Content = "Merging...";
-
             string userFileName = OutputNameBox.Text.Trim();
             if (string.IsNullOrEmpty(userFileName)) userFileName = $"Merged_{DateTime.Now:yyyyMMdd_HHmmss}";
             if (!userFileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) userFileName += ".pdf";
             string mergeDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "AdvanceClip", "Merged");
             Directory.CreateDirectory(mergeDir);
             string outputPath = Path.Combine(mergeDir, userFileName);
+
+            DoMerge(outputPath);
+        }
+
+        private async void DoMerge(string outputPath)
+        {
+            var validItems = MergeItems.Where(m => m.IsValid).ToList();
+
+            MergeBtn.IsEnabled = false;
+            SaveAsBtn.IsEnabled = false;
+            MergeBtn.Content = "Merging...";
 
             bool success = await System.Threading.Tasks.Task.Run(() =>
             {
@@ -236,6 +273,7 @@ namespace AdvanceClip.Windows
             else
             {
                 MergeBtn.IsEnabled = true;
+                SaveAsBtn.IsEnabled = true;
                 MergeBtn.Content = "Merge PDFs";
             }
         }
