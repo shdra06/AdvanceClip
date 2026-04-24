@@ -37,6 +37,13 @@ namespace AdvanceClip.Classes
         {
             StopPolling();
 
+            // CRITICAL: Do not listen to Firebase unless device is paired
+            if (!DevicePairingManager.HasPairingKey)
+            {
+                Logger.LogAction("FIREBASE LISTENER", "Blocked — no pairing key. Pair with another device to enable cloud sync.");
+                return;
+            }
+
             _cts = new CancellationTokenSource();
             // Backlog: process items from the last 5 minutes (catch-up for devices that connect late)
             _lastProcessedTimestamp = DateTimeOffset.UtcNow.AddMinutes(-5).ToUnixTimeMilliseconds();
@@ -71,6 +78,13 @@ namespace AdvanceClip.Classes
 
             while (!ct.IsCancellationRequested)
             {
+                // Guard: exit if pairing key was cleared
+                if (!DevicePairingManager.HasPairingKey)
+                {
+                    Logger.LogAction("FIREBASE SSE", "No pairing key — stream exiting.");
+                    return;
+                }
+
                 try
                 {
                     string streamUrl = GetScopedClipboardUrl();
@@ -202,6 +216,14 @@ namespace AdvanceClip.Classes
             {
                 _processedIds.Add(cloudItem.Id);
                 InjectCloudItem(cloudItem);
+            }
+            
+            // Memory safety: prune old IDs to prevent unbounded growth
+            if (_processedIds.Count > 500)
+            {
+                _processedIds.Clear();
+                // Re-seed with the latest items only
+                foreach (var ci in newItems.TakeLast(50)) _processedIds.Add(ci.Id);
             }
         }
 
@@ -351,12 +373,16 @@ namespace AdvanceClip.Classes
                     _viewModel.OnPropertyChanged(nameof(_viewModel.ShelfVisibility));
 
                     // Auto-copy text to system clipboard for instant paste
+                    // CRITICAL: Must guard with _isWritingClipboard to prevent echo loop
+                    // (clipboard change → recapture → push back to Firebase → infinite loop)
                     try
                     {
+                        MainWindow.SetWritingClipboard(true);
                         if (!string.IsNullOrEmpty(cloudItem.Raw))
                             System.Windows.Clipboard.SetText(cloudItem.Raw);
                     }
                     catch { }
+                    finally { MainWindow.SetWritingClipboard(false); }
 
                     AdvanceClip.Windows.ToastWindow.ShowToast($"⚡ {cloudItem.SourceDeviceName}: {(cloudItem.Raw?.Length > 40 ? cloudItem.Raw.Substring(0, 40) + "..." : cloudItem.Raw)}");
                 }
@@ -565,7 +591,7 @@ namespace AdvanceClip.Classes
                         ? $"{fileInfo.Length / 1_073_741_824.0:F1} GB"
                         : $"{fileInfo.Length / 1_048_576.0:F1} MB";
 
-                    try { System.Windows.Clipboard.SetFileDropList(new System.Collections.Specialized.StringCollection { filePath }); } catch { }
+                    try { MainWindow.SetWritingClipboard(true); System.Windows.Clipboard.SetFileDropList(new System.Collections.Specialized.StringCollection { filePath }); } catch { } finally { MainWindow.SetWritingClipboard(false); }
                     AdvanceClip.Windows.ToastWindow.ShowToast($"✅ {cloudItem.Title} ({sizeStr}) from {cloudItem.SourceDeviceName}");
 
                     var clip = new ClipboardItem(filePath);

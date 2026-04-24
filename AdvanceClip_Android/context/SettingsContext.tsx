@@ -1,6 +1,13 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+export type PairedDevice = {
+  deviceId: string;
+  deviceName: string;
+  deviceType: 'PC' | 'Mobile' | 'Browser';
+  pairedAt: number; // timestamp
+};
+
 type SettingsContextType = {
   pcLocalIp: string;
   setPcLocalIp: (ip: string) => Promise<void>;
@@ -17,6 +24,12 @@ type SettingsContextType = {
   setFloatingBallSize: (val: number) => Promise<void>;
   floatingBallAutoHide: number;
   setFloatingBallAutoHide: (val: number) => Promise<void>;
+  // ── Paired Devices ──
+  pairedDevices: PairedDevice[];
+  addPairedDevice: (device: PairedDevice) => Promise<void>;
+  removePairedDevice: (deviceId: string) => Promise<void>;
+  pairingKey: string;
+  regeneratePairingKey: () => Promise<string>;
 };
 
 const SettingsContext = createContext<SettingsContextType>({
@@ -35,9 +48,22 @@ const SettingsContext = createContext<SettingsContextType>({
   setFloatingBallSize: async () => {},
   floatingBallAutoHide: 3000,
   setFloatingBallAutoHide: async () => {},
+  pairedDevices: [],
+  addPairedDevice: async () => {},
+  removePairedDevice: async () => {},
+  pairingKey: '',
+  regeneratePairingKey: async () => '',
 });
 
 export const useSettings = () => useContext(SettingsContext);
+
+/** Generate a 32-char hex key (same format as PC's Guid.ToString("N")) */
+const generatePairingKey = (): string => {
+  const hex = '0123456789abcdef';
+  let key = '';
+  for (let i = 0; i < 32; i++) key += hex[Math.floor(Math.random() * 16)];
+  return key;
+};
 
 export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [pcLocalIp, setPcLocalIpState] = useState('192.168.1.5:3000');
@@ -48,6 +74,8 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [defaultTargetDeviceName, setDefaultTargetDeviceNameState] = useState('');
   const [floatingBallSize, setFloatingBallSizeState] = useState(48);
   const [floatingBallAutoHide, setFloatingBallAutoHideState] = useState(3000);
+  const [pairedDevices, setPairedDevicesState] = useState<PairedDevice[]>([]);
+  const [pairingKey, setPairingKeyState] = useState('');
 
   useEffect(() => {
     const initStorage = async () => {
@@ -78,6 +106,19 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         await AsyncStorage.setItem('@deviceId', storedId);
       }
       setDeviceIdState(storedId);
+
+      // ── Paired Devices ──
+      const storedDevices = await AsyncStorage.getItem('@pairedDevices');
+      if (storedDevices) {
+        try { setPairedDevicesState(JSON.parse(storedDevices)); } catch {}
+      }
+
+      // ── Pairing Key (also stored as 'pairingKey' for backward compat with index.tsx) ──
+      let storedKey = await AsyncStorage.getItem('pairingKey');
+      if (storedKey) {
+        setPairingKeyState(storedKey);
+      }
+      // Note: pairingKey may remain '' until user pairs via QR/code — that's intentional
     };
     initStorage();
   }, []);
@@ -117,8 +158,41 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     await AsyncStorage.setItem('@floatingBallAutoHide', val.toString());
   };
 
+  // ── Paired Devices ──
+  const addPairedDevice = async (device: PairedDevice) => {
+    setPairedDevicesState(prev => {
+      // Dedup: update if already exists, otherwise add (max 5)
+      const existing = prev.findIndex(d => d.deviceId === device.deviceId);
+      let updated: PairedDevice[];
+      if (existing >= 0) {
+        updated = [...prev];
+        updated[existing] = { ...device, pairedAt: prev[existing].pairedAt }; // keep original pairedAt
+      } else {
+        updated = [...prev, device];
+        if (updated.length > 5) updated = updated.slice(-5); // keep latest 5
+      }
+      AsyncStorage.setItem('@pairedDevices', JSON.stringify(updated)).catch(() => {});
+      return updated;
+    });
+  };
+
+  const removePairedDevice = async (deviceId: string) => {
+    setPairedDevicesState(prev => {
+      const updated = prev.filter(d => d.deviceId !== deviceId);
+      AsyncStorage.setItem('@pairedDevices', JSON.stringify(updated)).catch(() => {});
+      return updated;
+    });
+  };
+
+  const regeneratePairingKey = async (): Promise<string> => {
+    const newKey = generatePairingKey();
+    setPairingKeyState(newKey);
+    await AsyncStorage.setItem('pairingKey', newKey);
+    return newKey;
+  };
+
   return (
-    <SettingsContext.Provider value={{ pcLocalIp, setPcLocalIp, deviceName, setDeviceName, deviceId, isGlobalSyncEnabled, setGlobalSyncEnabled, isFloatingBallEnabled, setFloatingBallEnabled, defaultTargetDeviceName, setDefaultTargetDeviceName, floatingBallSize, setFloatingBallSize, floatingBallAutoHide, setFloatingBallAutoHide }}>
+    <SettingsContext.Provider value={{ pcLocalIp, setPcLocalIp, deviceName, setDeviceName, deviceId, isGlobalSyncEnabled, setGlobalSyncEnabled, isFloatingBallEnabled, setFloatingBallEnabled, defaultTargetDeviceName, setDefaultTargetDeviceName, floatingBallSize, setFloatingBallSize, floatingBallAutoHide, setFloatingBallAutoHide, pairedDevices, addPairedDevice, removePairedDevice, pairingKey, regeneratePairingKey }}>
       {children}
     </SettingsContext.Provider>
   );

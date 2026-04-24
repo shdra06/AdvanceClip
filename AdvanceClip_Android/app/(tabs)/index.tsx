@@ -31,7 +31,7 @@ const { AdvanceOverlay } = NativeModules;
 // MAIN SCREEN
 // ════════════════════════════════════════════════════════
 export default function SyncScreen() {
-  const { pcLocalIp, deviceName, setDeviceName, isGlobalSyncEnabled, setGlobalSyncEnabled, isFloatingBallEnabled } = useSettings();
+  const { pcLocalIp, deviceName, setDeviceName, isGlobalSyncEnabled, setGlobalSyncEnabled, isFloatingBallEnabled, addPairedDevice, pairingKey: contextPairingKey, regeneratePairingKey } = useSettings();
 
   useEffect(() => {
     if (Platform.OS === 'android' && AdvanceOverlay && isFloatingBallEnabled) {
@@ -55,6 +55,10 @@ export default function SyncScreen() {
   useEffect(() => {
     AsyncStorage.getItem('pairingKey').then(k => { if (k) pairingKeyRef.current = k; });
   }, []);
+  // Keep ref in sync when context key changes (e.g. after pairing or regeneration)
+  useEffect(() => {
+    if (contextPairingKey) pairingKeyRef.current = contextPairingKey;
+  }, [contextPairingKey]);
   /** Returns the Firebase path scoped to the pairing key, e.g. `clipboard/abc123` */
   const clipboardPath = () => `clipboard/${pairingKeyRef.current}`;
 
@@ -933,6 +937,16 @@ export default function SyncScreen() {
       cachedPcUrlTimestampRef.current = Date.now();
       setPairedPcName(pcName || 'Device');
       if (!isGlobalSyncEnabled) setGlobalSyncEnabled(true);
+
+      // Register the remote device in the paired devices list
+      const deviceType = (pairInfo as any).deviceType || 'PC';
+      await addPairedDevice({
+        deviceId: pcId || `${pcName}_${Date.now()}`,
+        deviceName: pcName || 'Unknown Device',
+        deviceType: deviceType as 'PC' | 'Mobile' | 'Browser',
+        pairedAt: Date.now(),
+      });
+
       setIsPairing(false);
 
       if (Platform.OS === 'android') ToastAndroid.show(`✅ Paired with ${pcName}!`, ToastAndroid.LONG);
@@ -979,11 +993,19 @@ export default function SyncScreen() {
     for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
     try {
       const myDeviceId = `Mobile_${(deviceName || 'Phone').replace(/[^a-zA-Z0-9_]/g, '_')}`;
+
+      // Ensure we have a pairing key — generate one if this is a fresh install
+      let currentKey = pairingKeyRef.current;
+      if (!currentKey) {
+        currentKey = await regeneratePairingKey();
+        pairingKeyRef.current = currentKey;
+      }
+
       const payload = {
         deviceId: myDeviceId,
         deviceName: deviceName || 'Phone',
         deviceType: 'Mobile',
-        pairingKey: myDeviceId,
+        pairingKey: currentKey, // Use the ACTUAL pairing key, not deviceId
         localUrl: '',
         globalUrl: '',
         pin: '',
@@ -1288,8 +1310,8 @@ export default function SyncScreen() {
           <View>
             <Text style={styles.title}>FlyShelf</Text>
             <View style={styles.statusRow}>
-              <View style={[styles.indicator, { backgroundColor: pairedPcName ? '#10B981' : '#4A62EB' }]} />
-              <Text style={styles.statusText}>{pairedPcName ? `Connected to ${pairedPcName}` : 'Cloud Active'}</Text>
+              <View style={[styles.indicator, { backgroundColor: pairingKeyRef.current ? (pairedPcName ? '#10B981' : '#4A62EB') : '#EF4444' }]} />
+              <Text style={styles.statusText}>{pairingKeyRef.current ? (pairedPcName ? `Connected to ${pairedPcName}` : 'Cloud Active') : '⚠ Not Paired'}</Text>
             </View>
           </View>
           <View style={{flexDirection: 'row', gap: 10}}>

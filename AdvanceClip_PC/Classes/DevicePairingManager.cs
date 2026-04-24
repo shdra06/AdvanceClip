@@ -60,17 +60,34 @@ namespace AdvanceClip.Classes
             Load();
         }
 
-        // ═══ Pairing Key Management ═══
-
         /// <summary>
-        /// Ensures a pairing key exists in settings. Generates one if missing.
+        /// Returns the current pairing key, or empty string if not yet paired.
+        /// Does NOT auto-generate — pairing key is only created when:
+        /// 1) User generates a QR code / pairing code (first device creates the room)
+        /// 2) User scans/enters a code from another device (joins existing room)
         /// </summary>
         public static string EnsurePairingKey()
+        {
+            return SettingsManager.Current.PairingKey ?? "";
+        }
+
+        /// <summary>
+        /// Whether this device has been paired (has a pairing key).
+        /// Cloud sync ONLY works when this returns true.
+        /// </summary>
+        public static bool HasPairingKey => !string.IsNullOrEmpty(SettingsManager.Current.PairingKey);
+
+        /// <summary>
+        /// Creates a new pairing key if one doesn't exist yet. Called when
+        /// this device is the FIRST in the pair (generating a QR/code for others to scan).
+        /// </summary>
+        public static string CreatePairingKeyIfNeeded()
         {
             if (string.IsNullOrEmpty(SettingsManager.Current.PairingKey))
             {
                 SettingsManager.Current.PairingKey = Guid.NewGuid().ToString("N"); // 32-char hex
                 SettingsManager.Save();
+                Logger.LogAction("PAIRING", $"Generated new pairing key: {SettingsManager.Current.PairingKey.Substring(0, 8)}...");
             }
             return SettingsManager.Current.PairingKey;
         }
@@ -92,7 +109,8 @@ namespace AdvanceClip.Classes
         /// </summary>
         public static string BuildQRPayload(string localUrl, string globalUrl, string pin)
         {
-            string pairingKey = EnsurePairingKey();
+            // This is when the PC becomes the "room creator" — generate key if needed
+            string pairingKey = CreatePairingKeyIfNeeded();
             var payload = new
             {
                 app = "ClipFlow",
@@ -274,7 +292,7 @@ namespace AdvanceClip.Classes
                     deviceId = SettingsManager.Current.DeviceId,
                     deviceName = SettingsManager.Current.DeviceName,
                     deviceType = "PC",
-                    pairingKey = EnsurePairingKey(),
+                    pairingKey = CreatePairingKeyIfNeeded(),
                     localUrl = FirebaseSyncManager.CachedLocalUrl ?? "",
                     globalUrl = FirebaseSyncManager.CachedGlobalUrl ?? "",
                     pin = SettingsManager.Current.WebClientPinToken ?? "",

@@ -42,6 +42,13 @@ namespace AdvanceClip.Classes
             if (!SettingsManager.Current.EnableGlobalFirebaseSync)
                 return;
 
+            // CRITICAL: Do not sync unless device has been explicitly paired
+            if (!DevicePairingManager.HasPairingKey)
+            {
+                Logger.LogAction("FIREBASE SYNC", "Blocked — no pairing key. Pair with another device first.");
+                return;
+            }
+
             // Time-windowed dedup: skip if same content was pushed within last 10 seconds
             string fingerprint = $"{item.ItemType}::{(item.RawContent ?? "").Substring(0, Math.Min(200, (item.RawContent ?? "").Length))}";
             long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();

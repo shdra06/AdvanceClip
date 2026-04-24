@@ -1,8 +1,8 @@
 {
-  "pc_version": "2.0.0",
-  "pc_download": "https://github.com/shdra06/AdvanceClip/releases/download/v2.0.0-pc/AdvanceClip.exe",
-  "android_version": "2.0.0",
-  "android_download": "https://github.com/shdra06/AdvanceClip/releases/download/v2.0.0/FlyShelf_Mobile.apk",
-  "pc_changelog": "v2.0.0: FlyShelf rebrand, UI virtualization fix, folder/zip support, sync helper consolidation, 500-item cap, async folder enumeration.",
-  "android_changelog": "v2.0.0: FlyShelf rebrand, FlatList virtualization, code cleanup, unified storage paths."
+  "pc_version": "2.1.0",
+  "pc_download": "https://github.com/shdra06/AdvanceClip/releases/download/v2.1.0-pc/AdvanceClip.exe",
+  "android_version": "2.1.0",
+  "android_download": "https://github.com/shdra06/AdvanceClip/releases/download/v2.1.0/FlyShelf_Mobile.apk",
+  "pc_changelog": "v2.1.0: Cloud sync now requires explicit device pairing. No sync without QR/code pairing. Paired device management, echo loop fixes, stability improvements.",
+  "android_changelog": "v2.1.0: Paired device management UI, pairing key fix, update download cache fix, UI cleanup."
 }

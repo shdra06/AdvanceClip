@@ -143,14 +143,14 @@
                                     <EventTrigger RoutedEvent="Loaded">
                                         <BeginStoryboard>
                                             <Storyboard>
-                                                <DoubleAnimation Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.3">
+                                                <DoubleAnimation Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.4">
                                                     <DoubleAnimation.EasingFunction>
-                                                        <CubicEase EasingMode="EaseOut" />
+                                                        <SineEase EasingMode="EaseOut" />
                                                     </DoubleAnimation.EasingFunction>
                                                 </DoubleAnimation>
-                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TransformGroup.Children)[0].(TranslateTransform.Y)" From="15" To="0" Duration="0:0:0.35">
+                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TransformGroup.Children)[0].(TranslateTransform.Y)" From="10" To="0" Duration="0:0:0.5">
                                                     <DoubleAnimation.EasingFunction>
-                                                        <CubicEase EasingMode="EaseOut" />
+                                                        <SineEase EasingMode="EaseOut" />
                                                     </DoubleAnimation.EasingFunction>
                                                 </DoubleAnimation>
                                             </Storyboard>
@@ -160,14 +160,20 @@
                                         <Trigger.EnterActions>
                                             <BeginStoryboard>
                                                 <Storyboard>
-                                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TransformGroup.Children)[1].(ScaleTransform.ScaleX)" To="1.015" Duration="0:0:0.2">
+                                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TransformGroup.Children)[1].(ScaleTransform.ScaleX)" To="1.012" Duration="0:0:0.3">
                                                         <DoubleAnimation.EasingFunction>
-                                                            <CubicEase EasingMode="EaseOut" />
+                                                            <SineEase EasingMode="EaseOut" />
                                                         </DoubleAnimation.EasingFunction>
                                                     </DoubleAnimation>
-                                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TransformGroup.Children)[1].(ScaleTransform.ScaleY)" To="1.015" Duration="0:0:0.2">
+                                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TransformGroup.Children)[1].(ScaleTransform.ScaleY)" To="1.012" Duration="0:0:0.3">
                                                         <DoubleAnimation.EasingFunction>
-                                                            <CubicEase EasingMode="EaseOut" />
+                                                            <SineEase EasingMode="EaseOut" />
+                                                        </DoubleAnimation.EasingFunction>
+                                                    </DoubleAnimation>
+                                                    <!-- Subtle lift for Apple-style floating feel -->
+                                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TransformGroup.Children)[0].(TranslateTransform.Y)" To="-2" Duration="0:0:0.3">
+                                                        <DoubleAnimation.EasingFunction>
+                                                            <SineEase EasingMode="EaseOut" />
                                                         </DoubleAnimation.EasingFunction>
                                                     </DoubleAnimation>
                                                 </Storyboard>
@@ -176,14 +182,19 @@
                                         <Trigger.ExitActions>
                                             <BeginStoryboard>
                                                 <Storyboard>
-                                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TransformGroup.Children)[1].(ScaleTransform.ScaleX)" To="1" Duration="0:0:0.25">
+                                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TransformGroup.Children)[1].(ScaleTransform.ScaleX)" To="1" Duration="0:0:0.4">
                                                         <DoubleAnimation.EasingFunction>
-                                                            <CubicEase EasingMode="EaseInOut" />
+                                                            <SineEase EasingMode="EaseInOut" />
                                                         </DoubleAnimation.EasingFunction>
                                                     </DoubleAnimation>
-                                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TransformGroup.Children)[1].(ScaleTransform.ScaleY)" To="1" Duration="0:0:0.25">
+                                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TransformGroup.Children)[1].(ScaleTransform.ScaleY)" To="1" Duration="0:0:0.4">
                                                         <DoubleAnimation.EasingFunction>
-                                                            <CubicEase EasingMode="EaseInOut" />
+                                                            <SineEase EasingMode="EaseInOut" />
+                                                        </DoubleAnimation.EasingFunction>
+                                                    </DoubleAnimation>
+                                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TransformGroup.Children)[0].(TranslateTransform.Y)" To="0" Duration="0:0:0.4">
+                                                        <DoubleAnimation.EasingFunction>
+                                                            <SineEase EasingMode="EaseInOut" />
                                                         </DoubleAnimation.EasingFunction>
                                                     </DoubleAnimation>
                                                 </Storyboard>
@@ -195,12 +206,12 @@
                         </Border.Style>
                         <Border.RenderTransform>
                             <TransformGroup>
-                                <TranslateTransform Y="15"/>
+                                <TranslateTransform Y="10"/>
                                 <ScaleTransform ScaleX="1" ScaleY="1" />
                             </TransformGroup>
                         </Border.RenderTransform>
                         <Border.Effect>
-                            <DropShadowEffect Color="Black" BlurRadius="15" Opacity="0.3" Direction="270" ShadowDepth="4" />
+                            <DropShadowEffect Color="Black" BlurRadius="20" Opacity="0.15" Direction="270" ShadowDepth="2" />
                         </Border.Effect>
 
                         <Grid Name="ItemGrid" HorizontalAlignment="Stretch" Background="Transparent" Tag="{Binding DataContext, ElementName=ShelfListView}">
@@ -488,20 +499,6 @@
                                     </ui:Button.Style>
                                 </ui:Button>
 
-                                <!-- Dedicated Browser Open Button explicitly requested next to Pin -->
-                                <ui:Button Focusable="False" Appearance="Secondary" Foreground="#0EA5E9" PreviewMouseLeftButtonDown="OpenSpecific_Click" ToolTip="Open Address in Browser Window" Margin="0,0,6,0">
-                                    <ui:Button.Icon><ui:SymbolIcon Symbol="Globe24" Filled="True" /></ui:Button.Icon>
-                                    <ui:Button.Style>
-                                        <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding ItemType}" Value="Url">
-                                                    <Setter Property="Visibility" Value="Visible"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </ui:Button.Style>
-                                </ui:Button>
 
                                 <ui:Button Focusable="False" Appearance="Secondary" PreviewMouseLeftButtonDown="PinSpecific_Click" ToolTip="Pin Item" Margin="0,0,6,0">
                                     <ui:Button.Icon>
@@ -524,6 +521,7 @@
 
                                 <!-- Delete individual item button -->
                                 <ui:Button Focusable="False" Appearance="Secondary" Foreground="#EF4444" ToolTip="Delete Item" Margin="0,0,6,0"
+                                           PreviewMouseLeftButtonDown="DeleteSpecific_Click"
                                            Command="{Binding DataContext.RemoveItemCommand, ElementName=ShelfListView}"
                                            CommandParameter="{Binding}">
                                     <ui:Button.Icon><ui:SymbolIcon Symbol="Dismiss24" Filled="True" /></ui:Button.Icon>
@@ -755,6 +753,17 @@
             <StackPanel Orientation="Horizontal">
                 <ui:SymbolIcon Symbol="DocumentCopy24" Margin="0,0,8,0" />
                 <TextBlock x:Name="MergeSelectedPdfsText" Text="Merge 2 PDFs" FontWeight="SemiBold" FontSize="14"/>
+            </StackPanel>
+            <ui:Button.Effect>
+                <DropShadowEffect Color="Black" BlurRadius="15" Opacity="0.4" Direction="270" ShadowDepth="4" />
+            </ui:Button.Effect>
+        </ui:Button>
+
+        <!-- Floating Unpin Selected Button -->
+        <ui:Button x:Name="UnpinSelectedBtn" Grid.Row="1" Appearance="Caution" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,24" Padding="16,10" Panel.ZIndex="50" Visibility="Collapsed" Click="UnpinSelectedBtn_Click">
+            <StackPanel Orientation="Horizontal">
+                <ui:SymbolIcon Symbol="PinOff24" Margin="0,0,8,0" />
+                <TextBlock x:Name="UnpinSelectedText" Text="Unpin Selected" FontWeight="SemiBold" FontSize="14"/>
             </StackPanel>
             <ui:Button.Effect>
                 <DropShadowEffect Color="Black" BlurRadius="15" Opacity="0.4" Direction="270" ShadowDepth="4" />

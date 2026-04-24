@@ -26,10 +26,25 @@ namespace AdvanceClip.ViewModels
         public void LoadPersistedHistory()
         {
             var items = Classes.ClipboardHistoryManager.LoadHistory();
+            
+            // Build lookup of items already loaded (e.g. pinned items from LoadPinnedItems)
+            // to prevent duplicates on restart
+            var existingKeys = new HashSet<string>();
+            foreach (var existing in DroppedItems)
+            {
+                string key = GetDeduplicationKey(existing);
+                if (!string.IsNullOrEmpty(key)) existingKeys.Add(key);
+            }
+            
             foreach (var item in items)
             {
                 // Skip empty items — no content, no file, no image
                 if (IsEffectivelyEmpty(item)) continue;
+                
+                // Skip if already loaded (prevents pinned item duplication)
+                string itemKey = GetDeduplicationKey(item);
+                if (!string.IsNullOrEmpty(itemKey) && !existingKeys.Add(itemKey))
+                    continue;
 
                 // Rebuild BitmapImage icon from persisted FilePath
                 if ((item.ItemType == ClipboardItemType.Image || item.ItemType == ClipboardItemType.QRCode)
@@ -83,6 +98,11 @@ namespace AdvanceClip.ViewModels
         }
 
         /// <summary>
+        /// Public wrapper for PersistHistory — used by MainWindow for bulk operations.
+        /// </summary>
+        public void PersistHistoryPublic() => PersistHistory();
+
+        /// <summary>
         /// Returns true if the item has no displayable content (no text, no file, no image).
         /// Used to filter out ghost/empty items during load and insertion.
         /// </summary>
@@ -97,6 +117,20 @@ namespace AdvanceClip.ViewModels
             bool hasName = !string.IsNullOrWhiteSpace(item.FileName);
             
             return !hasText && !hasFile && !hasName;
+        }
+
+        /// <summary>
+        /// Returns a unique key for deduplication. Uses FilePath for file-based items, RawContent for text items.
+        /// </summary>
+        private static string GetDeduplicationKey(ClipboardItem item)
+        {
+            if (!string.IsNullOrEmpty(item.FilePath))
+                return "F:" + item.FilePath;
+            if (!string.IsNullOrEmpty(item.RawContent))
+                return "T:" + item.RawContent;
+            if (!string.IsNullOrEmpty(item.FileName))
+                return "N:" + item.FileName;
+            return string.Empty;
         }
 
         // Pre-compiled regex patterns for text classification — avoids recompilation on every clipboard event
@@ -441,8 +475,14 @@ namespace AdvanceClip.ViewModels
                     var docs = JsonSerializer.Deserialize<List<ClipboardItem>>(json);
                     if (docs != null)
                     {
+                        var seenKeys = new HashSet<string>();
                         foreach (var d in docs)
                         {
+                            // Skip duplicates within the pinned file itself
+                            string key = GetDeduplicationKey(d);
+                            if (!string.IsNullOrEmpty(key) && !seenKeys.Add(key))
+                                continue;
+                            
                             d.IsPinned = true;
                             if (d.ItemType == ClipboardItemType.File && !string.IsNullOrEmpty(d.FilePath))
                             {
@@ -657,12 +697,12 @@ namespace AdvanceClip.ViewModels
                             {
                                 try
                                 {
-                                    MainWindow._isWritingClipboard = true;
+                                    MainWindow.SetWritingClipboard(true);
                                     var dropList = new System.Collections.Specialized.StringCollection { file };
                                     System.Windows.Clipboard.SetFileDropList(dropList);
                                 }
                                 catch { }
-                                finally { MainWindow._isWritingClipboard = false; }
+                                finally { MainWindow.SetWritingClipboard(false); }
                             });
                         }
                         continue;
@@ -773,13 +813,13 @@ namespace AdvanceClip.ViewModels
                         {
                             try
                             {
-                                MainWindow._isWritingClipboard = true;
+                                MainWindow.SetWritingClipboard(true);
                                 var dropList = new System.Collections.Specialized.StringCollection();
                                 dropList.Add(file);
                                 System.Windows.Clipboard.SetFileDropList(dropList);
                             }
                             catch { }
-                            finally { MainWindow._isWritingClipboard = false; }
+                            finally { MainWindow.SetWritingClipboard(false); }
                         });
                     }
                 }
@@ -859,11 +899,11 @@ namespace AdvanceClip.ViewModels
                                 {
                                     try
                                     {
-                                        MainWindow._isWritingClipboard = true;
+                                        MainWindow.SetWritingClipboard(true);
                                         System.Windows.Clipboard.SetImage(bitmapImage);
                                     }
                                     catch { }
-                                    finally { MainWindow._isWritingClipboard = false; }
+                                    finally { MainWindow.SetWritingClipboard(false); }
                                 }
                                 // Sync image to devices via unified helper
                                 if (AdvanceClip.Classes.SettingsManager.Current.EnableGlobalFirebaseSync)
@@ -1055,11 +1095,11 @@ namespace AdvanceClip.ViewModels
                             {
                                 try
                                 {
-                                    MainWindow._isWritingClipboard = true;
+                                    MainWindow.SetWritingClipboard(true);
                                     System.Windows.Clipboard.SetText(item.RawContent);
                                 }
                                 catch { }
-                                finally { MainWindow._isWritingClipboard = false; }
+                                finally { MainWindow.SetWritingClipboard(false); }
                             }
                             
                             OnPropertyChanged(nameof(ShelfVisibility));

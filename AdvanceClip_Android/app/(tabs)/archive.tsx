@@ -913,7 +913,7 @@ export default function ConnectScreen() {
       </View>
 
       {/* Type Filter Chips */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 6, marginBottom: 10 }}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, maxHeight: 36 }} contentContainerStyle={{ paddingHorizontal: 20, gap: 6, marginBottom: 10, alignItems: 'center' }}>
         {(['All', 'PDFs', 'Docs', 'Images', 'Videos'] as const).map(t => (
           <TouchableOpacity key={t} style={[s.sourceChip, activeTab === t && s.sourceChipActive]} onPress={() => setActiveTab(t)}>
             <Text style={[s.sourceChipText, activeTab === t && s.sourceChipTextActive]}>
@@ -1035,53 +1035,6 @@ export default function ConnectScreen() {
         </View>
       )}
 
-      {/* Collapsible Connect Section */}
-      <TouchableOpacity
-        onPress={() => setIsConnectExpanded(!isConnectExpanded)}
-        style={{ backgroundColor: '#1A1F2E', borderTopWidth: 1, borderColor: '#2A2F3A', paddingVertical: 12, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
-      >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <IconSymbol name="antenna.radiowaves.left.and.right" size={16} color="#3B82F6" />
-          <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '700' }}>Connect & Transfer</Text>
-          <View style={[s.badge, { backgroundColor: '#10B98122' }]}><Text style={[s.badgeText, { color: '#10B981' }]}>{localDevices.length + globalDevices.length}</Text></View>
-        </View>
-        <IconSymbol name={isConnectExpanded ? "chevron.down" : "chevron.up"} size={14} color="#8A8F98" />
-      </TouchableOpacity>
-
-      {isConnectExpanded && (
-        <ScrollView style={{ maxHeight: 350, backgroundColor: '#0F1115' }} contentContainerStyle={{ paddingBottom: 40 }}>
-          <View style={{ paddingHorizontal: 20, marginTop: 12, marginBottom: 12 }}>
-            <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700', marginBottom: 8 }}>⚡ Local ({localDevices.length})</Text>
-            {localDevices.length === 0 ? <Text style={{ color: '#4A5568', fontSize: 12 }}>No local devices</Text> : localDevices.map((dev, i) => <DeviceCard key={`l_${i}`} device={dev} type="local" />)}
-          </View>
-          <View style={{ paddingHorizontal: 20, marginBottom: 12 }}>
-            <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700', marginBottom: 8 }}>☁️ Global ({globalDevices.length})</Text>
-            {globalDevices.length === 0 ? <Text style={{ color: '#4A5568', fontSize: 12 }}>All devices are local</Text> : globalDevices.map((dev, i) => <DeviceCard key={`g_${i}`} device={dev} type="global" />)}
-          </View>
-          <View style={{ paddingHorizontal: 20, marginBottom: 12 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-              <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700' }}>🏷️ Groups ({deviceGroups.length})</Text>
-              <TouchableOpacity onPress={() => { setEditingGroup(null); setNewGroupName(''); setSelectedGroupDevices(new Set()); setShowGroupModal(true); }} style={{ backgroundColor: '#F59E0B', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 6 }}>
-                <Text style={{ color: '#000', fontSize: 10, fontWeight: '800' }}>+ NEW</Text>
-              </TouchableOpacity>
-            </View>
-            {deviceGroups.map(group => (
-              <View key={group.id} style={{ backgroundColor: '#171B26', borderRadius: 12, padding: 12, marginBottom: 6, borderWidth: 1, borderColor: '#F59E0B22' }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700' }}>{group.name}</Text>
-                    <Text style={{ color: '#8A8F98', fontSize: 10 }}>{group.deviceNames.join(', ')}</Text>
-                  </View>
-                  <View style={{ flexDirection: 'row', gap: 4 }}>
-                    <TouchableOpacity onPress={() => { setEditingGroup(group); setNewGroupName(group.name); setSelectedGroupDevices(new Set(group.deviceNames)); setShowGroupModal(true); }} style={{ padding: 6, backgroundColor: '#F59E0B22', borderRadius: 6 }}><IconSymbol name="pencil" size={12} color="#F59E0B" /></TouchableOpacity>
-                    <TouchableOpacity onPress={() => deleteGroup(group.id)} style={{ padding: 6, backgroundColor: '#EF444422', borderRadius: 6 }}><IconSymbol name="trash" size={12} color="#EF4444" /></TouchableOpacity>
-                  </View>
-                </View>
-              </View>
-            ))}
-          </View>
-        </ScrollView>
-      )}
 
       {/* Preview Modal */}
       <Modal visible={!!enlargedPreview} animationType="fade" transparent>

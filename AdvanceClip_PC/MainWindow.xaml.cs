@@ -115,6 +115,30 @@ namespace AdvanceClip
                 }
             };
 
+            // Restore keyboard focus to ListView after window is moved/repositioned
+            this.Activated += (s, e) =>
+            {
+                // Debounce: only re-focus if the ListView isn't already keyboard-focused
+                if (!ShelfListView.IsKeyboardFocusWithin && _viewModel.DroppedItems.Count > 0)
+                {
+                    Dispatcher.InvokeAsync(() =>
+                    {
+                        if (ShelfListView.SelectedIndex < 0)
+                            ShelfListView.SelectedIndex = 0;
+                        var container = ShelfListView.ItemContainerGenerator.ContainerFromIndex(ShelfListView.SelectedIndex) as ListViewItem;
+                        if (container != null)
+                        {
+                            container.Focus();
+                            Keyboard.Focus(container);
+                        }
+                        else
+                        {
+                            ShelfListView.Focus();
+                        }
+                    }, System.Windows.Threading.DispatcherPriority.Input);
+                }
+            };
+
             _viewModel.PropertyChanged += (s, e) =>
             {
                 if (e.PropertyName == nameof(FlyShelfViewModel.CurrentFlyShelfMaxHeight))
@@ -789,6 +813,9 @@ namespace AdvanceClip
         {
             if (sender is FrameworkElement fe && fe.DataContext is AdvanceClip.ViewModels.ClipboardItem item)
             {
+                // Set flag to suppress the subsequent MouseUp paste-and-close
+                _didDragOut = true;
+                
                 // Defer removal to prevent structural DOM shifts from triggering MouseUp events on unrelated ListBox items underneath
                 System.Windows.Application.Current.Dispatcher.InvokeAsync(() => 
                 {
@@ -1006,8 +1033,8 @@ namespace AdvanceClip
                 // Initialize target on first use
                 if (_scrollTarget < 0) _scrollTarget = sv.VerticalOffset;
 
-                // Accumulate scroll delta — 1.2x multiplier for responsive feel
-                _scrollTarget -= e.Delta * 1.2;
+                // Accumulate scroll delta — 0.8x for elegant, slower scrolling
+                _scrollTarget -= e.Delta * 0.8;
                 _scrollTarget = Math.Max(0, Math.Min(_scrollTarget, sv.ScrollableHeight));
 
                 // Start smooth animation loop if not running
@@ -1019,7 +1046,7 @@ namespace AdvanceClip
                         double current = sv.VerticalOffset;
                         double diff = _scrollTarget - current;
 
-                        if (Math.Abs(diff) < 0.5)
+                        if (Math.Abs(diff) < 0.3)
                         {
                             sv.ScrollToVerticalOffset(_scrollTarget);
                             _scrollAnimating = false;
@@ -1032,8 +1059,8 @@ namespace AdvanceClip
                             return;
                         }
 
-                        // Lerp for smooth motion
-                        sv.ScrollToVerticalOffset(current + diff * 0.18);
+                        // Lerp for silky smooth deceleration (lower = slower glide)
+                        sv.ScrollToVerticalOffset(current + diff * 0.08);
                     };
                     System.Windows.Media.CompositionTarget.Rendering += _scrollRenderHandler;
                 }
@@ -1448,12 +1475,15 @@ namespace AdvanceClip
             if (ShelfListView.SelectedItems.Count > 1)
             {
                 bool allPdfs = true;
+                int pinnedCount = 0;
                 foreach (var item in ShelfListView.SelectedItems)
                 {
-                    if (item is ClipboardItem clipItem && clipItem.ItemType != ClipboardItemType.Pdf)
+                    if (item is ClipboardItem clipItem)
                     {
-                        allPdfs = false;
-                        break;
+                        if (clipItem.ItemType != ClipboardItemType.Pdf)
+                            allPdfs = false;
+                        if (clipItem.IsPinned)
+                            pinnedCount++;
                     }
                 }
 
@@ -1466,11 +1496,41 @@ namespace AdvanceClip
                 {
                     MergeSelectedPdfsBtn.Visibility = Visibility.Collapsed;
                 }
+
+                // Show Unpin button when any selected items are pinned
+                if (pinnedCount > 0)
+                {
+                    UnpinSelectedText.Text = pinnedCount == 1 ? "Unpin 1 Item" : $"Unpin {pinnedCount} Items";
+                    UnpinSelectedBtn.Visibility = Visibility.Visible;
+                }
+                else
+                {
+                    UnpinSelectedBtn.Visibility = Visibility.Collapsed;
+                }
             }
             else
             {
                 MergeSelectedPdfsBtn.Visibility = Visibility.Collapsed;
+                UnpinSelectedBtn.Visibility = Visibility.Collapsed;
             }
+        }
+
+        private void UnpinSelectedBtn_Click(object sender, RoutedEventArgs e)
+        {
+            var pinnedSelected = ShelfListView.SelectedItems
+                .Cast<ClipboardItem>()
+                .Where(i => i.IsPinned)
+                .ToList();
+            
+            foreach (var item in pinnedSelected)
+            {
+                item.IsPinned = false;
+            }
+            
+            _viewModel.SavePinnedItems();
+            _viewModel.PersistHistoryPublic();
+            UnpinSelectedBtn.Visibility = Visibility.Collapsed;
+            ShelfListView.SelectedItems.Clear();
         }
 
         private void MergeSelectedPdfsBtn_Click(object sender, RoutedEventArgs e)

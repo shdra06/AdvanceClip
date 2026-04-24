@@ -30,12 +30,11 @@ const StepSlider = ({ value, min, max, step, onValueChange, trackColor, thumbCol
 };
 
 export default function SettingsScreen() {
-  const { pcLocalIp, setPcLocalIp, isGlobalSyncEnabled, setGlobalSyncEnabled, deviceName, setDeviceName, isFloatingBallEnabled, setFloatingBallEnabled, defaultTargetDeviceName, setDefaultTargetDeviceName, floatingBallSize, setFloatingBallSize, floatingBallAutoHide, setFloatingBallAutoHide } = useSettings();
+  const { pcLocalIp, setPcLocalIp, isGlobalSyncEnabled, setGlobalSyncEnabled, deviceName, setDeviceName, isFloatingBallEnabled, setFloatingBallEnabled, floatingBallSize, setFloatingBallSize, floatingBallAutoHide, setFloatingBallAutoHide, pairedDevices, removePairedDevice, pairingKey, regeneratePairingKey } = useSettings();
   const [localIpInput, setLocalIpInput] = useState(pcLocalIp);
   const [globalSyncInput, setGlobalSyncInput] = useState(isGlobalSyncEnabled);
   const [deviceNameInput, setDeviceNameInput] = useState(deviceName);
   const [floatingBallInput, setFloatingBallInput] = useState(isFloatingBallEnabled);
-  const [defaultTargetInput, setDefaultTargetInput] = useState(defaultTargetDeviceName);
 
   // ═══ Update System State ═══
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error'>('idle');
@@ -44,36 +43,16 @@ export default function SettingsScreen() {
   const [changelog, setChangelog] = useState('');
   const [downloadUrl, setDownloadUrl] = useState('');
   const [downloadedApkUri, setDownloadedApkUri] = useState('');
-  const [routeDevices, setRouteDevices] = useState<any[]>([]);
 
   const { AdvanceOverlay } = NativeModules;
 
-  // Fetch active devices from Firebase for the device picker
-  useEffect(() => {
-    const fetchDevices = async () => {
-      try {
-        const res = await fetch('https://advance-sync-default-rtdb.firebaseio.com/active_devices.json');
-        if (res.ok) {
-          const data = await res.json();
-          if (data) {
-            const now = Date.now();
-            const devices = Object.keys(data).map(k => ({ ...data[k], _key: k })).filter(d => d.IsOnline && d.Timestamp && (now - d.Timestamp) < 300_000 && d.DeviceName !== deviceName);
-            setRouteDevices(devices);
-          }
-        }
-      } catch {}
-    };
-    fetchDevices();
-    const interval = setInterval(fetchDevices, 15000);
-    return () => clearInterval(interval);
-  }, [deviceName]);
+
 
   const handleSave = async () => {
     try {
       await setPcLocalIp(localIpInput);
       await setGlobalSyncEnabled(globalSyncInput);
       await setDeviceName(deviceNameInput);
-      await setDefaultTargetDeviceName(defaultTargetInput);
 
       if (Platform.OS === 'android' && AdvanceOverlay) {
         if (floatingBallInput) {
@@ -141,21 +120,40 @@ export default function SettingsScreen() {
       setUpdateStatus('downloading');
       setUpdateProgress(0);
 
-      const apkUri = `${(FileSystem as any).cacheDirectory}FlyShelf_v${version}.apk`;
-      try { await FileSystem.deleteAsync(apkUri, { idempotent: true }); } catch {}
+      // Clean ALL old FlyShelf APKs from cache to prevent stale installs
+      try {
+        const cacheDir = (FileSystem as any).cacheDirectory;
+        const cacheFiles = await FileSystem.readDirectoryAsync(cacheDir);
+        for (const file of cacheFiles) {
+          if (file.startsWith('FlyShelf_') && file.endsWith('.apk')) {
+            await FileSystem.deleteAsync(`${cacheDir}${file}`, { idempotent: true });
+          }
+        }
+      } catch {}
+
+      // Use timestamp in filename to guarantee a fresh file (prevents resume of stale download)
+      const apkUri = `${(FileSystem as any).cacheDirectory}FlyShelf_v${version}_${Date.now()}.apk`;
 
       const downloadResumable = FileSystem.createDownloadResumable(
         url,
         apkUri,
-        {},
+        { headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' } },
         (progress) => {
-          const pct = Math.round((progress.totalBytesWritten / progress.totalBytesExpectedToWrite) * 100);
+          const pct = progress.totalBytesExpectedToWrite > 0
+            ? Math.round((progress.totalBytesWritten / progress.totalBytesExpectedToWrite) * 100)
+            : 0;
           setUpdateProgress(pct);
         }
       );
 
       const result = await downloadResumable.downloadAsync();
       if (!result?.uri) throw new Error('Download returned no URI');
+
+      // Verify the download is a real APK (> 1MB) — not an error page
+      const fileInfo = await FileSystem.getInfoAsync(result.uri);
+      if (!fileInfo.exists || (fileInfo as any).size < 1_000_000) {
+        throw new Error(`Download too small (${(fileInfo as any).size || 0} bytes) — likely a redirect or error page`);
+      }
 
       setDownloadedApkUri(result.uri);
       setUpdateStatus('ready');
@@ -172,30 +170,42 @@ export default function SettingsScreen() {
       setUpdateStatus('downloading');
       setUpdateProgress(0);
 
-      const apkUri = `${(FileSystem as any).cacheDirectory}FlyShelf_v${latestVersion}.apk`;
+      // Clean old APKs
+      try {
+        const cacheDir = (FileSystem as any).cacheDirectory;
+        const cacheFiles = await FileSystem.readDirectoryAsync(cacheDir);
+        for (const file of cacheFiles) {
+          if (file.startsWith('FlyShelf_') && file.endsWith('.apk')) {
+            await FileSystem.deleteAsync(`${cacheDir}${file}`, { idempotent: true });
+          }
+        }
+      } catch {}
 
-      // Delete old APK if exists
-      try { await FileSystem.deleteAsync(apkUri, { idempotent: true }); } catch {}
+      const apkUri = `${(FileSystem as any).cacheDirectory}FlyShelf_v${latestVersion}_${Date.now()}.apk`;
 
       const downloadResumable = FileSystem.createDownloadResumable(
         downloadUrl,
         apkUri,
-        {},
+        { headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' } },
         (progress) => {
-          const pct = Math.round((progress.totalBytesWritten / progress.totalBytesExpectedToWrite) * 100);
+          const pct = progress.totalBytesExpectedToWrite > 0
+            ? Math.round((progress.totalBytesWritten / progress.totalBytesExpectedToWrite) * 100)
+            : 0;
           setUpdateProgress(pct);
         }
       );
 
       const result = await downloadResumable.downloadAsync();
-      if (!result?.uri) {
-        throw new Error('Download returned no URI');
+      if (!result?.uri) throw new Error('Download returned no URI');
+
+      // Verify APK size
+      const fileInfo = await FileSystem.getInfoAsync(result.uri);
+      if (!fileInfo.exists || (fileInfo as any).size < 1_000_000) {
+        throw new Error(`Download too small (${(fileInfo as any).size || 0} bytes) — likely a redirect or error page`);
       }
 
       setDownloadedApkUri(result.uri);
       setUpdateStatus('ready');
-
-      // Auto-trigger install
       await installApk(result.uri);
 
     } catch (e: any) {
@@ -325,35 +335,7 @@ export default function SettingsScreen() {
               <Text style={styles.helperText}>This name identifies you on the clipboard feed.</Text>
             </View>
 
-            <View style={[styles.inputContainer, { marginTop: 20 }]}>
-              <View style={styles.inputHeaderRow}>
-                <IconSymbol name="car" size={20} color="#F59E0B" />
-                <Text style={styles.inputLabel}>Auto-Route Destination</Text>
-              </View>
-              {/* Device picker — shows available devices from Firebase */}
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 4 }}>
-                <TouchableOpacity
-                  style={{ backgroundColor: !defaultTargetInput ? '#F59E0B' : '#2A2F3A', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10 }}
-                  onPress={() => setDefaultTargetInput('')}
-                >
-                  <Text style={{ color: !defaultTargetInput ? '#0F1115' : '#8A8F98', fontWeight: '700', fontSize: 12 }}>Ask Every Time</Text>
-                </TouchableOpacity>
-                {routeDevices.map(d => (
-                  <TouchableOpacity
-                    key={d._key || d.DeviceName}
-                    style={{ backgroundColor: defaultTargetInput === d.DeviceName ? '#F59E0B' : '#2A2F3A', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 4 }}
-                    onPress={() => setDefaultTargetInput(d.DeviceName)}
-                  >
-                    <Text style={{ fontSize: 12 }}>{d.DeviceType === 'PC' ? '💻' : '📱'}</Text>
-                    <Text style={{ color: defaultTargetInput === d.DeviceName ? '#0F1115' : '#FFF', fontWeight: '600', fontSize: 12 }}>{d.DeviceName}</Text>
-                  </TouchableOpacity>
-                ))}
-                {routeDevices.length === 0 && (
-                  <Text style={{ color: '#4C5361', fontSize: 11, fontStyle: 'italic', paddingVertical: 8 }}>No devices online — start your PC or another device</Text>
-                )}
-              </View>
-              <Text style={styles.helperText}>Select a default device to automatically skip target selection during Extractions. Choose "Ask Every Time" to always pick manually.</Text>
-            </View>
+
 
             <View style={[styles.inputContainer, { marginTop: 20 }]}>
               <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'}}>
@@ -369,6 +351,110 @@ export default function SettingsScreen() {
                   />
               </View>
               <Text style={styles.helperText}>If disabled, your clipboard and files will ONLY synchronize when connected locally. Used to save Firebase active quotas on Free Tiers.</Text>
+            </View>
+          </View>
+
+          {/* Paired Devices Card */}
+          <View style={[styles.card, { marginTop: 16 }]}>
+            <Text style={styles.sectionHeader}>Paired Devices</Text>
+
+            {/* Pairing Key Display */}
+            <View style={styles.inputContainer}>
+              <View style={styles.inputHeaderRow}>
+                <IconSymbol name="key" size={20} color="#F59E0B" />
+                <Text style={styles.inputLabel}>Pairing Key</Text>
+              </View>
+              {pairingKey ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <View style={{ flex: 1, backgroundColor: '#0F1115', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#2A2F3A' }}>
+                    <Text style={{ color: '#8A8F98', fontSize: 14, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', letterSpacing: 1 }}>
+                      {pairingKey.substring(0, 6)}••••••{pairingKey.substring(pairingKey.length - 4)}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => {
+                      Alert.alert(
+                        'Regenerate Key?',
+                        'This will disconnect ALL paired devices. They will need to re-pair using a new QR code or pairing code.',
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          {
+                            text: 'Regenerate', style: 'destructive',
+                            onPress: async () => {
+                              await regeneratePairingKey();
+                              Alert.alert('Done', 'New pairing key generated. Re-pair your devices.');
+                            }
+                          }
+                        ]
+                      );
+                    }}
+                    style={{ backgroundColor: '#F59E0B22', padding: 10, borderRadius: 10 }}
+                  >
+                    <IconSymbol name="arrow.clockwise" size={18} color="#F59E0B" />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={{ backgroundColor: '#0F1115', borderRadius: 12, padding: 16, borderWidth: 1, borderColor: '#EF444433', alignItems: 'center' }}>
+                  <Text style={{ color: '#EF4444', fontSize: 14, fontWeight: '600', marginBottom: 4 }}>Not Paired</Text>
+                  <Text style={{ color: '#8A8F98', fontSize: 12, textAlign: 'center' }}>Scan a QR code or enter a pairing code on the main screen to connect your devices.</Text>
+                </View>
+              )}
+              <Text style={styles.helperText}>This key scopes your clipboard feed. Only devices sharing this key can see each other's items.</Text>
+            </View>
+
+            {/* Device List */}
+            <View style={[styles.inputContainer, { marginTop: 20 }]}>
+              <View style={styles.inputHeaderRow}>
+                <IconSymbol name="laptopcomputer.and.iphone" size={20} color="#6366F1" />
+                <Text style={styles.inputLabel}>Connected Devices ({pairedDevices.length}/5)</Text>
+              </View>
+              {pairedDevices.length > 0 ? (
+                <View style={{ gap: 8 }}>
+                  {pairedDevices.map((device) => (
+                    <View
+                      key={device.deviceId}
+                      style={{
+                        flexDirection: 'row', alignItems: 'center',
+                        backgroundColor: '#0F1115', borderRadius: 14, padding: 14,
+                        borderWidth: 1, borderColor: '#2A2F3A',
+                      }}
+                    >
+                      <Text style={{ fontSize: 22, marginRight: 12 }}>
+                        {device.deviceType === 'PC' ? '💻' : device.deviceType === 'Mobile' ? '📱' : '🌐'}
+                      </Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: '#FFF', fontSize: 15, fontWeight: '600' }}>{device.deviceName}</Text>
+                        <Text style={{ color: '#8A8F98', fontSize: 11, marginTop: 2 }}>
+                          {device.deviceType} • Paired {new Date(device.pairedAt).toLocaleDateString()}
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        onPress={() => {
+                          Alert.alert(
+                            'Remove Device?',
+                            `Remove "${device.deviceName}" from your paired devices?`,
+                            [
+                              { text: 'Cancel', style: 'cancel' },
+                              {
+                                text: 'Remove', style: 'destructive',
+                                onPress: () => removePairedDevice(device.deviceId),
+                              }
+                            ]
+                          );
+                        }}
+                        style={{ backgroundColor: '#EF444422', padding: 8, borderRadius: 8 }}
+                      >
+                        <IconSymbol name="xmark" size={16} color="#EF4444" />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <View style={{ backgroundColor: '#0F1115', borderRadius: 12, padding: 16, borderWidth: 1, borderColor: '#2A2F3A', alignItems: 'center' }}>
+                  <Text style={{ color: '#4C5361', fontSize: 13, fontStyle: 'italic' }}>No devices paired yet</Text>
+                </View>
+              )}
+              <Text style={styles.helperText}>Devices in this list share a secure clipboard channel. Up to 5 devices can be paired simultaneously.</Text>
             </View>
           </View>
 
