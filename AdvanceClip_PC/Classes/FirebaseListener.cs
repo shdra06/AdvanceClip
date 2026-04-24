@@ -238,13 +238,22 @@ namespace AdvanceClip.Classes
                 return null;
             }
 
+            string rawContent = data.TryGetProperty("Raw", out var t3) ? t3.GetString() : "";
+            string itemType = data.TryGetProperty("Type", out var t) ? t.GetString() : "Text";
+
+            // Skip empty text items — never allow blank cards
+            bool isFileType = itemType == "Image" || itemType == "ImageLink" || itemType == "Pdf" ||
+                              itemType == "Archive" || itemType == "Video" || itemType == "Document" ||
+                              itemType == "File" || itemType == "Presentation" || itemType == "Audio";
+            if (!isFileType && string.IsNullOrWhiteSpace(rawContent)) return null;
+
             return new CloudItem
             {
                 Id = key,
                 Timestamp = timestamp,
-                Type = data.TryGetProperty("Type", out var t) ? t.GetString() : "Text",
+                Type = itemType,
                 Title = data.TryGetProperty("Title", out var t2) ? t2.GetString() : "Cloud Payload",
-                Raw = data.TryGetProperty("Raw", out var t3) ? t3.GetString() : "",
+                Raw = rawContent,
                 DownloadUrl = data.TryGetProperty("DownloadUrl", out var t6) ? t6.GetString() : "",
                 SenderUrl = data.TryGetProperty("SenderUrl", out var t7) ? t7.GetString() : "",
                 SourceDeviceName = sourceDevice
@@ -311,6 +320,13 @@ namespace AdvanceClip.Classes
                 }
                 else
                 {
+                    // Skip blank text items — never create empty cards
+                    if (string.IsNullOrWhiteSpace(cloudItem.Raw))
+                    {
+                        Logger.LogAction("FIREBASE SSE", "Skipped empty/whitespace-only text item from cloud.");
+                        return;
+                    }
+
                     // Detect transfer method: Cloudflare tunnel vs Firebase cloud
                     bool isCloudflare = (!string.IsNullOrEmpty(cloudItem.SenderUrl) && cloudItem.SenderUrl.Contains(".trycloudflare.com")) ||
                                         (!string.IsNullOrEmpty(cloudItem.Raw) && cloudItem.Raw.Contains(".trycloudflare.com"));
@@ -658,6 +674,9 @@ namespace AdvanceClip.Classes
                             }
                             else
                             {
+                                // Skip blank items — never allow empty cards
+                                if (string.IsNullOrWhiteSpace(raw)) return;
+
                                 var clip = new ClipboardItem
                                 {
                                     RawContent = raw,

@@ -894,6 +894,8 @@ namespace AdvanceClip.ViewModels
                 if (!string.IsNullOrWhiteSpace(text))
                 {
                     text = text.Trim().TrimEnd('\0');
+                    // Re-check after trim — text might have been only whitespace/null chars
+                    if (string.IsNullOrWhiteSpace(text)) return;
                     AdvanceClip.Classes.Logger.LogAction("DRAG IN", $"Extracted string text payload length: {text.Length}");
 
                     // DEDUP: If ANY existing item already has this exact content, bump it to the top — no duplicate.
