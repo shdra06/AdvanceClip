@@ -130,10 +130,10 @@
             </ListView.ItemContainerStyle>
             <ListView.ItemTemplate>
                 <DataTemplate>
-                    <Border Name="CardBorder" BorderBrush="#15FFFFFF" BorderThickness="1" CornerRadius="14" Margin="4,2,4,4" Padding="12" RenderTransformOrigin="0.5,0.5"
+                    <Border Name="CardBorder" BorderBrush="{DynamicResource MicaWPF.Brushes.ControlStrokeColorDefault}" BorderThickness="1" CornerRadius="14" Margin="4,2,4,4" Padding="12" RenderTransformOrigin="0.5,0.5"
                             MouseEnter="CardBorder_MouseEnter" MouseLeave="CardBorder_MouseLeave">
                         <Border.Background>
-                            <SolidColorBrush Color="#0AFFFFFF" />
+                            <SolidColorBrush Color="{DynamicResource MicaWPF.Colors.SubtleFillColorSecondary}" />
                         </Border.Background>
                         <Border.Style>
                             <Style TargetType="Border">
@@ -522,7 +522,13 @@
                                     </ui:Button.Icon>
                                 </ui:Button>
 
-                                <!-- Delete individual button hidden inside the right click menu as per request -->
+                                <!-- Delete individual item button -->
+                                <ui:Button Focusable="False" Appearance="Secondary" Foreground="#EF4444" ToolTip="Delete Item" Margin="0,0,6,0"
+                                           Command="{Binding DataContext.RemoveItemCommand, ElementName=ShelfListView}"
+                                           CommandParameter="{Binding}">
+                                    <ui:Button.Icon><ui:SymbolIcon Symbol="Dismiss24" Filled="True" /></ui:Button.Icon>
+                                </ui:Button>
+
                                 </StackPanel>
                             </Border>
 
@@ -563,7 +569,7 @@
                             </Border>
 
                             <!-- Semantic Icon Fallback -->
-                            <Border Name="SemanticIconBorder" Grid.Row="0" Grid.Column="0" Width="40" Height="40" Margin="0,0,12,0" Background="#0CFFFFFF" CornerRadius="10" BorderBrush="#14FFFFFF" BorderThickness="1">
+                            <Border Name="SemanticIconBorder" Grid.Row="0" Grid.Column="0" Width="40" Height="40" Margin="0,0,12,0" Background="{DynamicResource MicaWPF.Brushes.SubtleFillColorSecondary}" CornerRadius="10" BorderBrush="{DynamicResource MicaWPF.Brushes.ControlStrokeColorDefault}" BorderThickness="1">
                                 <Border.Style>
                                     <Style TargetType="Border">
                                         <Setter Property="Visibility" Value="Collapsed"/>
@@ -648,7 +654,7 @@
                                         </Style.Triggers>
                                     </Style>
                                 </StackPanel.Style>
-                                <Border CornerRadius="6" Padding="5,2" Background="#18FFFFFF">
+                                    <Border CornerRadius="6" Padding="5,2" Background="{DynamicResource MicaWPF.Brushes.SubtleFillColorSecondary}">
                                     <StackPanel Orientation="Horizontal">
                                         <ui:SymbolIcon FontSize="10" Margin="0,0,3,0">
                                             <ui:SymbolIcon.Style>
@@ -699,7 +705,7 @@
                             <!-- The Text Body -->
                             <StackPanel Grid.Row="0" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,0,4">
                                 <TextBlock Name="TitleText" 
-                                           Text="{Binding FileName}" Foreground="#E1E1E1" FontWeight="SemiBold" TextWrapping="Wrap" 
+                                           Text="{Binding FileName}" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorPrimary}" FontWeight="SemiBold" TextWrapping="Wrap" 
                                            TextTrimming="CharacterEllipsis" MaxHeight="130" />
                             </StackPanel>
 
@@ -736,8 +742,8 @@
                         
                         <!-- Hover Effect on the Container -->
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="CardBorder" Property="Background" Value="#14FFFFFF"/>
-                            <Setter TargetName="CardBorder" Property="BorderBrush" Value="#2AFFFFFF"/>
+                            <Setter TargetName="CardBorder" Property="Background" Value="{DynamicResource MicaWPF.Brushes.SubtleFillColorTertiary}"/>
+                            <Setter TargetName="CardBorder" Property="BorderBrush" Value="{DynamicResource MicaWPF.Brushes.ControlStrokeColorSecondary}"/>
                         </Trigger>
                     </DataTemplate.Triggers>
                 </DataTemplate>

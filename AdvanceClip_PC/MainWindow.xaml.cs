@@ -233,6 +233,13 @@ namespace AdvanceClip
                 int hotkeyId = wParam.ToInt32();
                 if (hotkeyId == HOTKEY_ID)
                 {
+                    // Toggle: if already visible, just hide and return
+                    if (this.IsVisible)
+                    {
+                        this.Hide();
+                        handled = true;
+                        return IntPtr.Zero;
+                    }
                     var workArea = SystemParameters.WorkArea;
                     ShowNearPosition(workArea.Left + workArea.Width - 380, workArea.Top + workArea.Height, 1, true, true);
                     handled = true;

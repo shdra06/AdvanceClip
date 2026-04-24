@@ -900,6 +900,12 @@ namespace AdvanceClip.ViewModels
                     text = text.Trim().TrimEnd('\0');
                     // Re-check after trim — text might have been only whitespace/null chars
                     if (string.IsNullOrWhiteSpace(text)) return;
+
+                    // Strip invisible Unicode characters that cause blank boxes
+                    // (zero-width joiners, variation selectors, directional marks, etc.)
+                    string visibleCheck = System.Text.RegularExpressions.Regex.Replace(text, 
+                        @"[\u200B-\u200F\u2028-\u202F\u2060-\u206F\uFE00-\uFE0F\uFEFF\u00AD]", "");
+                    if (string.IsNullOrWhiteSpace(visibleCheck)) return;
                     AdvanceClip.Classes.Logger.LogAction("DRAG IN", $"Extracted string text payload length: {text.Length}");
 
                     // DEDUP: If ANY existing item already has this exact content, bump it to the top — no duplicate.

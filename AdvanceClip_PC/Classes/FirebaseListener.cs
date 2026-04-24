@@ -16,7 +16,13 @@ namespace AdvanceClip.Classes
         private static readonly HttpClient _streamClient = new HttpClient() { Timeout = System.Threading.Timeout.InfiniteTimeSpan };
         private static readonly HttpClient _pollClient = new HttpClient() { Timeout = TimeSpan.FromSeconds(10) };
         private const string FIREBASE_BASE = "https://advance-sync-default-rtdb.firebaseio.com";
-        private const string CLIPBOARD_URL = FIREBASE_BASE + "/clipboard.json";
+        
+        /// <summary>Returns the scoped clipboard URL for the current pairing key (private sync room).</summary>
+        private static string GetScopedClipboardUrl()
+        {
+            string pairingKey = DevicePairingManager.EnsurePairingKey();
+            return $"{FIREBASE_BASE}/clipboard/{pairingKey}.json";
+        }
         private FlyShelfViewModel _viewModel;
         private long _lastProcessedTimestamp = 0;
         private CancellationTokenSource? _cts = null;
@@ -67,7 +73,7 @@ namespace AdvanceClip.Classes
             {
                 try
                 {
-                    string streamUrl = CLIPBOARD_URL;
+                    string streamUrl = GetScopedClipboardUrl();
 
                     var request = new HttpRequestMessage(HttpMethod.Get, streamUrl);
                     request.Headers.Add("Accept", "text/event-stream");

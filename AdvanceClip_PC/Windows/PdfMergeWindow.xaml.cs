@@ -5,6 +5,8 @@ using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
 using AdvanceClip.ViewModels;
 using MicaWPF.Controls;
 using PdfSharp.Pdf;
@@ -17,6 +19,8 @@ namespace AdvanceClip.Windows
     {
         public ObservableCollection<PdfMergeItem> MergeItems { get; set; }
         private FlyShelfViewModel _viewModel;
+        private Point _dragStartPoint;
+        private PdfMergeItem? _draggedItem = null;
 
         public PdfMergeWindow(List<ClipboardItem> pdfsToMerge, FlyShelfViewModel vm)
         {
@@ -122,6 +126,124 @@ namespace AdvanceClip.Windows
                 }
                 UpdateSummary();
             }
+        }
+
+        // ══════════════════════════════════════════
+        // DRAG-DROP REORDER
+        // ══════════════════════════════════════════
+
+        private void PdfList_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            _dragStartPoint = e.GetPosition(null);
+
+            // Find the data item under cursor
+            var element = e.OriginalSource as DependencyObject;
+            var listBoxItem = FindAncestor<ListBoxItem>(element);
+            if (listBoxItem != null)
+                _draggedItem = listBoxItem.DataContext as PdfMergeItem;
+            else
+                _draggedItem = null;
+        }
+
+        private void PdfList_PreviewMouseMove(object sender, MouseEventArgs e)
+        {
+            if (e.LeftButton != MouseButtonState.Pressed || _draggedItem == null) return;
+
+            Point currentPos = e.GetPosition(null);
+            Vector diff = _dragStartPoint - currentPos;
+
+            // Only start drag after a minimum threshold (prevents accidental drags)
+            if (Math.Abs(diff.X) > SystemParameters.MinimumHorizontalDragDistance ||
+                Math.Abs(diff.Y) > SystemParameters.MinimumVerticalDragDistance)
+            {
+                var data = new DataObject("PdfMergeItem", _draggedItem);
+                DragDrop.DoDragDrop(PdfItemsList, data, DragDropEffects.Move);
+                _draggedItem = null;
+            }
+        }
+
+        private void PdfList_DragOver(object sender, DragEventArgs e)
+        {
+            if (!e.Data.GetDataPresent("PdfMergeItem"))
+            {
+                e.Effects = DragDropEffects.None;
+                return;
+            }
+            e.Effects = DragDropEffects.Move;
+            e.Handled = true;
+
+            // Highlight the drop target
+            var element = e.OriginalSource as DependencyObject;
+            var listBoxItem = FindAncestor<ListBoxItem>(element);
+            
+            // Clear all drop indicators
+            foreach (var item in PdfItemsList.Items)
+            {
+                var container = PdfItemsList.ItemContainerGenerator.ContainerFromItem(item) as ListBoxItem;
+                if (container != null)
+                    container.Tag = null;
+            }
+
+            // Set drop indicator on target
+            if (listBoxItem != null)
+                listBoxItem.Tag = "DropTarget";
+        }
+
+        private void PdfList_Drop(object sender, DragEventArgs e)
+        {
+            if (!e.Data.GetDataPresent("PdfMergeItem")) return;
+
+            var droppedItem = e.Data.GetData("PdfMergeItem") as PdfMergeItem;
+            if (droppedItem == null) return;
+
+            // Find target item
+            var element = e.OriginalSource as DependencyObject;
+            var targetListBoxItem = FindAncestor<ListBoxItem>(element);
+            if (targetListBoxItem == null) return;
+
+            var targetItem = targetListBoxItem.DataContext as PdfMergeItem;
+            if (targetItem == null || targetItem == droppedItem) return;
+
+            int oldIndex = MergeItems.IndexOf(droppedItem);
+            int newIndex = MergeItems.IndexOf(targetItem);
+
+            if (oldIndex >= 0 && newIndex >= 0 && oldIndex != newIndex)
+            {
+                MergeItems.Move(oldIndex, newIndex);
+                PdfItemsList.SelectedItem = droppedItem;
+                UpdateSummary();
+            }
+
+            // Clear all drop indicators
+            foreach (var item in PdfItemsList.Items)
+            {
+                var container = PdfItemsList.ItemContainerGenerator.ContainerFromItem(item) as ListBoxItem;
+                if (container != null)
+                    container.Tag = null;
+            }
+
+            e.Handled = true;
+        }
+
+        private void PdfList_DragLeave(object sender, DragEventArgs e)
+        {
+            // Clear all drop indicators when mouse leaves
+            foreach (var item in PdfItemsList.Items)
+            {
+                var container = PdfItemsList.ItemContainerGenerator.ContainerFromItem(item) as ListBoxItem;
+                if (container != null)
+                    container.Tag = null;
+            }
+        }
+
+        private static T? FindAncestor<T>(DependencyObject? current) where T : DependencyObject
+        {
+            while (current != null)
+            {
+                if (current is T match) return match;
+                current = VisualTreeHelper.GetParent(current);
+            }
+            return null;
         }
 
         private void Cancel_Click(object sender, RoutedEventArgs e)
