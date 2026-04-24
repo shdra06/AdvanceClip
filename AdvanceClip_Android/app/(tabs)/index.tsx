@@ -50,6 +50,14 @@ export default function SyncScreen() {
   const sentContentFingerprintsRef = useRef<Set<string>>(new Set());
   const recentSyncFingerprintsRef = useRef<Map<string, number>>(new Map());
 
+  // ─── Scoped Clipboard (only paired devices see each other) ───
+  const pairingKeyRef = useRef<string>('');
+  useEffect(() => {
+    AsyncStorage.getItem('pairingKey').then(k => { if (k) pairingKeyRef.current = k; });
+  }, []);
+  /** Returns the Firebase path scoped to the pairing key, e.g. `clipboard/abc123` */
+  const clipboardPath = () => `clipboard/${pairingKeyRef.current}`;
+
   // ─── PC URL (auto-discovered from Firebase, no manual config needed) ───
   const cachedPcUrlRef = useRef<string | null>(null);
   const cachedPcUrlTimestampRef = useRef<number>(0);
@@ -148,7 +156,7 @@ export default function SyncScreen() {
           };
           setClips(prev => [newItem, ...prev]);
           if (isGlobalSyncEnabled) {
-            try { const clipRef = push(ref(database, 'global_clipboard')); await set(clipRef, newItem); } catch(e) {}
+            try { if (pairingKeyRef.current) { const clipRef = push(ref(database, clipboardPath())); await set(clipRef, newItem); } } catch(e) {}
           }
         }
       } catch(e) {}
@@ -230,7 +238,7 @@ export default function SyncScreen() {
               await uploadBytesResumable(sRef, blob);
               const downloadURL = await getDownloadURL(sRef);
               screenshotItem.Raw = downloadURL;
-              const clipRef = push(ref(database, 'clipboard'));
+              const clipRef = push(ref(database, clipboardPath()));
               await set(clipRef, screenshotItem);
               setClips(prev => prev.map(c => c.Title === fileName && c.Type === 'ImageLink' ? { ...c, Raw: downloadURL } : c));
             } catch(e) {}
@@ -393,7 +401,9 @@ export default function SyncScreen() {
       setClips([]);
       return;
     }
-    const clipsRef = query(ref(database, 'clipboard'), orderByChild('Timestamp'), limitToLast(30));
+    const pk = pairingKeyRef.current;
+    if (!pk) { setClips([]); return; }
+    const clipsRef = query(ref(database, `clipboard/${pk}`), orderByChild('Timestamp'), limitToLast(30));
     const unsubscribeFeed = onValue(clipsRef, (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.val();
@@ -629,7 +639,7 @@ export default function SyncScreen() {
         if (isGlobalSyncEnabled) {
           const updates: any = {};
           clips.forEach(item => { if (!item.IsPinned) updates[item.id!] = null; });
-          if (Object.keys(updates).length > 0) await update(ref(database, 'clipboard'), updates);
+          if (Object.keys(updates).length > 0 && pairingKeyRef.current) await update(ref(database, clipboardPath()), updates);
         }
         Platform.OS === 'android' ? ToastAndroid.show(`Clean slate natively.`, ToastAndroid.SHORT) : alert(`Wiped visually & globally.`);
       } catch(e) {}
@@ -684,7 +694,7 @@ export default function SyncScreen() {
                 const sf = storageRef(storage, `archives/Screenshot_${Date.now()}.jpg`);
                 await uploadBytesResumable(sf, blob);
                 const downloadUrl = await getDownloadURL(sf);
-                const newRef = push(ref(database, 'clipboard'));
+                const newRef = push(ref(database, clipboardPath()));
                 await set(newRef, { Title: `Screenshot_${Date.now()}.jpg`, Type: 'ImageLink', Raw: downloadUrl, Time: new Date().toLocaleTimeString(), Timestamp: Date.now(), SourceDeviceName: deviceName || 'Mobile', SourceDeviceType: 'Mobile' });
               }
               Platform.OS === 'android' ? ToastAndroid.show("Extracted Screenshot ✨", ToastAndroid.SHORT) : null;
@@ -793,7 +803,7 @@ export default function SyncScreen() {
         localSuccess = response.ok;
       } catch(e) { cachedPcUrlRef.current = null; }
       if (!localSuccess && isGlobalSyncEnabled) {
-        const newRef = push(ref(database, 'clipboard'));
+        const newRef = push(ref(database, clipboardPath()));
         set(newRef, { Title: payloadText.length > 50 ? payloadText.substring(0, 50) + '...' : payloadText, Type: finalType, Raw: finalRaw, Time: new Date().toLocaleTimeString(), Timestamp: Date.now(), SourceDeviceName: deviceName || 'Unknown Mobile', SourceDeviceType: 'Mobile' }).catch(() => {});
       }
     } catch (e) {}
@@ -836,7 +846,7 @@ export default function SyncScreen() {
     if (Platform.OS === 'android') ToastAndroid.show(`Force syncing ${selected.length} items...`, ToastAndroid.LONG);
     try {
       for (const deviceKey of targetDeviceKeys) { for (const item of selected) { const forcedRef = push(ref(database, `forced_sync/${deviceKey}`)); await set(forcedRef, { ...item, ForcedBy: deviceName, ForcedAt: Date.now(), SourceDeviceName: item.SourceDeviceName || deviceName }); } }
-      for (const item of selected) { if (!item.id) { const clipRef = push(ref(database, 'global_clipboard')); await set(clipRef, { ...item, Timestamp: Date.now() }); } }
+      for (const item of selected) { if (!item.id && pairingKeyRef.current) { const clipRef = push(ref(database, clipboardPath())); await set(clipRef, { ...item, Timestamp: Date.now() }); } }
       for (const deviceKey of targetDeviceKeys) {
         const dev = forceSyncDevices.find(d => d.key === deviceKey);
         if (dev?.LocalIp) { try { const url = await resolveOptimalUrl(dev); if (url) { for (const item of selected) { await fetchWithTimeout(`${url}/api/sync`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Advance-Client': 'MobileCompanion' }, body: JSON.stringify({ title: item.Title, content: item.Raw, type: item.Type, sourceDevice: deviceName }) }, 5000).catch(() => {}); } } } catch (e) {} }
@@ -918,6 +928,7 @@ export default function SyncScreen() {
         ['pairedLocalUrl', local || ''], ['pairedGlobalUrl', globalUrl || ''],
         ['pairedPin', pin || ''],
       ]);
+      pairingKeyRef.current = key || '';
       cachedPcUrlRef.current = workingUrl;
       cachedPcUrlTimestampRef.current = Date.now();
       setPairedPcName(pcName || 'Device');
@@ -1037,7 +1048,7 @@ export default function SyncScreen() {
         if (size && size > 100 * 1024 * 1024) { Alert.alert("Too Large", "100MB limit for Firebase."); setIsSending(false); return; }
         const response = await fetch(hydratedPath); const blob = await response.blob();
         const sf = storageRef(storage, `archives/${name}_${Date.now()}`); await uploadBytesResumable(sf, blob); const downloadUrl = await getDownloadURL(sf);
-        const newRef = push(ref(database, 'clipboard'));
+        const newRef = push(ref(database, clipboardPath()));
         const ext = name.split('.').pop()?.toLowerCase() || '';
         await set(newRef, { Title: name, Type: (() => { if (type === 'Image' || type === 'Video') return type; if (['apk','zip','rar'].includes(ext)) return 'Archive'; if (['doc','docx','txt'].includes(ext)) return 'Document'; if (ext === 'pdf') return 'Pdf'; if (['mp4','avi','mkv'].includes(ext)) return 'Video'; if (['ppt','pptx'].includes(ext)) return 'Presentation'; if (['jpg','jpeg','png','gif','webp'].includes(ext)) return 'Image'; return 'File'; })(), Raw: downloadUrl, Time: new Date().toLocaleTimeString(), Timestamp: Date.now(), SourceDeviceName: deviceName || 'Unknown Mobile', SourceDeviceType: 'Mobile' });
       } else {
@@ -1400,7 +1411,7 @@ export default function SyncScreen() {
                         <TouchableOpacity onPress={async () => {
                           try {
                             if (!item.id) { ToastAndroid.show("Pinning is restricted to Global Cloud payloads.", ToastAndroid.SHORT); return; }
-                            await update(ref(database, `clipboard/${item.id}`), { IsPinned: !item.IsPinned });
+                            await update(ref(database, `${clipboardPath()}/${item.id}`), { IsPinned: !item.IsPinned });
                             setClips(prev => prev.map(c => c.id === item.id ? {...c, IsPinned: !c.IsPinned} : c));
                             ToastAndroid.show(item.IsPinned ? "Unpinned" : "Pinned!", ToastAndroid.SHORT);
                           } catch(e) {}
@@ -1446,7 +1457,7 @@ export default function SyncScreen() {
                         <TouchableOpacity onPress={async () => {
                           if (!item.id) return;
                           setLocalDeletedIds(prev => { const n = new Set(prev); n.add(item.id!); AsyncStorage.setItem('localDeletedIds', JSON.stringify([...n])).catch(() => {}); return n; });
-                          if (isGlobalSyncEnabled) { try { await remove(ref(database, `clipboard/${item.id}`)); } catch(e) {} }
+                          if (isGlobalSyncEnabled && pairingKeyRef.current) { try { await remove(ref(database, `${clipboardPath()}/${item.id}`)); } catch(e) {} }
                           setActiveOptionsId(null);
                           if (Platform.OS === 'android') ToastAndroid.show("Deleted", ToastAndroid.SHORT);
                         }} style={[styles.actionBtnIcon, {backgroundColor: '#EF444433'}]}>

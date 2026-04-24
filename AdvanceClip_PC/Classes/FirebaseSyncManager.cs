@@ -13,7 +13,14 @@ namespace AdvanceClip.Classes
     public class FirebaseSyncManager
     {
         private static readonly HttpClient _client = new HttpClient();
-        private const string FIREBASE_URL = "https://advance-sync-default-rtdb.firebaseio.com/clipboard.json";
+        private const string FIREBASE_BASE = "https://advance-sync-default-rtdb.firebaseio.com";
+        
+        /// <summary>Returns the scoped clipboard path for this device's pairing key.</summary>
+        private static string GetScopedClipboardUrl()
+        {
+            string pairingKey = DevicePairingManager.EnsurePairingKey();
+            return $"{FIREBASE_BASE}/clipboard/{pairingKey}.json";
+        }
         
         // Public Cloudflare URL for constructing file download links
         public static string CachedGlobalUrl { get; set; } = "";
@@ -152,7 +159,7 @@ namespace AdvanceClip.Classes
                 string json = JsonSerializer.Serialize(payload);
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-                var response = await _client.PostAsync(FIREBASE_URL, content);
+                var response = await _client.PostAsync(GetScopedClipboardUrl(), content);
                 
                 if (response.IsSuccessStatusCode)
                 {
@@ -172,7 +179,8 @@ namespace AdvanceClip.Classes
                                 await Task.Delay(deleteDelay);
                                 try
                                 {
-                                    string deleteUrl = $"https://advance-sync-default-rtdb.firebaseio.com/clipboard/{entryKey}.json";
+                                    string pairingKey = DevicePairingManager.EnsurePairingKey();
+                                    string deleteUrl = $"{FIREBASE_BASE}/clipboard/{pairingKey}/{entryKey}.json";
                                     await _client.DeleteAsync(deleteUrl);
                                     Logger.LogAction("FIREBASE CLEANUP", $"Auto-deleted entry '{entryKey}'");
                                 }
