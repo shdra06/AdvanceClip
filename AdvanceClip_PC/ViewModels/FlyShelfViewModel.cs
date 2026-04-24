@@ -874,12 +874,12 @@ namespace AdvanceClip.ViewModels
                     text = text.Trim().TrimEnd('\0');
                     AdvanceClip.Classes.Logger.LogAction("DRAG IN", $"Extracted string text payload length: {text.Length}");
 
-                    // DEDUP: If the most recent item already has this exact content, skip entirely.
-                    // Prevents duplicate entries when dragging the same item back into the clipboard.
-                    var topItem = DroppedItems.Count > 0 ? DroppedItems[0] : null;
-                    if (topItem != null && topItem.RawContent == text)
+                    // DEDUP: If ANY existing item already has this exact content, skip entirely.
+                    // Prevents pinned items and recent copies from spawning duplicates.
+                    var existingMatch = DroppedItems.FirstOrDefault(i => i.RawContent == text);
+                    if (existingMatch != null)
                     {
-                        AdvanceClip.Classes.Logger.LogAction("DRAG IN", "Skipped — identical to top item (dedup)");
+                        AdvanceClip.Classes.Logger.LogAction("DRAG IN", $"Skipped — identical content already exists (dedup, pinned={existingMatch.IsPinned})");
                         return;
                     }
 

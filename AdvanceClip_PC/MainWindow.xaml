@@ -57,7 +57,7 @@
                 </ui:Button>
 
                 <ui:Button Focusable="False" Appearance="Secondary" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorSecondary}" Click="EmojiPicker_Click" ToolTip="Emoji Picker" Margin="0,0,6,0" Padding="8,6" CornerRadius="8">
-                    <emoji:TextBlock Text="😊" FontSize="14"/>
+                    <ui:Button.Icon><ui:SymbolIcon Symbol="Emoji24" /></ui:Button.Icon>
                 </ui:Button>
                 
                 <ui:Button Focusable="False" Appearance="Secondary" Click="ToggleGlobalSync_Click" ToolTip="Toggle Global Web Sync" Margin="0,0,6,0" Padding="8,6" CornerRadius="8">
