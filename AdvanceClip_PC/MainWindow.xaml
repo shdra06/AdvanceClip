@@ -12,7 +12,7 @@
         Opacity="1"
         MaxHeight="260" SizeToContent="Height" MinHeight="100" BorderThickness="0"
         WindowStyle="None" ResizeMode="NoResize" Background="Transparent" SystemBackdropType="Acrylic"
-        ShowInTaskbar="False" Margin="0" Topmost="True" ShowActivated="False" Focusable="False"
+        ShowInTaskbar="False" Margin="0" Topmost="True" ShowActivated="False"
         AllowDrop="True" Drop="Window_Drop" DragEnter="Window_DragEnter" DragLeave="Window_DragLeave" PreviewDragOver="Window_PreviewDragOver"
         Deactivated="Window_Deactivated"
         TextOptions.TextRenderingMode="ClearType" TextOptions.TextFormattingMode="Ideal"
@@ -85,6 +85,7 @@
         </Grid>
 
         <ListView Name="ShelfListView" Grid.Row="1" ItemsSource="{Binding DroppedItems}" Background="#01000000" BorderThickness="0" Margin="12,0,12,12"
+                  Focusable="True" KeyboardNavigation.DirectionalNavigation="Contained"
                   ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Hidden"
                   ScrollViewer.CanContentScroll="True" VirtualizingPanel.ScrollUnit="Pixel"
                   SelectionMode="Extended" MouseMove="ShelfListView_MouseMove" PreviewMouseLeftButtonDown="ShelfListView_PreviewMouseLeftButtonDown"
@@ -99,6 +100,7 @@
             <ListView.ItemContainerStyle>
                 <Style TargetType="ListViewItem">
                     <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                    <Setter Property="Focusable" Value="True"/>
                     <Setter Property="Background" Value="Transparent"/>
                     <Setter Property="BorderBrush" Value="Transparent"/>
                     <Setter Property="BorderThickness" Value="0"/>
@@ -114,7 +116,11 @@
                                 </Border>
                                 <ControlTemplate.Triggers>
                                     <Trigger Property="IsSelected" Value="True">
-                                        <Setter TargetName="ItemBorder" Property="BorderBrush" Value="#40FFFFFF"/>
+                                        <Setter TargetName="ItemBorder" Property="BorderBrush" Value="#60A78BFA"/>
+                                        <Setter TargetName="ItemBorder" Property="Background" Value="#10A78BFA"/>
+                                    </Trigger>
+                                    <Trigger Property="IsKeyboardFocused" Value="True">
+                                        <Setter TargetName="ItemBorder" Property="BorderBrush" Value="#80A78BFA"/>
                                     </Trigger>
                                 </ControlTemplate.Triggers>
                             </ControlTemplate>

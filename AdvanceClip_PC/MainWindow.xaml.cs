@@ -595,7 +595,6 @@ namespace AdvanceClip
             int currentToken = ++_spawnToken;
 
             // Give keyboard focus to the ListView so arrow keys + Enter work immediately
-            // Delay slightly more than the 50ms sort to ensure list is stable
             if (stealFocus && _viewModel.DroppedItems.Count > 0)
             {
                 Dispatcher.InvokeAsync(async () =>
@@ -603,12 +602,23 @@ namespace AdvanceClip
                     await System.Threading.Tasks.Task.Delay(100); // wait for SortForContext to finish
                     if (_viewModel.DroppedItems.Count > 0)
                     {
-                        ShelfListView.Focus();
-                        Keyboard.Focus(ShelfListView);
                         ShelfListView.SelectedIndex = 0;
                         ShelfListView.ScrollIntoView(ShelfListView.Items[0]);
-                        var container = ShelfListView.ItemContainerGenerator.ContainerFromIndex(0) as ListViewItem;
-                        container?.Focus();
+                        ShelfListView.Focus();
+                        // Dispatch container focus to next frame — container must be realized first
+                        Dispatcher.InvokeAsync(() =>
+                        {
+                            var container = ShelfListView.ItemContainerGenerator.ContainerFromIndex(0) as ListViewItem;
+                            if (container != null)
+                            {
+                                container.Focus();
+                                Keyboard.Focus(container);
+                            }
+                            else
+                            {
+                                Keyboard.Focus(ShelfListView);
+                            }
+                        }, System.Windows.Threading.DispatcherPriority.Input);
                     }
                 }, System.Windows.Threading.DispatcherPriority.Input);
             }
@@ -892,28 +902,32 @@ namespace AdvanceClip
             }
             else if (e.Key == Key.Down || e.Key == Key.Up)
             {
-                if (ShelfListView.SelectedIndex < 0 && _viewModel.DroppedItems.Count > 0)
+                int currentIdx = ShelfListView.SelectedIndex;
+                int count = _viewModel.DroppedItems.Count;
+                if (count == 0) { e.Handled = true; return; }
+
+                int newIdx;
+                if (currentIdx < 0)
                 {
-                    // Nothing selected yet — auto-select first item
-                    ShelfListView.SelectedIndex = 0;
-                    var container = ShelfListView.ItemContainerGenerator.ContainerFromIndex(0) as ListViewItem;
-                    container?.Focus();
-                    e.Handled = true;
+                    newIdx = 0; // Nothing selected — start at first item
                 }
                 else
                 {
-                    // Let WPF move the selection naturally, then focus the new container
-                    int currentIdx = ShelfListView.SelectedIndex;
-                    int newIdx = e.Key == Key.Down
-                        ? Math.Min(currentIdx + 1, _viewModel.DroppedItems.Count - 1)
+                    newIdx = e.Key == Key.Down
+                        ? Math.Min(currentIdx + 1, count - 1)
                         : Math.Max(currentIdx - 1, 0);
+                }
 
-                    ShelfListView.SelectedIndex = newIdx;
+                ShelfListView.SelectedIndex = newIdx;
+                // ScrollIntoView MUST come first — it forces the virtualizer to create the container
+                ShelfListView.ScrollIntoView(ShelfListView.Items[newIdx]);
+                // Dispatch focus to next frame so the container is fully realized
+                Dispatcher.InvokeAsync(() =>
+                {
                     var container = ShelfListView.ItemContainerGenerator.ContainerFromIndex(newIdx) as ListViewItem;
                     container?.Focus();
-                    ShelfListView.ScrollIntoView(ShelfListView.SelectedItem);
-                    e.Handled = true;
-                }
+                }, System.Windows.Threading.DispatcherPriority.Input);
+                e.Handled = true;
             }
         }
 
