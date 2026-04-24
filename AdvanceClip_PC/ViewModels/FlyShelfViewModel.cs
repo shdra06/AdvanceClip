@@ -28,6 +28,9 @@ namespace AdvanceClip.ViewModels
             var items = Classes.ClipboardHistoryManager.LoadHistory();
             foreach (var item in items)
             {
+                // Skip empty items — no content, no file, no image
+                if (IsEffectivelyEmpty(item)) continue;
+
                 // Rebuild BitmapImage icon from persisted FilePath
                 if ((item.ItemType == ClipboardItemType.Image || item.ItemType == ClipboardItemType.QRCode)
                     && !string.IsNullOrEmpty(item.FilePath) && File.Exists(item.FilePath))
@@ -73,6 +76,23 @@ namespace AdvanceClip.ViewModels
         private void PersistHistory()
         {
             Classes.ClipboardHistoryManager.SaveHistoryDebounced(DroppedItems);
+        }
+
+        /// <summary>
+        /// Returns true if the item has no displayable content (no text, no file, no image).
+        /// Used to filter out ghost/empty items during load and insertion.
+        /// </summary>
+        private static bool IsEffectivelyEmpty(ClipboardItem item)
+        {
+            // Images are never "empty" — even if the file is deleted, they had valid content when captured
+            if (item.ItemType == ClipboardItemType.Image || item.ItemType == ClipboardItemType.QRCode)
+                return false;
+            
+            bool hasText = !string.IsNullOrWhiteSpace(item.RawContent);
+            bool hasFile = !string.IsNullOrWhiteSpace(item.FilePath);
+            bool hasName = !string.IsNullOrWhiteSpace(item.FileName);
+            
+            return !hasText && !hasFile && !hasName;
         }
 
         // Pre-compiled regex patterns for text classification — avoids recompilation on every clipboard event

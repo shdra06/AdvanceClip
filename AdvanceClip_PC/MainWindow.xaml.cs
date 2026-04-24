@@ -919,6 +919,8 @@ namespace AdvanceClip
                 }
 
                 ShelfListView.SelectedIndex = newIdx;
+                // Kill any running smooth scroll animation so it doesn't fight ScrollIntoView
+                ResetSmoothScroll();
                 // ScrollIntoView MUST come first — it forces the virtualizer to create the container
                 ShelfListView.ScrollIntoView(ShelfListView.Items[newIdx]);
                 // Dispatch focus to next frame so the container is fully realized
@@ -963,6 +965,21 @@ namespace AdvanceClip
         // Smooth scroll state for main clipboard list
         private double _scrollTarget = -1;
         private bool _scrollAnimating = false;
+        private EventHandler? _scrollRenderHandler;
+
+        /// <summary>
+        /// Resets the smooth scroll target so it doesn't fight ScrollIntoView from keyboard nav.
+        /// </summary>
+        internal void ResetSmoothScroll()
+        {
+            _scrollTarget = -1;
+            if (_scrollRenderHandler != null)
+            {
+                System.Windows.Media.CompositionTarget.Rendering -= _scrollRenderHandler;
+                _scrollRenderHandler = null;
+                _scrollAnimating = false;
+            }
+        }
 
         private void ShelfListView_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
         {
@@ -982,7 +999,7 @@ namespace AdvanceClip
                 if (!_scrollAnimating)
                 {
                     _scrollAnimating = true;
-                    System.Windows.Media.CompositionTarget.Rendering += (s2, e2) =>
+                    _scrollRenderHandler = (s2, e2) =>
                     {
                         double current = sv.VerticalOffset;
                         double diff = _scrollTarget - current;
@@ -991,12 +1008,19 @@ namespace AdvanceClip
                         {
                             sv.ScrollToVerticalOffset(_scrollTarget);
                             _scrollAnimating = false;
+                            // CRITICAL: Unsubscribe so we don't fight ScrollIntoView from keyboard nav
+                            if (_scrollRenderHandler != null)
+                            {
+                                System.Windows.Media.CompositionTarget.Rendering -= _scrollRenderHandler;
+                                _scrollRenderHandler = null;
+                            }
                             return;
                         }
 
                         // Lerp for smooth motion
                         sv.ScrollToVerticalOffset(current + diff * 0.18);
                     };
+                    System.Windows.Media.CompositionTarget.Rendering += _scrollRenderHandler;
                 }
             }
         }
