@@ -3,12 +3,17 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { LogBox } from 'react-native';
 import 'react-native-reanimated';
-import { useEffect } from 'react';
+import { useEffect, useCallback } from 'react';
 import * as BackgroundFetch from 'expo-background-fetch';
 import * as TaskManager from 'expo-task-manager';
+import * as SplashScreen from 'expo-splash-screen';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold, Inter_800ExtraBold } from '@expo-google-fonts/inter';
 // import * as Notifications from 'expo-notifications';
 import { database } from '../firebaseConfig';
 import { ref, get, query, limitToLast } from 'firebase/database';
+
+SplashScreen.preventAutoHideAsync();
 
 // Ignore non-fatal warnings
 LogBox.ignoreLogs([
@@ -58,9 +63,22 @@ if (Platform.OS !== 'web') {
 export default function RootLayout() {
   const colorScheme = useColorScheme();
 
+  const [fontsLoaded] = useFonts({
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Inter_700Bold,
+    Inter_800ExtraBold,
+  });
+
+  const onLayoutRootView = useCallback(async () => {
+    if (fontsLoaded) {
+      await SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded]);
+
   useEffect(() => {
      if (Platform.OS !== 'web') {
-         // Notifications.requestPermissionsAsync();
          BackgroundFetch.registerTaskAsync(BACKGROUND_FETCH_TASK, {
             minimumInterval: 15 * 60,
             stopOnTerminate: false,
@@ -69,14 +87,18 @@ export default function RootLayout() {
      }
   }, []);
 
+  if (!fontsLoaded) return null;
+
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <SettingsProvider>
-        <Stack>
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        </Stack>
-        <StatusBar style="auto" />
-      </SettingsProvider>
-    </ThemeProvider>
+    <GestureHandlerRootView style={{ flex: 1 }} onLayout={onLayoutRootView}>
+      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+        <SettingsProvider>
+          <Stack>
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          </Stack>
+          <StatusBar style="auto" />
+        </SettingsProvider>
+      </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }

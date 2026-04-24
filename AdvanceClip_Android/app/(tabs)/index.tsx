@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, FlatList, ActivityIndicator, KeyboardAvoidingView, Platform, Alert, AppState, AppStateStatus, Modal, ToastAndroid, NativeModules, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Sharing from 'expo-sharing';
 import * as IntentLauncher from 'expo-intent-launcher';
 import { useSettings } from '../../context/SettingsContext';
@@ -23,6 +24,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ClipItem, DOWNLOAD_BASE, SYNC_CACHE_BASE, CONVERTED_BASE, IMAGE_CACHE_BASE, getDownloadPath, getSyncCachePath, getConvertedPath } from '../../utils/clipTypes';
 import { fetchWithTimeout, getSubnet, getConnectionType, connectionColors, resolveOptimalUrl, getDeviceUrls, getMediaUrl } from '../../utils/networkHelpers';
 import { styles } from '../../styles/syncStyles';
+import { colors, font } from '../../styles/theme';
+import AnimatedCard from '../../components/AnimatedCard';
+import AnimatedPressable from '../../components/AnimatedPressable';
 import CachedImage from '../../components/CachedImage';
 
 const { AdvanceOverlay } = NativeModules;
@@ -1164,7 +1168,8 @@ export default function SyncScreen() {
   // RENDER
   // ════════════════════════════════════════════════════════
   return (
-    <SafeAreaView style={styles.container}>
+    <LinearGradient colors={[colors.bg.base, colors.bg.baseEnd]} style={{ flex: 1 }}>
+    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
       {/* Device Name Setup Modal */}
       <Modal visible={!deviceName && deviceName === ''} animationType="fade" transparent={true}>
         <View style={styles.modalOverlay}><View style={styles.modalContent}>
@@ -1351,7 +1356,7 @@ export default function SyncScreen() {
               windowSize={5}
               removeClippedSubviews={true}
               updateCellsBatchingPeriod={50}
-              renderItem={({ item }) => {
+              renderItem={({ item, index: itemIndex }) => {
                 let iconName = 'doc.text', iconColor = '#8A8F98';
                 const lowerTit = (item.Title || item.Raw || '').toLowerCase();
                 const isApk = lowerTit.endsWith('.apk');
@@ -1374,11 +1379,12 @@ export default function SyncScreen() {
                 const isHeavyFile = heavyFileTypes.includes(item.Type) || (item.Title || '').toLowerCase().endsWith('.apk');
 
                 return (
-                  <TouchableOpacity
-                    style={[styles.clipCard, isMultiSelectMode && selectedItemIds.has(item.id || '') && { borderColor: '#4A62EB', borderWidth: 1.5 }]}
-                    activeOpacity={0.8}
+                  <AnimatedCard
+                    index={itemIndex}
+                    style={[styles.clipCard, isMultiSelectMode && selectedItemIds.has(item.id || '') && { borderColor: colors.accent.primary, borderWidth: 1.5 }]}
                     onPress={() => { if (isMultiSelectMode) toggleSelectItem(item.id || ''); else if (activeOptionsId === item.id) setActiveOptionsId(null); else setActiveOptionsId(item.id!); }}
                     onLongPress={() => { if (!isMultiSelectMode) { setIsMultiSelectMode(true); setSelectedItemIds(new Set([item.id || ''])); setActiveOptionsId(null); } }}
+                    skipEntrance={itemIndex > 12}
                   >
                     {isMultiSelectMode && (
                       <View style={{position: 'absolute', left: 8, top: 8, width: 24, height: 24, borderRadius: 12, backgroundColor: selectedItemIds.has(item.id || '') ? '#4A62EB' : 'rgba(255,255,255,0.1)', borderWidth: 2, borderColor: selectedItemIds.has(item.id || '') ? '#4A62EB' : '#4C5361', alignItems: 'center', justifyContent: 'center', zIndex: 10}}>
@@ -1487,7 +1493,7 @@ export default function SyncScreen() {
                         </TouchableOpacity>
                       </View>
                     )}
-                  </TouchableOpacity>
+                  </AnimatedCard>
                 );
               }}
             />
@@ -1592,5 +1598,6 @@ export default function SyncScreen() {
         </View>
       </Modal>
     </SafeAreaView>
+    </LinearGradient>
   );
 }

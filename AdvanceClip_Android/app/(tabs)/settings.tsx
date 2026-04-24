@@ -1,10 +1,13 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { StyleSheet, View, Text, TextInput, TouchableOpacity, SafeAreaView, KeyboardAvoidingView, Platform, Alert, Switch, NativeModules, ScrollView, ActivityIndicator } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSettings } from '../../context/SettingsContext';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as IntentLauncher from 'expo-intent-launcher';
 import Constants from 'expo-constants';
+import { colors, font, radius, shadows, space } from '../../styles/theme';
+import AnimatedPressable from '../../components/AnimatedPressable';
 
 const APP_VERSION = Constants.expoConfig?.version || '1.0.0';
 const VERSION_URL = 'https://raw.githubusercontent.com/shdra06/AdvanceClip/main/version.json';
@@ -286,7 +289,8 @@ export default function SettingsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <LinearGradient colors={[colors.bg.base, colors.bg.baseEnd]} style={{ flex: 1 }}>
+    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{flex: 1}}>
         <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           
@@ -619,68 +623,68 @@ export default function SettingsScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0F1115',
+    backgroundColor: 'transparent',
   },
   scrollContent: {
     paddingBottom: 40,
   },
   header: {
     paddingTop: 60,
-    paddingHorizontal: 24,
-    marginBottom: 20,
+    paddingHorizontal: space['2xl'],
+    marginBottom: space.xl,
   },
   title: {
-    fontSize: 34,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: -0.5,
+    fontSize: 30,
+    fontFamily: font.extrabold,
+    color: colors.text.primary,
+    letterSpacing: -0.8,
   },
   subtitle: {
-    fontSize: 16,
-    color: '#8A8F98',
+    fontSize: 13,
+    fontFamily: font.medium,
+    color: colors.text.tertiary,
     marginTop: 4,
-    fontWeight: '500',
     textTransform: 'uppercase',
     letterSpacing: 1.5,
   },
   saveButton: {
-    backgroundColor: '#4A62EB',
+    backgroundColor: colors.accent.primary,
     paddingVertical: 16,
-    borderRadius: 16,
+    borderRadius: radius.lg,
     alignItems: 'center',
-    marginHorizontal: 20,
-    marginBottom: 20,
-    shadowColor: '#4A62EB',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 15,
-    elevation: 6,
+    marginHorizontal: space.xl,
+    marginBottom: space.xl,
+    ...shadows.glow(colors.accent.primary),
   },
   saveButtonText: {
     color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-    letterSpacing: 0.5,
+    fontSize: 15,
+    fontFamily: font.bold,
+    letterSpacing: 0.3,
   },
   card: {
-    backgroundColor: '#1C1F26',
-    marginHorizontal: 20,
-    borderRadius: 24,
-    padding: 24,
+    backgroundColor: colors.bg.card,
+    marginHorizontal: space.xl,
+    borderRadius: radius.xl,
+    padding: space['2xl'],
     borderWidth: 1,
-    borderColor: '#2A2F3A',
+    borderColor: colors.border.subtle,
+    borderTopColor: colors.innerHighlight,
+    ...shadows.card,
   },
   sectionHeader: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 20,
+    color: colors.text.primary,
+    fontSize: 17,
+    fontFamily: font.semibold,
+    marginBottom: space.xl,
+    letterSpacing: -0.2,
   },
   inputContainer: {
     marginBottom: 10,
@@ -688,28 +692,29 @@ const styles = StyleSheet.create({
   inputHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: space.md,
   },
   inputLabel: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '600',
-    marginLeft: 8,
+    color: colors.text.primary,
+    fontSize: 14,
+    fontFamily: font.semibold,
+    marginLeft: space.sm,
   },
   input: {
-    backgroundColor: '#0F1115',
-    color: '#FFFFFF',
+    backgroundColor: colors.bg.input,
+    color: colors.text.primary,
     fontSize: 16,
-    fontWeight: '500',
-    borderRadius: 12,
-    paddingHorizontal: 16,
+    fontFamily: font.medium,
+    borderRadius: radius.md,
+    paddingHorizontal: space.lg,
     paddingVertical: 14,
     borderWidth: 1,
-    borderColor: '#2A2F3A',
+    borderColor: colors.border.subtle,
   },
   helperText: {
-    color: '#8A8F98',
+    color: colors.text.tertiary,
     fontSize: 12,
+    fontFamily: font.regular,
     marginTop: 10,
     lineHeight: 18,
   },

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, ActivityIndicator, Dimensions, Modal, Alert, ScrollView, Image, Platform, FlatList, ToastAndroid, Linking, TextInput } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import * as Sharing from 'expo-sharing';
 import * as IntentLauncher from 'expo-intent-launcher';
@@ -12,6 +13,9 @@ import { useSettings } from '../../context/SettingsContext';
 import { database, storage } from '../../firebaseConfig';
 import { ref as dbRef, push, set, onValue, query } from 'firebase/database';
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { colors, font, radius, shadows, space } from '../../styles/theme';
+import AnimatedCard from '../../components/AnimatedCard';
+import AnimatedPressable from '../../components/AnimatedPressable';
 
 type DeviceGroup = { id: string; name: string; deviceNames: string[] };
 
@@ -688,27 +692,29 @@ export default function ConnectScreen() {
   if (isUploading) {
     const pct = uploadTotal > 0 ? Math.round((uploadIndex / uploadTotal) * 100) : 0;
     return (
+      <LinearGradient colors={[colors.bg.base, colors.bg.baseEnd]} style={{ flex: 1 }}>
       <SafeAreaView style={s.container}>
         <View style={s.header}>
           <Text style={s.title}>Transferring...</Text>
           <Text style={s.subtitle}>{selectedTarget?.DeviceName || 'Device'}</Text>
         </View>
         <View style={s.card}>
-          <Text style={{ color: '#FFF', fontSize: 16, fontWeight: '700', marginBottom: 6 }}>{uploadIndex} / {uploadTotal} files</Text>
-          <Text style={{ color: '#8A8F98', fontSize: 12, marginBottom: 16 }}>{pct}% complete</Text>
-          <View style={{ height: 8, backgroundColor: '#2A2F3A', borderRadius: 4, overflow: 'hidden', marginBottom: 24 }}>
-            <View style={{ height: '100%', width: `${pct}%`, backgroundColor: '#10B981', borderRadius: 4 }} />
+          <Text style={{ color: colors.text.primary, fontSize: 16, fontFamily: font.bold, marginBottom: 6 }}>{uploadIndex} / {uploadTotal} files</Text>
+          <Text style={{ color: colors.text.secondary, fontSize: 12, fontFamily: font.medium, marginBottom: 16 }}>{pct}% complete</Text>
+          <View style={{ height: 8, backgroundColor: colors.border.subtle, borderRadius: 4, overflow: 'hidden', marginBottom: 24 }}>
+            <View style={{ height: '100%', width: `${pct}%`, backgroundColor: colors.accent.success, borderRadius: 4 }} />
           </View>
           <View style={{ flexDirection: 'row', gap: 12 }}>
-            <TouchableOpacity style={[s.controlBtn, { backgroundColor: isPaused ? '#10B981' : '#F59E0B', flex: 1 }]} onPress={() => { isPausedRef.current = !isPausedRef.current; setIsPaused(isPausedRef.current); }}>
+            <TouchableOpacity style={[s.controlBtn, { backgroundColor: isPaused ? colors.accent.success : colors.accent.warning, flex: 1 }]} onPress={() => { isPausedRef.current = !isPausedRef.current; setIsPaused(isPausedRef.current); }}>
               <Text style={s.controlBtnText}>{isPaused ? '▶ Resume' : '⏸ Pause'}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[s.controlBtn, { backgroundColor: '#EF4444', flex: 1 }]} onPress={() => { isCancelledRef.current = true; }}>
+            <TouchableOpacity style={[s.controlBtn, { backgroundColor: colors.accent.error, flex: 1 }]} onPress={() => { isCancelledRef.current = true; }}>
               <Text style={s.controlBtnText}>✕ Abort</Text>
             </TouchableOpacity>
           </View>
         </View>
       </SafeAreaView>
+      </LinearGradient>
     );
   }
 
@@ -718,6 +724,7 @@ export default function ConnectScreen() {
     const allDisplayItems = [...filteredAssets, ...browserFiles];
 
     return (
+      <LinearGradient colors={[colors.bg.base, colors.bg.baseEnd]} style={{ flex: 1 }}>
       <SafeAreaView style={s.container}>
         {/* Header with prominent back */}
         <View style={[s.header, { flexDirection: 'row', alignItems: 'center', paddingTop: 50 }]}>
@@ -857,6 +864,7 @@ export default function ConnectScreen() {
           </View>
         </Modal>
       </SafeAreaView>
+      </LinearGradient>
     );
   }
 
@@ -897,6 +905,7 @@ export default function ConnectScreen() {
 
   // ─── MAIN SCREEN: Files Browser ───
   return (
+    <LinearGradient colors={[colors.bg.base, colors.bg.baseEnd]} style={{ flex: 1 }}>
     <SafeAreaView style={s.container}>
       <View style={s.header}>
         <Text style={s.title}>Files</Text>
@@ -1086,39 +1095,40 @@ export default function ConnectScreen() {
         </View>
       </Modal>
     </SafeAreaView>
+    </LinearGradient>
   );
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0F1115' },
-  header: { paddingTop: 60, paddingHorizontal: 24, marginBottom: 16 },
-  title: { fontSize: 34, fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.5 },
-  subtitle: { fontSize: 14, color: '#8A8F98', marginTop: 4, fontWeight: '500', textTransform: 'uppercase', letterSpacing: 1.5 },
-  sectionTitle: { color: '#FFF', fontSize: 16, fontWeight: '700' },
-  card: { backgroundColor: '#1C1F26', marginHorizontal: 20, borderRadius: 20, padding: 24, borderWidth: 1, borderColor: '#2A2F3A', marginTop: 20 },
-  deviceCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#141824', borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1 },
+  container: { flex: 1, backgroundColor: 'transparent' },
+  header: { paddingTop: 60, paddingHorizontal: space['2xl'], marginBottom: space.lg },
+  title: { fontSize: 30, fontFamily: font.extrabold, color: colors.text.primary, letterSpacing: -0.8 },
+  subtitle: { fontSize: 13, fontFamily: font.medium, color: colors.text.tertiary, marginTop: 4, textTransform: 'uppercase', letterSpacing: 1.5 },
+  sectionTitle: { color: colors.text.primary, fontSize: 16, fontFamily: font.bold },
+  card: { backgroundColor: colors.bg.card, marginHorizontal: space.xl, borderRadius: radius.xl, padding: space['2xl'], borderWidth: 1, borderColor: colors.border.subtle, borderTopColor: colors.innerHighlight, marginTop: space.xl, ...shadows.card },
+  deviceCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.bg.input, borderRadius: radius.lg, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: colors.border.subtle },
   deviceIcon: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
-  deviceName: { color: '#FFF', fontSize: 15, fontWeight: '700' },
+  deviceName: { color: colors.text.primary, fontSize: 15, fontFamily: font.bold },
   badge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
-  badgeText: { fontSize: 10, fontWeight: '700' },
-  emptyCard: { padding: 24, backgroundColor: '#141824', borderRadius: 14, borderWidth: 1, borderColor: '#1E293B', alignItems: 'center' },
-  dateBtn: { flex: 1, backgroundColor: '#1C1F26', borderRadius: 12, padding: 10, borderWidth: 1, borderColor: '#2A2F3A' },
-  dateLabel: { color: '#8A8F98', fontSize: 9, fontWeight: '700', marginBottom: 2 },
-  dateValue: { color: '#FFF', fontSize: 12, fontWeight: '600' },
-  sourceChip: { backgroundColor: '#1C1F26', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5, borderWidth: 1, borderColor: '#2A2F3A' },
-  sourceChipActive: { backgroundColor: '#10B98122', borderColor: '#10B981' },
-  sourceChipText: { color: '#8A8F98', fontSize: 12, fontWeight: '600' },
-  sourceChipTextActive: { color: '#10B981' },
-  tabRow: { flexDirection: 'row', paddingHorizontal: 20, marginBottom: 6, gap: 4 },
+  badgeText: { fontSize: 10, fontFamily: font.bold },
+  emptyCard: { padding: space['2xl'], backgroundColor: colors.bg.input, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border.subtle, alignItems: 'center' },
+  dateBtn: { flex: 1, backgroundColor: colors.bg.card, borderRadius: radius.md, padding: 10, borderWidth: 1, borderColor: colors.border.subtle },
+  dateLabel: { color: colors.text.tertiary, fontSize: 9, fontFamily: font.bold, marginBottom: 2 },
+  dateValue: { color: colors.text.primary, fontSize: 12, fontFamily: font.semibold },
+  sourceChip: { backgroundColor: colors.bg.card, borderRadius: radius.pill, paddingHorizontal: space.md, paddingVertical: 5, borderWidth: 1, borderColor: colors.border.subtle },
+  sourceChipActive: { backgroundColor: colors.accent.successDim, borderColor: colors.accent.success },
+  sourceChipText: { color: colors.text.secondary, fontSize: 12, fontFamily: font.semibold },
+  sourceChipTextActive: { color: colors.accent.success },
+  tabRow: { flexDirection: 'row', paddingHorizontal: space.xl, marginBottom: 6, gap: 4 },
   tab: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 10 },
-  tabActive: { backgroundColor: '#2A2F3A' },
-  tabText: { color: '#6B7280', fontSize: 12, fontWeight: '700' },
-  tabTextActive: { color: '#FFF' },
+  tabActive: { backgroundColor: colors.bg.cardHover },
+  tabText: { color: colors.text.disabled, fontSize: 12, fontFamily: font.bold },
+  tabTextActive: { color: colors.text.primary },
   checkCircle: { position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(0,0,0,0.5)', borderWidth: 2, borderColor: '#FFF', alignItems: 'center', justifyContent: 'center' },
-  checkCircleActive: { backgroundColor: '#10B981' },
-  sendButton: { backgroundColor: '#10B981', paddingVertical: 18, borderRadius: 18, alignItems: 'center', shadowColor: '#10B981', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 8 },
-  sendButtonText: { color: '#FFF', fontSize: 16, fontWeight: '800' },
+  checkCircleActive: { backgroundColor: colors.accent.success },
+  sendButton: { backgroundColor: colors.accent.success, paddingVertical: 18, borderRadius: 18, alignItems: 'center', ...shadows.glow(colors.accent.success) },
+  sendButtonText: { color: '#FFF', fontSize: 16, fontFamily: font.extrabold },
   controlBtn: { paddingVertical: 14, borderRadius: 14, alignItems: 'center' },
-  controlBtnText: { color: '#FFF', fontSize: 14, fontWeight: '700' },
+  controlBtnText: { color: '#FFF', fontSize: 14, fontFamily: font.bold },
   modalOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 });
