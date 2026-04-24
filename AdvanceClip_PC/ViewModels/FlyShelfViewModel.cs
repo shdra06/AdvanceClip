@@ -874,12 +874,20 @@ namespace AdvanceClip.ViewModels
                     text = text.Trim().TrimEnd('\0');
                     AdvanceClip.Classes.Logger.LogAction("DRAG IN", $"Extracted string text payload length: {text.Length}");
 
-                    // DEDUP: If ANY existing item already has this exact content, skip entirely.
-                    // Prevents pinned items and recent copies from spawning duplicates.
+                    // DEDUP: If ANY existing item already has this exact content, bump it to the top — no duplicate.
+                    // Pinned items stay pinned; they just move to position 0.
                     var existingMatch = DroppedItems.FirstOrDefault(i => i.RawContent == text);
                     if (existingMatch != null)
                     {
-                        AdvanceClip.Classes.Logger.LogAction("DRAG IN", $"Skipped — identical content already exists (dedup, pinned={existingMatch.IsPinned})");
+                        // Already at the top? True no-op.
+                        if (DroppedItems.IndexOf(existingMatch) == 0)
+                        {
+                            AdvanceClip.Classes.Logger.LogAction("DRAG IN", "Skipped — already at top (dedup)");
+                            return;
+                        }
+                        DroppedItems.Remove(existingMatch);
+                        DroppedItems.Insert(0, existingMatch);
+                        AdvanceClip.Classes.Logger.LogAction("DRAG IN", $"Bumped existing item to top (dedup, pinned={existingMatch.IsPinned})");
                         return;
                     }
 
