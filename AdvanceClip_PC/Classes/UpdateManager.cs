@@ -113,6 +113,20 @@ namespace AdvanceClip.Classes
                 StatusChanged?.Invoke("Downloading update...");
                 Logger.LogAction("UPDATE", $"Downloading from {DownloadUrl}");
 
+                // Pre-flight check — verify the download URL exists before streaming
+                try
+                {
+                    var headRequest = new HttpRequestMessage(HttpMethod.Head, DownloadUrl);
+                    var headResponse = await _downloadClient.SendAsync(headRequest);
+                    if (headResponse.StatusCode == System.Net.HttpStatusCode.NotFound)
+                    {
+                        StatusChanged?.Invoke("Release not published yet — check back soon.");
+                        Logger.LogAction("UPDATE", $"Download URL returned 404: {DownloadUrl}");
+                        return false;
+                    }
+                }
+                catch { /* HEAD not supported — proceed with GET */ }
+
                 var response = await _downloadClient.GetAsync(DownloadUrl, HttpCompletionOption.ResponseHeadersRead);
                 response.EnsureSuccessStatusCode();
 

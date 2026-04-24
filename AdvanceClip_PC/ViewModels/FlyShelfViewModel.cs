@@ -772,15 +772,17 @@ namespace AdvanceClip.ViewModels
                     AdvanceClip.Classes.Logger.LogAction("DRAG IN", "Extracted physical Bitmap image payload");
                     if (DroppedItems.Count > 0)
                     {
-                        var lastItem = DroppedItems.FirstOrDefault(i => !i.IsPinned);
-                        if (lastItem != null && (lastItem.ItemType == ClipboardItemType.Image || lastItem.ItemType == ClipboardItemType.QRCode) && 
-                            lastItem.FormattedSize == $"{bmp.PixelWidth}x{bmp.PixelHeight}" && 
-                            lastItem.FileName.StartsWith("Screenshot"))
+                        // DEDUP: If any recent image item has the same pixel dimensions, skip it.
+                        // Snipping Tool and other screenshot tools fire multiple clipboard events for the same image.
+                        string incomingSize = $"{bmp.PixelWidth}x{bmp.PixelHeight}";
+                        var recentDupe = DroppedItems.FirstOrDefault(i =>
+                            (i.ItemType == ClipboardItemType.Image || i.ItemType == ClipboardItemType.QRCode) &&
+                            i.FormattedSize == incomingSize &&
+                            (DateTime.Now - i.DateCopied).TotalSeconds < 5.0);
+                        if (recentDupe != null)
                         {
-                            if ((DateTime.Now - lastItem.DateCopied).TotalSeconds < 2.0)
-                            {
-                                return; 
-                            }
+                            AdvanceClip.Classes.Logger.LogAction("DRAG IN", $"Skipped duplicate image ({incomingSize}, {(DateTime.Now - recentDupe.DateCopied).TotalMilliseconds:F0}ms old)");
+                            return;
                         }
                     }
 
