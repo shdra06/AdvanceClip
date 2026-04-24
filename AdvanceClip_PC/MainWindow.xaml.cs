@@ -55,6 +55,7 @@ namespace AdvanceClip
         private const int HOTKEY_ID = 9000;
         private const int HOTKEY_QUICKPASTE_BASE = 9001; // 9001-9009 for Alt+1 through Alt+9
         private const uint MOD_ALT = 0x0001;
+        private const uint MOD_NOREPEAT = 0x4000;
         private const int WM_HOTKEY = 0x0312;
 
         // Hover preview popup state
@@ -85,13 +86,18 @@ namespace AdvanceClip
             {
                 HwndSource.FromHwnd(hwnd)?.AddHook(HwndHook);
                 AddClipboardFormatListener(hwnd);
-                RegisterHotKey(hwnd, HOTKEY_ID, MOD_ALT, 0x43); // Alt+C
+                RegisterHotKey(hwnd, HOTKEY_ID, MOD_ALT | MOD_NOREPEAT, 0x43); // Alt+C
+                Classes.Logger.LogAction("HOTKEY", $"Alt+C registered");
 
                 if (Classes.SettingsManager.Current.EnableQuickPasteHotkeys)
                 {
                     for (int i = 1; i <= 9; i++)
-                        RegisterHotKey(hwnd, HOTKEY_QUICKPASTE_BASE + i, MOD_ALT, (uint)(0x30 + i));
-                    RegisterHotKey(hwnd, HOTKEY_QUICKPASTE_BASE + 10, MOD_ALT, 0x30); // Alt+0
+                    {
+                        bool ok = RegisterHotKey(hwnd, HOTKEY_QUICKPASTE_BASE + i, MOD_ALT | MOD_NOREPEAT, (uint)(0x30 + i));
+                        if (!ok) Classes.Logger.LogAction("HOTKEY", $"Alt+{i} FAILED to register");
+                    }
+                    RegisterHotKey(hwnd, HOTKEY_QUICKPASTE_BASE + 10, MOD_ALT | MOD_NOREPEAT, 0x30); // Alt+0
+                    Classes.Logger.LogAction("HOTKEY", $"Alt+1 through Alt+0 registered");
                 }
             }
 
@@ -235,10 +241,12 @@ namespace AdvanceClip
                 {
                     // Alt+1=item0, Alt+2=item1, ..., Alt+9=item8, Alt+0=item9
                     int index = hotkeyId == HOTKEY_QUICKPASTE_BASE + 10 ? 9 : (hotkeyId - HOTKEY_QUICKPASTE_BASE - 1);
+                    Classes.Logger.LogAction("HOTKEY", $"Alt+{(index + 1) % 10} fired, items={_viewModel.DroppedItems.Count}");
                     if (index < _viewModel.DroppedItems.Count)
                     {
                         // Capture the target window — filter out our own window
                         IntPtr targetWindow = GetTargetForegroundWindow();
+                        Classes.Logger.LogAction("HOTKEY", $"Target window: 0x{targetWindow:X}");
                         var item = _viewModel.DroppedItems[index];
                         
                         // Set clipboard directly — no async, no delays
