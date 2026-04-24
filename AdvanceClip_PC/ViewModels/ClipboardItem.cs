@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using System.IO.Compression;
+using System.Linq;
 using System.Windows.Media.Imaging;
 using System.Diagnostics;
 using System.ComponentModel;
@@ -21,13 +23,19 @@ namespace AdvanceClip.ViewModels
         Audio,
         Presentation,
         QRCode,
-        Pdf
+        Pdf,
+        Folder
     }
 
     public class ClipboardItem : INotifyPropertyChanged
     {
         public DateTime DateCopied { get; set; } = DateTime.Now;
         public string FilePath { get; set; } = string.Empty;
+        
+        /// <summary>
+        /// For Folder items: path to the auto-generated temp zip for transfer.
+        /// </summary>
+        public string ZippedArchivePath { get; set; } = string.Empty;
 
         private string _fileName = string.Empty;
         public string FileName
@@ -146,6 +154,9 @@ namespace AdvanceClip.ViewModels
             }
         }
         public bool IsImagePreview => ItemType == ClipboardItemType.Image || ItemType == ClipboardItemType.QRCode;
+        public bool IsGifPreview => IsImagePreview && !string.IsNullOrEmpty(FilePath) && FilePath.EndsWith(".gif", StringComparison.OrdinalIgnoreCase);
+        public bool IsStaticImagePreview => IsImagePreview && !IsGifPreview;
+        public string GifFilePath => IsGifPreview ? FilePath : "";
         public bool IsDocPreview => ItemType == ClipboardItemType.Document && (Extension == ".DOCX" || Extension == ".DOC" || Extension == ".TXT");
         public bool IsPdfPreview => ItemType == ClipboardItemType.Pdf;
         public bool IsUrlPreview => ItemType == ClipboardItemType.Url;
@@ -162,6 +173,8 @@ namespace AdvanceClip.ViewModels
                 if (ItemType == ClipboardItemType.Image) return "Image/Bitmap";
                 if (ItemType == ClipboardItemType.Text) return "Raw Text";
                 if (ItemType == ClipboardItemType.Code) return "Code Snippet";
+                if (ItemType == ClipboardItemType.Folder) return "Folder";
+                if (ItemType == ClipboardItemType.Archive) return "Archive";
                 return string.IsNullOrEmpty(Extension) ? "Unknown File" : Extension + " Object";
             }
         }
@@ -198,6 +211,7 @@ namespace AdvanceClip.ViewModels
         public bool IsQRCodePreview => ItemType == ClipboardItemType.QRCode;
         public bool IsVideoPreview => ItemType == ClipboardItemType.Video;
         public bool IsArchivePreview => ItemType == ClipboardItemType.Archive;
+        public bool IsFolderPreview => ItemType == ClipboardItemType.Folder;
         public bool IsTextPreview => ItemType == ClipboardItemType.Text;
 
         private bool _isSuggestedContext;
@@ -247,6 +261,31 @@ namespace AdvanceClip.ViewModels
         
         private string _smartActionType = "";
         public string SmartActionType { get => _smartActionType; set { if(_smartActionType!=value){_smartActionType=value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SmartActionType)));} } }
+
+        // --- MATH SOLVER PROPERTIES ---
+        private string _mathResult = "";
+        public string MathResult { get => _mathResult; set { if(_mathResult!=value){_mathResult=value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MathResult))); PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasMathResult)));} } }
+        public bool HasMathResult => !string.IsNullOrEmpty(_mathResult);
+
+        private bool _isPlottable;
+        public bool IsPlottable { get => _isPlottable; set { if(_isPlottable!=value){_isPlottable=value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsPlottable)));} } }
+
+        private string _plotEquation = "";
+        [JsonIgnore]
+        public string PlotEquation { get => _plotEquation; set { _plotEquation = value; } }
+
+        // --- COLOR DETECTION PROPERTIES ---
+        private string _detectedColor = "";
+        public string DetectedColor { get => _detectedColor; set { if(_detectedColor!=value){_detectedColor=value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DetectedColor))); PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasDetectedColor))); PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DetectedColorBrush)));} } }
+        public bool HasDetectedColor => !string.IsNullOrEmpty(_detectedColor);
+
+        private byte _colorR, _colorG, _colorB;
+        [JsonIgnore] public byte ColorR => _colorR;
+        [JsonIgnore] public byte ColorG => _colorG;
+        [JsonIgnore] public byte ColorB => _colorB;
+
+        [JsonIgnore]
+        public System.Windows.Media.SolidColorBrush DetectedColorBrush => HasDetectedColor ? AdvanceClip.Classes.ColorHelper.ToBrush(_detectedColor) : new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.Transparent);
 
         public void EvaluateSmartActions()
         {
@@ -328,6 +367,41 @@ namespace AdvanceClip.ViewModels
                     HasSmartAction = true;
                 }
             }
+
+            // ═══ MATH SOLVER (independent of smart action — always evaluate) ═══
+            if (!string.IsNullOrEmpty(RawContent) && AdvanceClip.Classes.SettingsManager.Current.EnableMathSolver)
+            {
+                // Check for plottable equations (contains x variable)
+                if (AdvanceClip.Classes.MathSolver.IsPlottableEquation(RawContent))
+                {
+                    IsPlottable = true;
+                    PlotEquation = RawContent;
+                    SmartActionName = "📊 Plot Graph";
+                    SmartActionIcon = "DataLine24";
+                    SmartActionType = "PlotGraph";
+                    HasSmartAction = true;
+                }
+                // Try to solve simple expressions
+                else if (AdvanceClip.Classes.MathSolver.TrySolveExpression(RawContent, out double mathResult))
+                {
+                    // Format nicely: integers as integers, decimals with reasonable precision
+                    MathResult = mathResult == Math.Floor(mathResult) && Math.Abs(mathResult) < 1e15
+                        ? $"= {(long)mathResult}" 
+                        : $"= {mathResult:G10}";
+                }
+            }
+
+            // ═══ COLOR DETECTION (always evaluate) ═══
+            if (!string.IsNullOrEmpty(RawContent))
+            {
+                if (AdvanceClip.Classes.ColorHelper.TryDetectColor(RawContent, out string hex, out byte cr, out byte cg, out byte cb))
+                {
+                    DetectedColor = hex;
+                    _colorR = cr;
+                    _colorG = cg;
+                    _colorB = cb;
+                }
+            }
         }
 
         
@@ -372,6 +446,32 @@ namespace AdvanceClip.ViewModels
                     else if (ext == ".zip" || ext == ".rar" || ext == ".7z" || ext == ".tar" || ext == ".gz" || ext == ".apk")
                     {
                         ItemType = ClipboardItemType.Archive;
+                        // List archive contents for .zip files
+                        if (ext == ".zip" || ext == ".apk")
+                        {
+                            try
+                            {
+                                using var archive = ZipFile.OpenRead(path);
+                                var entries = archive.Entries
+                                    .Where(e => !string.IsNullOrEmpty(e.Name))
+                                    .Take(50)
+                                    .ToList();
+                                var listing = new System.Text.StringBuilder();
+                                listing.AppendLine($"📦 {entries.Count} file(s) in archive:");
+                                long totalSize = 0;
+                                foreach (var entry in entries)
+                                {
+                                    string entrySize = entry.Length > 0 ? $" ({FormatBytes(entry.Length)})" : "";
+                                    listing.AppendLine($"  • {entry.FullName}{entrySize}");
+                                    totalSize += entry.Length;
+                                }
+                                if (archive.Entries.Count(e => !string.IsNullOrEmpty(e.Name)) > 50)
+                                    listing.AppendLine($"  ... and {archive.Entries.Count(e => !string.IsNullOrEmpty(e.Name)) - 50} more");
+                                listing.AppendLine($"\nTotal uncompressed: {FormatBytes(totalSize)}");
+                                RawContent = listing.ToString();
+                            }
+                            catch { }
+                        }
                     }
                     else if (ext == ".mp4" || ext == ".mkv" || ext == ".avi" || ext == ".mov")
                     {
@@ -389,8 +489,70 @@ namespace AdvanceClip.ViewModels
                 }
                 else if (Directory.Exists(path))
                 {
+                    // Folder copied — set lightweight properties immediately, defer heavy I/O
+                    ItemType = ClipboardItemType.Folder;
                     Extension = "FOLDER";
-                    FormattedSize = "Folder";
+                    FileName = Path.GetFileName(path);
+                    FormattedSize = "Scanning...";
+                    
+                    // Heavy enumeration + zip runs on background thread
+                    string capturedPath = path;
+                    string capturedName = FileName;
+                    Task.Run(() => {
+                        try
+                        {
+                            var allFiles = Directory.GetFiles(capturedPath, "*", SearchOption.AllDirectories);
+                            var allDirs = Directory.GetDirectories(capturedPath, "*", SearchOption.AllDirectories);
+                            long folderSize = allFiles.Sum(f => { try { return new FileInfo(f).Length; } catch { return 0L; } });
+                            FormattedSize = $"{FormatBytes(folderSize)} • {allFiles.Length} files";
+                            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(FormattedSize)));
+                            
+                            // Build contents listing
+                            var listing = new System.Text.StringBuilder();
+                            listing.AppendLine($"📁 {capturedName}/");
+                            listing.AppendLine($"   {allFiles.Length} file(s), {allDirs.Length} subfolder(s)");
+                            listing.AppendLine();
+                            
+                            var topItems = Directory.GetFileSystemEntries(capturedPath).Take(30).ToArray();
+                            foreach (var entry in topItems)
+                            {
+                                bool isDir = Directory.Exists(entry);
+                                string name = Path.GetFileName(entry);
+                                if (isDir)
+                                {
+                                    int subCount = 0;
+                                    try { subCount = Directory.GetFileSystemEntries(entry).Length; } catch { }
+                                    listing.AppendLine($"  📂 {name}/ ({subCount} items)");
+                                }
+                                else
+                                {
+                                    long fSize = 0;
+                                    try { fSize = new FileInfo(entry).Length; } catch { }
+                                    listing.AppendLine($"  📄 {name} ({FormatBytes(fSize)})");
+                                }
+                            }
+                            if (Directory.GetFileSystemEntries(capturedPath).Length > 30)
+                                listing.AppendLine($"  ... and more");
+                            
+                            RawContent = listing.ToString();
+                            
+                            // Zip for cross-device transfer
+                            string tempZip = Path.Combine(Path.GetTempPath(), $"FlyShelf_{capturedName}_{DateTime.Now:HHmmss}.zip");
+                            if (File.Exists(tempZip)) File.Delete(tempZip);
+                            ZipFile.CreateFromDirectory(capturedPath, tempZip, CompressionLevel.Fastest, true);
+                            ZippedArchivePath = tempZip;
+                            var zipInfo = new FileInfo(tempZip);
+                            FormattedSize = $"{FormatBytes(folderSize)} → {FormatBytes(zipInfo.Length)} zipped • {allFiles.Length} files";
+                            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(FormattedSize)));
+                            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ZippedArchivePath)));
+                        }
+                        catch (Exception ex)
+                        {
+                            Classes.Logger.LogAction("FOLDER ZIP", $"Failed: {ex.Message}");
+                            FormattedSize = "Folder";
+                            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(FormattedSize)));
+                        }
+                    });
                 }
 
                 // Explicitly bind the Raw Content buffer natively securely mapping the File Execution Constraints!
@@ -689,6 +851,124 @@ namespace AdvanceClip.ViewModels
                 {
                     System.Windows.Application.Current.Dispatcher.Invoke(() => 
                         AdvanceClip.Windows.ToastWindow.ShowToast($"Synthesis Exception: {ex.Message} ❌")
+                    );
+                }
+            });
+        }
+
+        /// <summary>
+        /// Convert an image to a single-page PDF (A4 size). No external dependencies.
+        /// Uses raw PDF specification writing with embedded JPEG stream.
+        /// </summary>
+        public void ConvertImageToPdf()
+        {
+            if (!IsImagePreview || string.IsNullOrEmpty(FilePath) || !File.Exists(FilePath)) return;
+
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                try
+                {
+                    System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                        AdvanceClip.Windows.ToastWindow.ShowToast("Converting Image to PDF... 📄")
+                    );
+
+                    string outputPdf = Path.Combine(
+                        Path.GetDirectoryName(FilePath) ?? Path.GetTempPath(),
+                        Path.GetFileNameWithoutExtension(FilePath) + ".pdf");
+
+                    // Load image to get dimensions
+                    byte[] jpegBytes;
+                    int imgWidth, imgHeight;
+                    using (var bmp = new System.Drawing.Bitmap(FilePath))
+                    {
+                        imgWidth = bmp.Width;
+                        imgHeight = bmp.Height;
+
+                        // Convert to JPEG for PDF embedding
+                        using (var ms = new MemoryStream())
+                        {
+                            bmp.Save(ms, System.Drawing.Imaging.ImageFormat.Jpeg);
+                            jpegBytes = ms.ToArray();
+                        }
+                    }
+
+                    // A4 page size in points (72 dpi): 595.28 x 841.89
+                    double pageW = 595.28, pageH = 841.89;
+                    double margin = 36; // 0.5 inch margin
+                    double usableW = pageW - 2 * margin;
+                    double usableH = pageH - 2 * margin;
+
+                    // Scale image to fit page while maintaining aspect ratio
+                    double scale = Math.Min(usableW / imgWidth, usableH / imgHeight);
+                    double drawW = imgWidth * scale;
+                    double drawH = imgHeight * scale;
+                    double drawX = margin + (usableW - drawW) / 2;
+                    double drawY = margin + (usableH - drawH) / 2;
+
+                    // Write a minimal valid PDF
+                    using (var fs = new FileStream(outputPdf, FileMode.Create))
+                    using (var writer = new StreamWriter(fs, System.Text.Encoding.ASCII))
+                    {
+                        var offsets = new List<long>();
+
+                        writer.Write("%PDF-1.4\n");
+                        writer.Flush();
+
+                        // Object 1: Catalog
+                        offsets.Add(fs.Position);
+                        writer.Write("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+                        writer.Flush();
+
+                        // Object 2: Pages
+                        offsets.Add(fs.Position);
+                        writer.Write("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+                        writer.Flush();
+
+                        // Object 3: Page
+                        offsets.Add(fs.Position);
+                        writer.Write($"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {pageW:F2} {pageH:F2}] /Contents 4 0 R /Resources << /XObject << /Img1 5 0 R >> >> >>\nendobj\n");
+                        writer.Flush();
+
+                        // Object 4: Content stream (draw image)
+                        string contentStream = $"q\n{drawW:F2} 0 0 {drawH:F2} {drawX:F2} {drawY:F2} cm\n/Img1 Do\nQ\n";
+                        offsets.Add(fs.Position);
+                        writer.Write($"4 0 obj\n<< /Length {contentStream.Length} >>\nstream\n{contentStream}endstream\nendobj\n");
+                        writer.Flush();
+
+                        // Object 5: Image XObject (JPEG)
+                        offsets.Add(fs.Position);
+                        writer.Write($"5 0 obj\n<< /Type /XObject /Subtype /Image /Width {imgWidth} /Height {imgHeight} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length {jpegBytes.Length} >>\nstream\n");
+                        writer.Flush();
+                        fs.Write(jpegBytes, 0, jpegBytes.Length);
+                        writer.Write("\nendstream\nendobj\n");
+                        writer.Flush();
+
+                        // Cross-reference table
+                        long xrefOffset = fs.Position;
+                        writer.Write($"xref\n0 {offsets.Count + 1}\n");
+                        writer.Write("0000000000 65535 f \n");
+                        foreach (var off in offsets)
+                            writer.Write($"{off:D10} 00000 n \n");
+
+                        writer.Write($"trailer\n<< /Size {offsets.Count + 1} /Root 1 0 R >>\nstartxref\n{xrefOffset}\n%%EOF\n");
+                        writer.Flush();
+                    }
+
+                    System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                    {
+                        // Drop the PDF back into the clipboard shelf
+                        var dataObj = new System.Windows.DataObject();
+                        dataObj.SetData(System.Windows.DataFormats.FileDrop, new string[] { outputPdf });
+                        var mainWin = System.Windows.Application.Current.MainWindow as AdvanceClip.MainWindow;
+                        (mainWin?.DataContext as AdvanceClip.ViewModels.FlyShelfViewModel)?.HandleDrop(dataObj, true);
+
+                        AdvanceClip.Windows.ToastWindow.ShowToast($"Image → PDF converted! ✅ {Path.GetFileName(outputPdf)}");
+                    });
+                }
+                catch (Exception ex)
+                {
+                    System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                        AdvanceClip.Windows.ToastWindow.ShowToast($"Image→PDF failed: {ex.Message} ❌")
                     );
                 }
             });

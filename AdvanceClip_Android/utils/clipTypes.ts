@@ -15,31 +15,31 @@ export type ClipItem = {
 };
 
 // ═══ Organized Storage Paths ═══
-export const DOWNLOAD_BASE = `${(FileSystem as any).documentDirectory}AdvanceClip/Downloads/`;
-export const SYNC_CACHE_BASE = `${(FileSystem as any).cacheDirectory}AdvanceClip/SyncCache/`;
-export const CONVERTED_BASE = `${(FileSystem as any).documentDirectory}AdvanceClip/Converted/`;
-export const IMAGE_CACHE_BASE = `${(FileSystem as any).documentDirectory}AdvanceClip/Downloads/Images/`;
+export const DOWNLOAD_BASE = `${(FileSystem as any).documentDirectory}FlyShelf/Downloads/`;
+export const SYNC_CACHE_BASE = `${(FileSystem as any).cacheDirectory}FlyShelf/SyncCache/`;
+export const CONVERTED_BASE = `${(FileSystem as any).documentDirectory}FlyShelf/Converted/`;
+export const IMAGE_CACHE_BASE = `${(FileSystem as any).documentDirectory}FlyShelf/Downloads/Images/`;
 
-/** User-initiated downloads: documentDirectory/AdvanceClip/Downloads/{subfolder}/{filename} */
+/** User-initiated downloads: documentDirectory/FlyShelf/Downloads/{subfolder}/{filename} */
 export const getDownloadPath = async (subfolder: string, filename: string) => {
   const dir = `${DOWNLOAD_BASE}${subfolder}/`;
   await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => {});
   return `${dir}${filename}`;
 };
 
-/** Auto-sync temp files: cacheDirectory/AdvanceClip/SyncCache/{filename} */
+/** Auto-sync temp files: cacheDirectory/FlyShelf/SyncCache/{filename} */
 export const getSyncCachePath = async (filename: string) => {
   await FileSystem.makeDirectoryAsync(SYNC_CACHE_BASE, { intermediates: true }).catch(() => {});
   return `${SYNC_CACHE_BASE}${filename}`;
 };
 
-/** Conversion outputs: documentDirectory/AdvanceClip/Converted/{filename} */
+/** Conversion outputs: documentDirectory/FlyShelf/Converted/{filename} */
 export const getConvertedPath = async (filename: string) => {
   await FileSystem.makeDirectoryAsync(CONVERTED_BASE, { intermediates: true }).catch(() => {});
   return `${CONVERTED_BASE}${filename}`;
 };
 
-/** Image cache: documentDirectory/AdvanceClip/Downloads/Images/{filename} */
+/** Image cache: documentDirectory/FlyShelf/Downloads/Images/{filename} */
 export const getImageCachePath = async (filename: string) => {
   await FileSystem.makeDirectoryAsync(IMAGE_CACHE_BASE, { intermediates: true }).catch(() => {});
   return `${IMAGE_CACHE_BASE}${filename}`;

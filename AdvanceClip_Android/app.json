@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "All Sync",
+    "name": "FlyShelf",
     "slug": "AllSync",
-    "version": "1.8.2",
+    "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "allsync",
@@ -58,15 +58,15 @@
       [
         "expo-media-library",
         {
-          "photosPermission": "Allow AdvanceClip to access your photos.",
-          "savePhotosPermission": "Allow AdvanceClip to save photos.",
+          "photosPermission": "Allow FlyShelf to access your photos.",
+          "savePhotosPermission": "Allow FlyShelf to save photos.",
           "isAccessMediaLocationEnabled": true
         }
       ],
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow All Sync to access your camera to scan QR codes and upload images directly."
+          "cameraPermission": "Allow FlyShelf to access your camera to scan QR codes and upload images directly."
         }
       ],
       "expo-notifications",

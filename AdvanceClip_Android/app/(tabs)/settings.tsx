@@ -141,7 +141,7 @@ export default function SettingsScreen() {
       setUpdateStatus('downloading');
       setUpdateProgress(0);
 
-      const apkUri = `${(FileSystem as any).cacheDirectory}AdvanceClip_v${version}.apk`;
+      const apkUri = `${(FileSystem as any).cacheDirectory}FlyShelf_v${version}.apk`;
       try { await FileSystem.deleteAsync(apkUri, { idempotent: true }); } catch {}
 
       const downloadResumable = FileSystem.createDownloadResumable(
@@ -172,7 +172,7 @@ export default function SettingsScreen() {
       setUpdateStatus('downloading');
       setUpdateProgress(0);
 
-      const apkUri = `${(FileSystem as any).cacheDirectory}AdvanceClip_v${latestVersion}.apk`;
+      const apkUri = `${(FileSystem as any).cacheDirectory}FlyShelf_v${latestVersion}.apk`;
 
       // Delete old APK if exists
       try { await FileSystem.deleteAsync(apkUri, { idempotent: true }); } catch {}
@@ -297,7 +297,7 @@ export default function SettingsScreen() {
             <View style={styles.inputContainer}>
               <View style={styles.inputHeaderRow}>
                 <IconSymbol name="network" size={20} color="#4A62EB" />
-                <Text style={styles.inputLabel}>AdvanceClip PC API Address</Text>
+                <Text style={styles.inputLabel}>FlyShelf PC API Address</Text>
               </View>
               <TextInput
                 style={styles.input}
@@ -445,7 +445,7 @@ export default function SettingsScreen() {
             <View style={styles.inputContainer}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>AdvanceClip Mobile</Text>
+                  <Text style={styles.inputLabel}>FlyShelf Mobile</Text>
                   <Text style={[styles.helperText, { marginTop: 2 }]}>
                     Installed: <Text style={{ color: '#8B5CF6', fontWeight: '700' }}>v{APP_VERSION}</Text>
                     {latestVersion && updateStatus === 'available' ? (

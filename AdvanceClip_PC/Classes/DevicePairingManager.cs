@@ -2,7 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
+using System.Text;
 using System.Text.Json;
+using System.Threading.Tasks;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using ZXing;
@@ -11,6 +14,21 @@ using ZXing.Windows.Compatibility;
 
 namespace AdvanceClip.Classes
 {
+    /// <summary>
+    /// Data model returned when looking up a pairing code from Firebase.
+    /// </summary>
+    public class PairingCodeInfo
+    {
+        public string deviceId { get; set; } = "";
+        public string deviceName { get; set; } = "";
+        public string deviceType { get; set; } = "";
+        public string pairingKey { get; set; } = "";
+        public string localUrl { get; set; } = "";
+        public string globalUrl { get; set; } = "";
+        public string pin { get; set; } = "";
+        public long timestamp { get; set; }
+    }
+
     public class PairedDevice
     {
         public string DeviceId { get; set; } = "";
@@ -30,6 +48,12 @@ namespace AdvanceClip.Classes
 
         private static List<PairedDevice> _pairedDevices = new();
         private static readonly object _lock = new();
+        private static readonly HttpClient _httpClient = new HttpClient() { Timeout = TimeSpan.FromSeconds(10) };
+        private const string FIREBASE_BASE = "https://advance-sync-default-rtdb.firebaseio.com";
+        
+        /// <summary>Current active pairing code for this device (displayed in UI).</summary>
+        public static string CurrentPairingCode { get; private set; } = "";
+
 
         static DevicePairingManager()
         {
@@ -222,7 +246,170 @@ namespace AdvanceClip.Classes
             Logger.LogAction("PAIR", $"Removed device: {deviceId}");
         }
 
+        // ═══ Short Pairing Code System ═══
+
+        /// <summary>
+        /// Generate a 6-character alphanumeric code (no ambiguous chars like I/1/O/0).
+        /// </summary>
+        public static string GenerateShortCode()
+        {
+            const string chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+            var rng = new Random();
+            var code = new char[6];
+            for (int i = 0; i < 6; i++) code[i] = chars[rng.Next(chars.Length)];
+            return new string(code);
+        }
+
+        /// <summary>
+        /// Publish a pairing code to Firebase so remote devices can find us.
+        /// Auto-expires after 5 minutes. Returns the generated code.
+        /// </summary>
+        public static async Task<string> PublishPairingCode()
+        {
+            string code = GenerateShortCode();
+            try
+            {
+                var payload = new
+                {
+                    deviceId = SettingsManager.Current.DeviceId,
+                    deviceName = SettingsManager.Current.DeviceName,
+                    deviceType = "PC",
+                    pairingKey = EnsurePairingKey(),
+                    localUrl = FirebaseSyncManager.CachedLocalUrl ?? "",
+                    globalUrl = FirebaseSyncManager.CachedGlobalUrl ?? "",
+                    pin = SettingsManager.Current.WebClientPinToken ?? "",
+                    timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                };
+
+                string json = JsonSerializer.Serialize(payload);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+                var response = await _httpClient.PutAsync($"{FIREBASE_BASE}/pairing_codes/{code}.json", content);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    CurrentPairingCode = code;
+                    Logger.LogAction("PAIR CODE", $"Published pairing code: {code}");
+
+                    // Auto-expire after 5 minutes
+                    _ = Task.Run(async () =>
+                    {
+                        await Task.Delay(5 * 60_000);
+                        try
+                        {
+                            await _httpClient.DeleteAsync($"{FIREBASE_BASE}/pairing_codes/{code}.json");
+                            if (CurrentPairingCode == code) CurrentPairingCode = "";
+                            Logger.LogAction("PAIR CODE", $"Expired pairing code: {code}");
+                        }
+                        catch { }
+                    });
+                }
+                else
+                {
+                    Logger.LogAction("PAIR CODE", $"Failed to publish code: HTTP {(int)response.StatusCode}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogAction("PAIR CODE", $"Publish error: {ex.Message}");
+            }
+            return code;
+        }
+
+        /// <summary>
+        /// Look up a pairing code from Firebase. Returns device info or null if not found/expired.
+        /// </summary>
+        public static async Task<PairingCodeInfo> LookupPairingCode(string code)
+        {
+            try
+            {
+                string upperCode = code.Trim().ToUpperInvariant();
+                var response = await _httpClient.GetAsync($"{FIREBASE_BASE}/pairing_codes/{upperCode}.json");
+                if (!response.IsSuccessStatusCode) return null;
+
+                string json = await response.Content.ReadAsStringAsync();
+                if (string.IsNullOrWhiteSpace(json) || json == "null") return null;
+
+                var info = JsonSerializer.Deserialize<PairingCodeInfo>(json);
+                
+                // Check if code is still fresh (5 min TTL)
+                if (info != null && info.timestamp > 0)
+                {
+                    long ageMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - info.timestamp;
+                    if (ageMs > 5 * 60_000)
+                    {
+                        Logger.LogAction("PAIR CODE", $"Code {upperCode} expired ({ageMs / 1000}s old)");
+                        return null;
+                    }
+                }
+
+                Logger.LogAction("PAIR CODE", $"Found device via code {upperCode}: {info?.deviceName}");
+                return info;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogAction("PAIR CODE", $"Lookup error: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Connect to a remote device by its pairing code.
+        /// Looks up the code in Firebase, then calls /api/pair on the remote device.
+        /// Returns (success, deviceName).
+        /// </summary>
+        public static async Task<(bool Success, string DeviceName)> ConnectByCode(string code)
+        {
+            var info = await LookupPairingCode(code);
+            if (info == null)
+                return (false, "");
+
+            // Try to reach the device and pair — LAN first, then Cloudflare
+            string[] urls = new[] { info.localUrl, info.globalUrl }
+                .Where(u => !string.IsNullOrEmpty(u) && u.StartsWith("http"))
+                .ToArray();
+
+            foreach (var url in urls)
+            {
+                try
+                {
+                    Logger.LogAction("PAIR CODE", $"Trying to pair with {info.deviceName} at {url}...");
+                    var pairPayload = new
+                    {
+                        key = info.pairingKey,
+                        deviceId = SettingsManager.Current.DeviceId,
+                        deviceName = SettingsManager.Current.DeviceName,
+                        deviceType = "PC"
+                    };
+
+                    var json = JsonSerializer.Serialize(pairPayload);
+                    var content = new StringContent(json, Encoding.UTF8, "application/json");
+                    
+                    using var client = new HttpClient() { Timeout = TimeSpan.FromSeconds(8) };
+                    var response = await client.PostAsync($"{url}/api/pair", content);
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        // Also register the remote device locally
+                        TryPairDevice(info.pairingKey, info.deviceId, info.deviceName, info.deviceType,
+                            url.Contains("trycloudflare") ? "cloudflare" : "lan");
+                        
+                        Logger.LogAction("PAIR CODE", $"✅ Paired with {info.deviceName} via {url}");
+                        return (true, info.deviceName);
+                    }
+                    
+                    Logger.LogAction("PAIR CODE", $"Pair attempt to {url}: HTTP {(int)response.StatusCode}");
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogAction("PAIR CODE", $"Pair attempt to {url} failed: {ex.Message}");
+                }
+            }
+
+            return (false, info.deviceName);
+        }
+
         // ═══ Persistence ═══
+
 
         private static void Load()
         {

@@ -736,6 +736,15 @@ namespace AdvanceClip
             _viewModel.ClearShelf();
         }
 
+        private void EmojiPicker_Click(object sender, RoutedEventArgs e)
+        {
+            var picker = new AdvanceClip.Windows.EmojiPickerWindow();
+            picker.Left = this.Left + (this.Width - picker.Width) / 2;
+            picker.Top = this.Top - picker.Height - 8;
+            if (picker.Top < 0) picker.Top = this.Top + this.Height + 8;
+            picker.Show();
+        }
+
         private void CloseWindow_Click(object sender, RoutedEventArgs e)
         {
             this.Hide();
@@ -851,6 +860,11 @@ namespace AdvanceClip
                 else if (item.SmartActionType == "CopyQRText")
                 {
                     try { System.Windows.Clipboard.SetText(item.RawContent); AdvanceClip.Windows.ToastWindow.ShowToast("QR Text Copied!"); } catch { }
+                }
+                else if (item.SmartActionType == "PlotGraph" && item.IsPlottable)
+                {
+                    var graphWindow = new AdvanceClip.Windows.GraphWindow(item.PlotEquation);
+                    graphWindow.Show();
                 }
             }
         }

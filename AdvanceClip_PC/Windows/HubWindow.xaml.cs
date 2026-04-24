@@ -94,7 +94,16 @@ namespace AdvanceClip.Windows
             Dispatcher.Invoke(() =>
             {
                 ApplyFilters();
+                UpdateEmptyState();
             });
+        }
+
+        private void UpdateEmptyState()
+        {
+            if (EmptyStatePanel != null)
+            {
+                EmptyStatePanel.Visibility = _viewModel.DroppedItems.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            }
         }
 
         private void CopyUrl_Click(object sender, RoutedEventArgs e)
@@ -103,6 +112,15 @@ namespace AdvanceClip.Windows
             {
                 try { Clipboard.SetText(url); btn.Content = "Copied!"; System.Threading.Tasks.Task.Delay(1500).ContinueWith(_ => Dispatcher.Invoke(() => btn.Content = "Copy")); } catch { }
             }
+        }
+
+        private void DeleteAll_Click(object sender, RoutedEventArgs e)
+        {
+            if (_viewModel.DroppedItems.Count == 0) return;
+            int count = _viewModel.DroppedItems.Count;
+            _viewModel.ClearShelf();
+            UpdateEmptyState();
+            ToastWindow.ShowToast($"Cleared {count} items 🗑️");
         }
 
         private bool _isApplicationShuttingDown = false;
@@ -1101,6 +1119,89 @@ namespace AdvanceClip.Windows
                 DevicePairingManager.RemoveDevice(deviceId);
                 RefreshPairedDevicesList();
                 Windows.ToastWindow.ShowToast("Device removed ✕");
+            }
+        }
+
+        private async void GeneratePairingCode_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                PairingCodeDisplay.Text = "...";
+                string code = await DevicePairingManager.PublishPairingCode();
+                PairingCodeDisplay.Text = code;
+                Windows.ToastWindow.ShowToast($"Code generated: {code} (expires in 5 min) 🔑");
+            }
+            catch (Exception ex)
+            {
+                PairingCodeDisplay.Text = "ERROR";
+                Logger.LogAction("PAIR CODE", $"Generate failed: {ex.Message}");
+            }
+        }
+
+        private async void ConnectByCode_Click(object sender, RoutedEventArgs e)
+        {
+            string code = RemoteCodeInput?.Text?.Trim().ToUpper() ?? "";
+            if (string.IsNullOrEmpty(code) || code.Length != 6)
+            {
+                Windows.ToastWindow.ShowToast("⚠️ Enter a 6-character code");
+                return;
+            }
+
+            Windows.ToastWindow.ShowToast($"Looking up {code}...");
+
+            try
+            {
+                var (success, deviceName) = await DevicePairingManager.ConnectByCode(code);
+                if (success)
+                {
+                    Windows.ToastWindow.ShowToast($"✅ Paired with {deviceName}!");
+                    RefreshPairedDevicesList();
+                    RemoteCodeInput.Text = "";
+                }
+                else if (!string.IsNullOrEmpty(deviceName))
+                {
+                    Windows.ToastWindow.ShowToast($"⚠️ Found {deviceName} but couldn't connect — make sure it's online");
+                }
+                else
+                {
+                    Windows.ToastWindow.ShowToast("❌ Code not found or expired");
+                }
+            }
+            catch (Exception ex)
+            {
+                Windows.ToastWindow.ShowToast($"❌ Connection failed: {ex.Message}");
+                Logger.LogAction("PAIR CODE", $"ConnectByCode UI error: {ex.Message}");
+            }
+        }
+
+        // ═══ Color Copy Handlers ═══
+
+        private void CopyColorHex_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is FrameworkElement fe && fe.DataContext is ViewModels.ClipboardItem item && item.HasDetectedColor)
+            {
+                System.Windows.Clipboard.SetText(Classes.ColorHelper.ToHex(item.ColorR, item.ColorG, item.ColorB));
+                Windows.ToastWindow.ShowToast($"Hex copied: {item.DetectedColor} 🎨");
+            }
+        }
+
+        private void CopyColorRgb_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is FrameworkElement fe && fe.DataContext is ViewModels.ClipboardItem item && item.HasDetectedColor)
+            {
+                string rgb = Classes.ColorHelper.ToRgb(item.ColorR, item.ColorG, item.ColorB);
+                System.Windows.Clipboard.SetText(rgb);
+                Windows.ToastWindow.ShowToast($"RGB copied: {rgb} 🎨");
+            }
+        }
+
+        private void CopyColorHsl_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is FrameworkElement fe && fe.DataContext is ViewModels.ClipboardItem item && item.HasDetectedColor)
+            {
+                string hsl = Classes.ColorHelper.ToHsl(item.ColorR, item.ColorG, item.ColorB);
+                System.Windows.Clipboard.SetText(hsl);
+                Windows.ToastWindow.ShowToast($"HSL copied: {hsl} 🎨");
             }
         }
     }

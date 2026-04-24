@@ -1,8 +1,8 @@
 {
-  "pc_version": "1.9.2",
-  "pc_download": "https://github.com/shdra06/AdvanceClip/releases/download/v1.9.2-pc/AdvanceClip.exe",
-  "android_version": "1.8.2",
-  "android_download": "https://github.com/shdra06/AdvanceClip/releases/download/v1.8.2/AdvanceClip_Mobile.apk",
-  "pc_changelog": "v1.9.2: New ClipFlow branding & icon, Alt+0 for 10th item, hotkeys work on startup, auto-select first item on Alt+C, selected item border, download redirect fix.",
-  "android_changelog": "v1.8.2: Fixed double/triple clipboard entries, background Firebase sync via floating ball, forced/group sync support, PDF detection improvements."
+  "pc_version": "2.0.0",
+  "pc_download": "https://github.com/shdra06/AdvanceClip/releases/download/v2.0.0-pc/AdvanceClip.exe",
+  "android_version": "2.0.0",
+  "android_download": "https://github.com/shdra06/AdvanceClip/releases/download/v2.0.0/FlyShelf_Mobile.apk",
+  "pc_changelog": "v2.0.0: FlyShelf rebrand, UI virtualization fix, folder/zip support, sync helper consolidation, 500-item cap, async folder enumeration.",
+  "android_changelog": "v2.0.0: FlyShelf rebrand, FlatList virtualization, code cleanup, unified storage paths."
 }

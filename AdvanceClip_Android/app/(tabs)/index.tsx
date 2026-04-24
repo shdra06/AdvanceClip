@@ -60,12 +60,28 @@ export default function SyncScreen() {
     if (cachedPcUrlRef.current && (now - cachedPcUrlTimestampRef.current) < 15_000) {
       return cachedPcUrlRef.current;
     }
-    // Find PC from Firebase auto-discovered devices
+
+    // Priority 2: Stored pairing URLs from QR scan / code entry
+    try {
+      const storedLocal = await AsyncStorage.getItem('pairedLocalUrl');
+      const storedGlobal = await AsyncStorage.getItem('pairedGlobalUrl');
+      for (const url of [storedLocal, storedGlobal].filter(Boolean)) {
+        try {
+          const res = await fetchWithTimeout(`${url}/api/health`,
+            { headers: { 'X-Advance-Client': 'MobileCompanion' } }, 2000);
+          if (res.ok) {
+            cachedPcUrlRef.current = url;
+            cachedPcUrlTimestampRef.current = now;
+            return url!;
+          }
+        } catch {}
+      }
+    } catch {}
+
+    // Priority 3: Firebase auto-discovered devices
     const pc = activeDevices.find(d => d.DeviceType === 'PC');
     if (pc) {
       const urls = getDeviceUrls(pc);
-      // Single URL = use directly (no health check waste)
-      // Multiple URLs = resolveOptimalUrl picks fastest (LAN biased)
       const resolved = urls.length === 1 ? urls[0] : await resolveOptimalUrl(pc);
       if (resolved) {
         cachedPcUrlRef.current = resolved;
@@ -73,7 +89,7 @@ export default function SyncScreen() {
         return resolved;
       }
     }
-    // Fallback: manual IP from Settings (legacy, rarely needed)
+    // Priority 4: manual IP from Settings (legacy fallback)
     const raw = pcLocalIp?.trim();
     if (raw) {
       const fallback = raw.startsWith('http') ? raw.replace(/\/$/, '') : `http://${raw.includes(':') ? raw : raw + ':8999'}`;
@@ -293,6 +309,11 @@ export default function SyncScreen() {
   const [mergeQueue, setMergeQueue] = useState<ClipItem[]>([]);
   const [isForceSyncModalVisible, setIsForceSyncModalVisible] = useState(false);
   const [forceSyncDevices, setForceSyncDevices] = useState<any[]>([]);
+  const [isConnectModalVisible, setIsConnectModalVisible] = useState(false);
+  const [pairingCodeInput, setPairingCodeInput] = useState('');
+  const [myPairingCode, setMyPairingCode] = useState<string | null>(null);
+  const [isPairing, setIsPairing] = useState(false);
+  const [pairedPcName, setPairedPcName] = useState<string | null>(null);
 
   // ─── Persistence ───
   useEffect(() => {
@@ -324,7 +345,7 @@ export default function SyncScreen() {
                   const localUri = `${SYNC_CACHE_BASE}relayed_${Date.now()}_${idx}.jpg`;
                   const dl = await FileSystem.downloadAsync(url, localUri, { headers: { 'X-Advance-Client': 'MobileCompanion' } });
                   const asset = await MediaLibrary.createAssetAsync(dl.uri);
-                  await MediaLibrary.createAlbumAsync("AdvanceClip Extractions", asset, false);
+                  await MediaLibrary.createAlbumAsync("FlyShelf Extractions", asset, false);
                 }));
                 ToastAndroid.show("Extraction successful: Saved to Native Gallery ✅", ToastAndroid.LONG);
               }
@@ -765,7 +786,10 @@ export default function SyncScreen() {
       if (sentContentFingerprintsRef.current.size > 100) sentContentFingerprintsRef.current = new Set(Array.from(sentContentFingerprintsRef.current).slice(-50));
       let localSuccess = false;
       try {
-        const response = await fetchWithTimeout(`${targetUrl}/api/sync_text`, { method: 'POST', headers: { 'Content-Type': 'text/plain', 'X-Advance-Client': 'MobileCompanion', 'X-Source-Device': deviceName || 'Mobile' }, body: finalRaw }, 1500);
+        const pairingKey = await AsyncStorage.getItem('pairingKey');
+        const hdrs: any = { 'Content-Type': 'text/plain', 'X-Advance-Client': 'MobileCompanion', 'X-Source-Device': deviceName || 'Mobile' };
+        if (pairingKey) hdrs['X-Pairing-Key'] = pairingKey;
+        const response = await fetchWithTimeout(`${targetUrl}/api/sync_text`, { method: 'POST', headers: hdrs, body: finalRaw }, 1500);
         localSuccess = response.ok;
       } catch(e) { cachedPcUrlRef.current = null; }
       if (!localSuccess && isGlobalSyncEnabled) {
@@ -861,14 +885,138 @@ export default function SyncScreen() {
       setIsTargetModalVisible(true);
     }
   };
-  const launchQRScanner = async () => { setIsCameraOptionsVisible(false); if (!cameraPermission?.granted) { const perm = await requestCameraPermission(); if (!perm.granted) { Alert.alert("Permission Required"); return; } } setIsQRScannerActive(true); };
+  const launchQRScanner = async () => { setIsConnectModalVisible(false); setIsCameraOptionsVisible(false); if (!cameraPermission?.granted) { const perm = await requestCameraPermission(); if (!perm.granted) { Alert.alert("Permission Required"); return; } } setIsQRScannerActive(true); };
+
+  // ─── Pairing System ───
+  const executePairing = async (pairInfo: { key?: string; local?: string; global?: string; pin?: string; name?: string; id?: string }) => {
+    const { key, local, global: globalUrl, pin, name: pcName, id: pcId } = pairInfo;
+    setIsPairing(true);
+    if (Platform.OS === 'android') ToastAndroid.show(`Connecting to ${pcName || 'device'}...`, ToastAndroid.SHORT);
+
+    const urls = [local, globalUrl].filter(u => u && u.startsWith('http')) as string[];
+    let paired = false, workingUrl = '';
+
+    for (const url of urls) {
+      try {
+        const res = await fetchWithTimeout(`${url}/api/pair`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Advance-Client': 'MobileCompanion' },
+          body: JSON.stringify({
+            key: key || '',
+            deviceId: `Mobile_${(deviceName || 'Phone').replace(/[^a-zA-Z0-9_]/g, '_')}`,
+            deviceName: deviceName || 'Phone',
+            deviceType: 'Mobile',
+          }),
+        }, 6000);
+        if (res.ok) { paired = true; workingUrl = url; break; }
+      } catch {}
+    }
+
+    if (paired) {
+      await AsyncStorage.multiSet([
+        ['pairingKey', key || ''], ['pairedPcName', pcName || ''], ['pairedPcId', pcId || ''],
+        ['pairedLocalUrl', local || ''], ['pairedGlobalUrl', globalUrl || ''],
+        ['pairedPin', pin || ''],
+      ]);
+      cachedPcUrlRef.current = workingUrl;
+      cachedPcUrlTimestampRef.current = Date.now();
+      setPairedPcName(pcName || 'Device');
+      if (!isGlobalSyncEnabled) setGlobalSyncEnabled(true);
+      setIsPairing(false);
+
+      if (Platform.OS === 'android') ToastAndroid.show(`✅ Paired with ${pcName}!`, ToastAndroid.LONG);
+      Alert.alert('Connected! 🎉',
+        `Paired with ${pcName}.\n\nAnything you copy or drop on your PC will appear here instantly — from anywhere in the world.`,
+        [{ text: 'Got it!' }]
+      );
+    } else {
+      if (local) await AsyncStorage.setItem('pairedLocalUrl', local);
+      if (globalUrl) await AsyncStorage.setItem('pairedGlobalUrl', globalUrl);
+      setIsPairing(false);
+      Alert.alert('Connection Issue',
+        `Could not reach ${pcName || 'device'}.\nMake sure FlyShelf is running and try again.\nThe connection info has been saved — it will auto-connect when available.`
+      );
+    }
+  };
+
+  const connectByCode = async (code: string) => {
+    if (!code || code.trim().length !== 6) { Alert.alert('Invalid Code', 'Please enter a 6-character pairing code.'); return; }
+    setIsPairing(true);
+    if (Platform.OS === 'android') ToastAndroid.show('Looking up code...', ToastAndroid.SHORT);
+    try {
+      const res = await fetch(`https://advance-sync-default-rtdb.firebaseio.com/pairing_codes/${code.toUpperCase().trim()}.json`);
+      const data = await res.json();
+      if (!data) { setIsPairing(false); Alert.alert('Code Not Found', 'No device found with this code.\nMake sure the code is correct and the other device is online.'); return; }
+
+      // Check TTL (5 min)
+      if (data.timestamp && (Date.now() - data.timestamp) > 5 * 60 * 1000) {
+        setIsPairing(false); Alert.alert('Code Expired', 'This code has expired. Generate a new one on the other device.'); return;
+      }
+
+      await executePairing({
+        key: data.pairingKey, local: data.localUrl, global: data.globalUrl,
+        pin: data.pin, name: data.deviceName, id: data.deviceId,
+      });
+      setIsConnectModalVisible(false);
+      setPairingCodeInput('');
+    } catch { setIsPairing(false); Alert.alert('Error', 'Could not connect. Check your internet.'); }
+  };
+
+  const generateMyPairingCode = async () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let code = '';
+    for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+    try {
+      const myDeviceId = `Mobile_${(deviceName || 'Phone').replace(/[^a-zA-Z0-9_]/g, '_')}`;
+      const payload = {
+        deviceId: myDeviceId,
+        deviceName: deviceName || 'Phone',
+        deviceType: 'Mobile',
+        pairingKey: myDeviceId,
+        localUrl: '',
+        globalUrl: '',
+        pin: '',
+        timestamp: Date.now(),
+      };
+      await fetch(`https://advance-sync-default-rtdb.firebaseio.com/pairing_codes/${code}.json`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      setMyPairingCode(code);
+      if (Platform.OS === 'android') ToastAndroid.show(`Code: ${code} (5 min)`, ToastAndroid.SHORT);
+      // Auto-expire
+      setTimeout(async () => {
+        try { await fetch(`https://advance-sync-default-rtdb.firebaseio.com/pairing_codes/${code}.json`, { method: 'DELETE' }); } catch {}
+        if (myPairingCode === code) setMyPairingCode(null);
+      }, 5 * 60 * 1000);
+    } catch { Alert.alert('Error', 'Could not generate code.'); }
+  };
+
   const handleBarcodeScanned = async ({ data }: { data: string }) => {
     setIsQRScannerActive(false);
+
+    // Try to parse as FlyShelf QR payload
+    let qr: any = null;
+    try { qr = JSON.parse(data); } catch {}
+
+    if (qr && qr.app === 'ClipFlow') {
+      // FlyShelf QR — do proper pairing
+      await executePairing({ key: qr.key, local: qr.local, global: qr.global, pin: qr.pin, name: qr.name, id: qr.id });
+      return;
+    }
+
+    // Not a FlyShelf QR — legacy behavior (copy text / open URL)
     await Clipboard.setStringAsync(data);
-    Platform.OS === 'android' ? ToastAndroid.show("Content copied", ToastAndroid.SHORT) : null;
+    if (Platform.OS === 'android') ToastAndroid.show('Copied QR content', ToastAndroid.SHORT);
     if (data.toLowerCase().startsWith('http://') || data.toLowerCase().startsWith('https://')) Linking.openURL(data).catch(() => {});
     setInputText(data);
   };
+
+  // Load paired PC name on startup
+  useEffect(() => {
+    AsyncStorage.getItem('pairedPcName').then(name => { if (name) setPairedPcName(name); });
+  }, []);
 
   // ─── Heavy Upload ───
   const CHUNK_SIZE = 50 * 1024 * 1024; // 50MB (under Cloudflare 100MB limit)
@@ -988,9 +1136,9 @@ export default function SyncScreen() {
       <Modal visible={!deviceName && deviceName === ''} animationType="fade" transparent={true}>
         <View style={styles.modalOverlay}><View style={styles.modalContent}>
           <Text style={styles.modalTitle}>Name this Device</Text>
-          <Text style={styles.modalSubtitle}>Identify this device in the AdvanceClip mesh network.</Text>
+          <Text style={styles.modalSubtitle}>Identify this device in the FlyShelf network.</Text>
           <TextInput style={styles.modalInput} value={setupName} onChangeText={setSetupName} placeholder="e.g. Galaxy S23" placeholderTextColor="#4C5361" autoFocus />
-          <TouchableOpacity style={styles.modalButton} onPress={() => { if(setupName.trim()) setDeviceName(setupName.trim()); }}><Text style={styles.modalButtonText}>Join Mesh</Text></TouchableOpacity>
+          <TouchableOpacity style={styles.modalButton} onPress={() => { if(setupName.trim()) setDeviceName(setupName.trim()); }}><Text style={styles.modalButtonText}>Get Started</Text></TouchableOpacity>
         </View></View>
       </Modal>
 
@@ -1034,9 +1182,80 @@ export default function SyncScreen() {
           </TouchableOpacity>
           <TouchableOpacity style={styles.targetOption} onPress={launchQRScanner}>
             <IconSymbol name="qrcode" size={24} color="#8B5CF6" />
-            <View style={{marginLeft: 12}}><Text style={{color: '#FFF', fontSize: 16, fontWeight: '600'}}>Scan QR Code</Text><Text style={{color: '#8A8F98', fontSize: 12}}>Extracts text or opens valid links.</Text></View>
+            <View style={{marginLeft: 12}}><Text style={{color: '#FFF', fontSize: 16, fontWeight: '600'}}>Scan QR Code</Text><Text style={{color: '#8A8F98', fontSize: 12}}>Pair with PC or extract data.</Text></View>
           </TouchableOpacity>
           <TouchableOpacity style={[styles.modalButton, {backgroundColor: '#2A2F3A', marginTop: 10}]} onPress={() => setIsCameraOptionsVisible(false)}><Text style={styles.modalButtonText}>Cancel</Text></TouchableOpacity>
+        </View></View>
+      </Modal>
+
+      {/* Connect Device Modal */}
+      <Modal visible={isConnectModalVisible} animationType="slide" transparent={true}>
+        <View style={styles.modalOverlay}><View style={styles.modalContent}>
+          <Text style={styles.modalTitle}>Connect Device</Text>
+          <Text style={styles.modalSubtitle}>Pair once — stays connected forever</Text>
+
+          {/* Option 1: Scan QR */}
+          <TouchableOpacity style={styles.targetOption} onPress={launchQRScanner}>
+            <IconSymbol name="qrcode" size={24} color="#8B5CF6" />
+            <View style={{marginLeft: 12}}>
+              <Text style={{color: '#FFF', fontSize: 16, fontWeight: '600'}}>Scan QR Code</Text>
+              <Text style={{color: '#8A8F98', fontSize: 12}}>Point camera at QR on your PC</Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* Option 2: Enter Code */}
+          <View style={{marginTop: 16}}>
+            <Text style={{color: '#8A8F98', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', marginBottom: 8}}>Or Enter Code</Text>
+            <View style={{flexDirection: 'row', gap: 10}}>
+              <TextInput
+                style={{flex: 1, backgroundColor: '#0F1115', color: '#FFF', fontSize: 22, fontWeight: '800',
+                  borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, borderWidth: 1,
+                  borderColor: '#2A2F3A', textAlign: 'center', letterSpacing: 6}}
+                value={pairingCodeInput}
+                onChangeText={setPairingCodeInput}
+                placeholder="A7K9M2"
+                placeholderTextColor="#4C5361"
+                maxLength={6}
+                autoCapitalize="characters"
+              />
+              <TouchableOpacity
+                style={{backgroundColor: isPairing ? '#4C5361' : '#4A62EB', borderRadius: 12, paddingHorizontal: 20, justifyContent: 'center'}}
+                onPress={() => { if (pairingCodeInput.length === 6) connectByCode(pairingCodeInput); }}
+                disabled={isPairing}
+              >
+                {isPairing ? <ActivityIndicator size="small" color="#FFF" /> : <Text style={{color: '#FFF', fontWeight: '700', fontSize: 14}}>Connect</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* This phone's code */}
+          <View style={{marginTop: 20, padding: 14, backgroundColor: '#0F1115', borderRadius: 12, borderWidth: 1, borderColor: '#10B98133'}}>
+            <Text style={{color: '#10B981', fontSize: 12, fontWeight: '700', marginBottom: 6}}>Your Phone's Code</Text>
+            {myPairingCode ? (
+              <Text style={{color: '#FFF', fontSize: 28, fontWeight: '900', letterSpacing: 8, textAlign: 'center'}}>{myPairingCode}</Text>
+            ) : (
+              <TouchableOpacity
+                style={{backgroundColor: '#10B98122', borderRadius: 10, paddingVertical: 10, alignItems: 'center'}}
+                onPress={generateMyPairingCode}
+              >
+                <Text style={{color: '#10B981', fontWeight: '700', fontSize: 14}}>🔑 Generate Code</Text>
+              </TouchableOpacity>
+            )}
+            <Text style={{color: '#8A8F98', fontSize: 11, marginTop: 6, textAlign: 'center'}}>Enter this code on your PC to connect</Text>
+          </View>
+
+          {/* Connected status */}
+          {pairedPcName && (
+            <View style={{marginTop: 12, padding: 10, backgroundColor: '#10B98111', borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 8}}>
+              <View style={{width: 8, height: 8, borderRadius: 4, backgroundColor: '#10B981'}} />
+              <Text style={{color: '#10B981', fontSize: 13, fontWeight: '600'}}>Paired with {pairedPcName}</Text>
+            </View>
+          )}
+
+          <TouchableOpacity style={[styles.modalButton, {backgroundColor: '#2A2F3A', marginTop: 16}]}
+            onPress={() => { setIsConnectModalVisible(false); setPairingCodeInput(''); }}>
+            <Text style={styles.modalButtonText}>Close</Text>
+          </TouchableOpacity>
         </View></View>
       </Modal>
 
@@ -1056,10 +1275,16 @@ export default function SyncScreen() {
         {/* Header */}
         <View style={[styles.header, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}>
           <View>
-            <Text style={styles.title}>Clipboard Sync</Text>
-            <View style={styles.statusRow}><View style={[styles.indicator, { backgroundColor: '#4A62EB' }]} /><Text style={styles.statusText}>Cloud Active</Text></View>
+            <Text style={styles.title}>FlyShelf</Text>
+            <View style={styles.statusRow}>
+              <View style={[styles.indicator, { backgroundColor: pairedPcName ? '#10B981' : '#4A62EB' }]} />
+              <Text style={styles.statusText}>{pairedPcName ? `Connected to ${pairedPcName}` : 'Cloud Active'}</Text>
+            </View>
           </View>
           <View style={{flexDirection: 'row', gap: 10}}>
+            <TouchableOpacity onPress={() => setIsConnectModalVisible(true)} style={{padding: 10, backgroundColor: '#8B5CF622', borderRadius: 10}}>
+              <IconSymbol name="link" size={20} color="#8B5CF6" />
+            </TouchableOpacity>
             {Platform.OS === 'android' && (<TouchableOpacity onPress={() => AdvanceOverlay?.startOverlay()} style={{padding: 10, backgroundColor: '#4A62EB33', borderRadius: 10}}><IconSymbol name="macwindow" size={20} color="#4A62EB" /></TouchableOpacity>)}
             <TouchableOpacity onPress={clearAllClips} style={{padding: 10, backgroundColor: '#2A2F3A', borderRadius: 10}}><IconSymbol name="trash" size={20} color="#EF4444" /></TouchableOpacity>
           </View>
@@ -1088,6 +1313,11 @@ export default function SyncScreen() {
               data={clips.filter(clipFilter)}
               keyExtractor={(item, index) => item.id ? item.id : index.toString()}
               showsVerticalScrollIndicator={false}
+              initialNumToRender={15}
+              maxToRenderPerBatch={10}
+              windowSize={5}
+              removeClippedSubviews={true}
+              updateCellsBatchingPeriod={50}
               renderItem={({ item }) => {
                 let iconName = 'doc.text', iconColor = '#8A8F98';
                 const lowerTit = (item.Title || item.Raw || '').toLowerCase();

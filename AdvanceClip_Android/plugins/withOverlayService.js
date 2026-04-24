@@ -72,12 +72,12 @@ class OverlayService : Service() {
         super.onCreate()
         instance = this
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(CHANNEL_ID, "AdvanceClip Overlay", NotificationManager.IMPORTANCE_LOW)
+            val channel = NotificationChannel(CHANNEL_ID, "FlyShelf Overlay", NotificationManager.IMPORTANCE_LOW)
             channel.setShowBadge(false)
             val nm = getSystemService(NotificationManager::class.java)
             nm?.createNotificationChannel(channel)
             val notification = Notification.Builder(this, CHANNEL_ID)
-                .setContentTitle("AdvanceClip Active")
+                .setContentTitle("FlyShelf Active")
                 .setContentText("Floating clipboard is running")
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .build()
@@ -347,18 +347,18 @@ class OverlayService : Service() {
                     it.animate().scaleX(0.96f).scaleY(0.96f).setDuration(60).withEndAction { it.animate().scaleX(1f).scaleY(1f).setDuration(100).start() }.start()
                     if (isWordFile) {
                         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("AdvanceClip", raw))
+                        clipboard.setPrimaryClip(ClipData.newPlainText("FlyShelf", raw))
                         lastCopiedText = raw
                         Toast.makeText(this, "Copied! Open main app for Convert to PDF option.", Toast.LENGTH_LONG).show()
                     } else if (isPdfFile) {
                         val downloadUrl = obj.optString("DownloadUrl", raw)
                         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("AdvanceClip", if (downloadUrl.startsWith("http")) downloadUrl else raw))
+                        clipboard.setPrimaryClip(ClipData.newPlainText("FlyShelf", if (downloadUrl.startsWith("http")) downloadUrl else raw))
                         lastCopiedText = if (downloadUrl.startsWith("http")) downloadUrl else raw
                         Toast.makeText(this, "PDF URL copied! Paste in browser to download.", Toast.LENGTH_LONG).show()
                     } else {
                         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("AdvanceClip", raw))
+                        clipboard.setPrimaryClip(ClipData.newPlainText("FlyShelf", raw))
                         lastCopiedText = raw
                         Toast.makeText(this, "Copied! Long-press in any field to paste.", Toast.LENGTH_SHORT).show()
                     }
@@ -367,8 +367,8 @@ class OverlayService : Service() {
                 clipCard.setOnLongClickListener { v ->
                     try { v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS) } catch(e: Exception) {}
                     val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("AdvanceClip", raw))
-                    val clipData = ClipData.newPlainText("AdvanceClip", raw)
+                    clipboard.setPrimaryClip(ClipData.newPlainText("FlyShelf", raw))
+                    val clipData = ClipData.newPlainText("FlyShelf", raw)
                     val shadowBuilder = View.DragShadowBuilder(v)
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                         v.startDragAndDrop(clipData, shadowBuilder, null, View.DRAG_FLAG_GLOBAL or View.DRAG_FLAG_GLOBAL_URI_READ)
@@ -632,7 +632,7 @@ class ScreenshotObserver(private val context: Context) : ContentObserver(Handler
                         val lower = path.lowercase()
                         if (lower.contains("screenshot") || lower.contains("screen_shot") || lower.contains("screen shot")) {
                             lastScreenshotTime = now
-                            Toast.makeText(context, "Screenshot detected by AdvanceClip", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Screenshot detected by FlyShelf", Toast.LENGTH_SHORT).show()
                         }
                     }
                 }
@@ -658,7 +658,7 @@ function withOverlayServiceFiles(config) {
     fs.writeFileSync(path.join(javaDir, 'AdvanceOverlayPackage.kt'), OVERLAY_PACKAGE_KT);
     fs.writeFileSync(path.join(javaDir, 'ScreenshotObserver.kt'), SCREENSHOT_OBSERVER_KT);
 
-    console.log('[AdvanceClip] ✅ Native overlay Kotlin files injected successfully.');
+    console.log('[FlyShelf] ✅ Native overlay Kotlin files injected successfully.');
     return config;
   }]);
 }
@@ -693,7 +693,7 @@ function withOverlayManifest(config) {
         });
     }
 
-    console.log('[AdvanceClip] ✅ OverlayService registered in AndroidManifest.xml');
+    console.log('[FlyShelf] ✅ OverlayService registered in AndroidManifest.xml');
     return config;
   });
 }
@@ -718,7 +718,7 @@ function withOverlayPackageRegistration(config) {
     }
 
     config.modResults.contents = contents;
-    console.log('[AdvanceClip] ✅ AdvanceOverlayPackage registered in MainApplication.kt');
+    console.log('[FlyShelf] ✅ AdvanceOverlayPackage registered in MainApplication.kt');
     return config;
   });
 }

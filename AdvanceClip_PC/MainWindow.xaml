@@ -5,6 +5,8 @@
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml" xmlns:tray="http://schemas.lepo.co/wpfui/2022/xaml/tray"
         xmlns:vm="clr-namespace:AdvanceClip.ViewModels"
         xmlns:settings="clr-namespace:AdvanceClip.Classes"
+        xmlns:gif="https://github.com/XamlAnimatedGif/XamlAnimatedGif"
+        xmlns:emoji="clr-namespace:Emoji.Wpf;assembly=Emoji.Wpf"
         Title="FlyShelf" 
         Width="{Binding Source={x:Static settings:SettingsManager.Current}, Path=MiniFormWidth}" 
         Opacity="1"
@@ -53,6 +55,10 @@
                 <ui:Button Name="ToggleExpandBtn" Focusable="False" Appearance="Secondary" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorSecondary}" Click="OpenApp_Click" ToolTip="Open Full Advance Hub" Margin="0,0,6,0" Padding="8,6" CornerRadius="8">
                     <ui:Button.Icon><ui:SymbolIcon Symbol="Maximize24" /></ui:Button.Icon>
                 </ui:Button>
+
+                <ui:Button Focusable="False" Appearance="Secondary" Foreground="{DynamicResource MicaWPF.Brushes.TextFillColorSecondary}" Click="EmojiPicker_Click" ToolTip="Emoji Picker" Margin="0,0,6,0" Padding="8,6" CornerRadius="8">
+                    <emoji:TextBlock Text="😊" FontSize="14"/>
+                </ui:Button>
                 
                 <ui:Button Focusable="False" Appearance="Secondary" Click="ToggleGlobalSync_Click" ToolTip="Toggle Global Web Sync" Margin="0,0,6,0" Padding="8,6" CornerRadius="8">
                     <ui:Button.Style>
@@ -80,7 +86,7 @@
 
         <ListView Name="ShelfListView" Grid.Row="1" ItemsSource="{Binding DroppedItems}" Background="#01000000" BorderThickness="0" Margin="12,0,12,12"
                   ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Hidden"
-                  ScrollViewer.CanContentScroll="False" VirtualizingPanel.ScrollUnit="Pixel"
+                  ScrollViewer.CanContentScroll="True" VirtualizingPanel.ScrollUnit="Pixel"
                   SelectionMode="Extended" MouseMove="ShelfListView_MouseMove" PreviewMouseLeftButtonDown="ShelfListView_PreviewMouseLeftButtonDown"
                   PreviewMouseWheel="ShelfListView_PreviewMouseWheel"
                   PreviewMouseLeftButtonUp="ShelfListView_PreviewMouseLeftButtonUp"
@@ -451,6 +457,9 @@
                                                 <DataTrigger Binding="{Binding ItemType}" Value="File">
                                                     <Setter Property="Visibility" Value="Visible"/>
                                                 </DataTrigger>
+                                                <DataTrigger Binding="{Binding ItemType}" Value="Folder">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
                                     </ui:Button.Style>
@@ -530,7 +539,21 @@
                                         </Style.Triggers>
                                     </Style>
                                 </Border.Style>
-                                <Image Name="ItemIcon" Source="{Binding Icon}" Width="40" Height="40" Stretch="UniformToFill" RenderOptions.BitmapScalingMode="HighQuality" CacheMode="BitmapCache" />
+                                <Grid>
+                                    <Image Name="ItemIcon" Source="{Binding Icon}" Width="40" Height="40" Stretch="UniformToFill" RenderOptions.BitmapScalingMode="HighQuality" CacheMode="BitmapCache">
+                                        <Image.Style>
+                                            <Style TargetType="Image">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsGifPreview}" Value="True">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Image.Style>
+                                    </Image>
+                                    <Image Name="GifItemIcon" gif:AnimationBehavior.SourceUri="{Binding GifFilePath}" gif:AnimationBehavior.RepeatBehavior="Forever" Width="40" Height="40" Stretch="UniformToFill" RenderOptions.BitmapScalingMode="HighQuality" Visibility="{Binding IsGifPreview, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                </Grid>
                             </Border>
 
                             <!-- Semantic Icon Fallback -->
@@ -686,6 +709,12 @@
                              <Setter TargetName="ItemIcon" Property="Grid.ColumnSpan" Value="2" />
                              <Setter TargetName="ItemIcon" Property="HorizontalAlignment" Value="Center" />
                              <Setter TargetName="ItemIcon" Property="Margin" Value="0,0,0,8" />
+                             <Setter TargetName="GifItemIcon" Property="Stretch" Value="Uniform" />
+                             <Setter TargetName="GifItemIcon" Property="Height" Value="80" />
+                             <Setter TargetName="GifItemIcon" Property="Width" Value="NaN" />
+                             <Setter TargetName="GifItemIcon" Property="Grid.ColumnSpan" Value="2" />
+                             <Setter TargetName="GifItemIcon" Property="HorizontalAlignment" Value="Center" />
+                             <Setter TargetName="GifItemIcon" Property="Margin" Value="0,0,0,8" />
                              <Setter TargetName="IconBorder" Property="Margin" Value="0,0,0,8" />
                              <Setter TargetName="IconBorder" Property="Grid.ColumnSpan" Value="2" />
                              <Setter TargetName="IconBorder" Property="HorizontalAlignment" Value="Center" />

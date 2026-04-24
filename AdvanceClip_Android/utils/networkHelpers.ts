@@ -1,4 +1,4 @@
-// Network utility helpers for AdvanceClip Android
+// Network utility helpers for FlyShelf Android
 // Simplified: Trust Firebase data, try-then-fallback pattern, no redundant health checks
 
 /** Fetch with configurable timeout */

@@ -13,7 +13,6 @@
 - **Priority**: Medium
 
 ---
-maths equation solver 
 ## Future Ideas
 
 ### 4. Clipboard History Search
@@ -29,12 +28,6 @@ maths equation solver
 - JSON/XML prettify, Base64 encode/decode
 - Regex find & replace
 
-7) add a graph maker
-
-### 8. Color Picker Detection
-- Detect hex/RGB color codes in clipboard (#FF5733, rgb(255,87,51))
-- Show a color swatch preview in the card
-- Click to copy in different formats (hex/rgb/hsl)
 
 ### 9. Clipboard Statistics Dashboard
 - Track daily/weekly clipboard usage

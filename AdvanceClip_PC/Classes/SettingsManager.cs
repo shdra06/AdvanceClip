@@ -78,6 +78,10 @@ namespace AdvanceClip.Classes
         // QR Pairing
         private string _pairingKey = "";
         public string PairingKey { get => _pairingKey; set => SetProperty(ref _pairingKey, value); }
+
+        // Math Solver
+        private bool _enableMathSolver = false;
+        public bool EnableMathSolver { get => _enableMathSolver; set => SetProperty(ref _enableMathSolver, value); }
     }
 
     public static class SettingsManager

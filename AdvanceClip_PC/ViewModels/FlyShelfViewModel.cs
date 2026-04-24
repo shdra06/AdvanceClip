@@ -143,6 +143,7 @@ namespace AdvanceClip.ViewModels
         public ICommand CopyRawContentCommand { get; }
         public ICommand MergeSelectedPdfsCommand { get; }
         public ICommand OpenFileLocationCommand { get; }
+        public ICommand ConvertImageToPdfCommand { get; }
         
         public AdvanceClip.Classes.NetworkSyncServer LocalServer { get; private set; }
         public AdvanceClip.Classes.DocumentSniffer Sniffer { get; private set; }
@@ -167,6 +168,7 @@ namespace AdvanceClip.ViewModels
             RunAdminTerminalCommand = new RelayCommand<ClipboardItem>(item => item?.RunAdminTerminal());
             CompileNativeCommand = new RelayCommand<ClipboardItem>(item => item?.CompileAndRunNative());
             ConvertDocumentCommand = new RelayCommand<ClipboardItem>(item => item?.ConvertDocumentTask());
+            ConvertImageToPdfCommand = new RelayCommand<ClipboardItem>(item => item?.ConvertImageToPdf());
 
             ExtractTextCommand = new RelayCommand<ClipboardItem>(item => item?.ExtractText());
             ExtractTableCommand = new RelayCommand<ClipboardItem>(item => item?.ExtractTable());
@@ -195,9 +197,33 @@ namespace AdvanceClip.ViewModels
                 }
             });
             OpenFileLocationCommand = new RelayCommand<ClipboardItem>(item => {
-                if (item != null && !string.IsNullOrEmpty(item.FilePath) && System.IO.File.Exists(item.FilePath))
+                if (item == null || string.IsNullOrEmpty(item.FilePath)) return;
+                
+                bool exists = System.IO.File.Exists(item.FilePath) || System.IO.Directory.Exists(item.FilePath);
+                if (exists)
                 {
-                    System.Diagnostics.Process.Start("explorer.exe", $"/select, \"{item.FilePath}\"");
+                    try
+                    {
+                        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                        {
+                            FileName = "explorer.exe",
+                            Arguments = $"/select,\"{item.FilePath}\"",
+                            UseShellExecute = true
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        Classes.Logger.LogAction("EXPLORER", $"Open failed: {ex.Message}");
+                    }
+                }
+                else
+                {
+                    // File/folder doesn't exist — open parent folder instead
+                    string dir = System.IO.Path.GetDirectoryName(item.FilePath);
+                    if (!string.IsNullOrEmpty(dir) && System.IO.Directory.Exists(dir))
+                    {
+                        System.Diagnostics.Process.Start("explorer.exe", $"\"{dir}\"");
+                    }
                 }
             });
             
@@ -479,6 +505,78 @@ namespace AdvanceClip.ViewModels
             return $"{bytes / (1024.0 * 1024 * 1024):F1}GB";
         }
 
+        /// <summary>
+        /// Unified file sync: Cloudflare tunnel → Firebase Storage → log-only fallback.
+        /// Replaces 3 previously duplicated sync blocks.
+        /// </summary>
+        private async System.Threading.Tasks.Task SyncFileToDevicesAsync(string filePath, ClipboardItem item, long maxFirebaseBytes = 25 * 1024 * 1024, string label = "FILE")
+        {
+            try
+            {
+                long fSize = new FileInfo(filePath).Length;
+                var srv = LocalServer;
+                bool tunnelOk = AdvanceClip.Classes.FirebaseSyncManager.CachedTunnelVerified;
+
+                // PRIORITY 1: Cloudflare tunnel (free, unlimited size)
+                if (srv != null && !string.IsNullOrEmpty(srv.GlobalUrl) && srv.GlobalUrl.Contains("trycloudflare.com") && tunnelOk)
+                {
+                    string downloadUrl = $"{srv.GlobalUrl}/download?path={Uri.EscapeDataString(filePath)}";
+                    AdvanceClip.Classes.Logger.LogAction($"{label} SYNC", $"Sending '{Path.GetFileName(filePath)}' ({FormatFileSize(fSize)}) via Cloudflare");
+                    var syncItem = item.CloneForSync(downloadUrl);
+                    await AdvanceClip.Classes.FirebaseSyncManager.PushToGlobalSync(syncItem);
+                    Application.Current.Dispatcher.Invoke(() =>
+                        AdvanceClip.Windows.ToastWindow.ShowToast($"{label} ({FormatFileSize(fSize)}) synced via Cloudflare \ud83c\udf10"));
+                    return;
+                }
+
+                // PRIORITY 2: Firebase Storage (size-limited)
+                if (fSize > 0 && fSize < maxFirebaseBytes)
+                {
+                    AdvanceClip.Classes.Logger.LogAction($"{label} SYNC", $"Uploading '{Path.GetFileName(filePath)}' ({FormatFileSize(fSize)}) to Firebase Storage");
+                    string fbUrl = await AdvanceClip.Classes.FirebaseSyncManager.UploadFileToStorageAsync(filePath);
+                    if (!string.IsNullOrEmpty(fbUrl))
+                    {
+                        var syncItem = item.CloneForSync(fbUrl);
+                        await AdvanceClip.Classes.FirebaseSyncManager.PushToGlobalSync(syncItem);
+                        Application.Current.Dispatcher.Invoke(() =>
+                            AdvanceClip.Windows.ToastWindow.ShowToast($"{label} synced via Firebase \u2601\ufe0f"));
+                        return;
+                    }
+                    AdvanceClip.Classes.Logger.LogAction($"{label} SYNC", "Firebase Storage upload returned null");
+                    return;
+                }
+
+                // Fallback: too large and no Cloudflare
+                AdvanceClip.Classes.Logger.LogAction($"{label} SYNC", $"'{Path.GetFileName(filePath)}' ({FormatFileSize(fSize)}) — no Cloudflare, exceeds Firebase limit");
+                Application.Current.Dispatcher.Invoke(() =>
+                    AdvanceClip.Windows.ToastWindow.ShowToast($"\u26a0\ufe0f {Path.GetFileName(filePath)} ({FormatFileSize(fSize)}) — needs Cloudflare tunnel"));
+            }
+            catch (Exception ex)
+            {
+                AdvanceClip.Classes.Logger.LogAction($"{label} SYNC", $"Error: {ex.Message}");
+            }
+        }
+
+        private const int MAX_UNPINNED_ITEMS = 500;
+
+        /// <summary>
+        /// Prunes oldest unpinned items beyond the cap to prevent unbounded memory growth.
+        /// </summary>
+        private void PruneOldItems()
+        {
+            while (DroppedItems.Count > MAX_UNPINNED_ITEMS)
+            {
+                // Find the last unpinned item
+                ClipboardItem? oldest = null;
+                for (int i = DroppedItems.Count - 1; i >= 0; i--)
+                {
+                    if (!DroppedItems[i].IsPinned) { oldest = DroppedItems[i]; break; }
+                }
+                if (oldest != null) DroppedItems.Remove(oldest);
+                else break; // all items are pinned
+            }
+        }
+
         public Visibility ShelfVisibility => DroppedItems.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
 
         public void HandleDrop(IDataObject data, bool forceClipboardSync = false)
@@ -569,6 +667,7 @@ namespace AdvanceClip.ViewModels
                     {
                         System.Threading.Tasks.Task.Run(() =>
                         {
+                            // For folders, get the shell folder icon; for files, get file icon
                             var icon = GetIcon(file);
                             if (icon != null)
                             {
@@ -585,7 +684,32 @@ namespace AdvanceClip.ViewModels
 
                         if (!isGlobalDownload)
                         {
-                            // Skip incomplete/temporary downloads — these are locked by browsers
+                            // Determine actual sync path: for folders, wait for zip then use that
+                            bool isFolder = item.ItemType == ClipboardItemType.Folder;
+                            
+                            if (isFolder)
+                            {
+                                // Folder sync — wait for zip to complete, then use unified helper
+                                var capturedItem = item;
+                                _ = System.Threading.Tasks.Task.Run(async () =>
+                                {
+                                    for (int wait = 0; wait < 120; wait++)
+                                    {
+                                        if (!string.IsNullOrEmpty(capturedItem.ZippedArchivePath) && File.Exists(capturedItem.ZippedArchivePath))
+                                            break;
+                                        await System.Threading.Tasks.Task.Delay(500);
+                                    }
+                                    if (string.IsNullOrEmpty(capturedItem.ZippedArchivePath) || !File.Exists(capturedItem.ZippedArchivePath))
+                                    {
+                                        AdvanceClip.Classes.Logger.LogAction("FOLDER SYNC", $"Zip not ready for '{capturedItem.FileName}'");
+                                        return;
+                                    }
+                                    await SyncFileToDevicesAsync(capturedItem.ZippedArchivePath, capturedItem, label: "FOLDER");
+                                });
+                                goto SkipFileSync;
+                            }
+
+                            // Skip incomplete/temporary downloads
                             string fileExt = Path.GetExtension(file).ToLowerInvariant();
                             if (fileExt is ".crdownload" or ".part" or ".tmp" or ".download" or ".partial")
                             {
@@ -593,12 +717,10 @@ namespace AdvanceClip.ViewModels
                                 goto SkipFileSync;
                             }
 
-                            // Verify file is accessible before attempting sync
-                            long fSize = 0;
+                            // Verify file is accessible
                             try
                             {
                                 using var probe = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                                fSize = probe.Length;
                             }
                             catch (IOException)
                             {
@@ -606,57 +728,12 @@ namespace AdvanceClip.ViewModels
                                 goto SkipFileSync;
                             }
                             catch { }
-                            var localServer = LocalServer;
-                            
 
-                            
-                            // PRIORITY 1: Cloudflare tunnel — FREE, unlimited, works for ANY file size
-                            // But ONLY if the tunnel is verified working (not just has a URL)
-                            bool tunnelVerified = AdvanceClip.Classes.FirebaseSyncManager.CachedTunnelVerified;
-                            if (localServer != null && !string.IsNullOrEmpty(localServer.GlobalUrl) && localServer.GlobalUrl.Contains("trycloudflare.com") && tunnelVerified)
+                            // Unified file sync
                             {
-                                string downloadUrl = $"{localServer.GlobalUrl}/download?path={Uri.EscapeDataString(file)}";
-                                AdvanceClip.Classes.Logger.LogAction("FILE SYNC", $"Sending '{Path.GetFileName(file)}' ({FormatFileSize(fSize)}) via Cloudflare: {downloadUrl}");
-                                var syncItem = item.CloneForSync(downloadUrl);
-                                _ = AdvanceClip.Classes.FirebaseSyncManager.PushToGlobalSync(syncItem);
-                                AdvanceClip.Windows.ToastWindow.ShowToast($"File ({FormatFileSize(fSize)}) synced via Public Link \ud83c\udf10");
-                            }
-                            // PRIORITY 2: Firebase Storage upload — works for files under 25MB
-                            else if (fSize > 0 && fSize < 25 * 1024 * 1024)
-                            {
-                                if (!tunnelVerified && localServer != null && !string.IsNullOrEmpty(localServer.GlobalUrl) && localServer.GlobalUrl.Contains("trycloudflare.com"))
-                                    AdvanceClip.Classes.Logger.LogAction("FILE SYNC", $"\u26a0\ufe0f Cloudflare tunnel exists but NOT verified — using Firebase Storage for '{Path.GetFileName(file)}'");
                                 string capturedFile = file;
                                 var capturedItem = item;
-                                _ = System.Threading.Tasks.Task.Run(async () =>
-                                {
-                                    try
-                                    {
-                                        AdvanceClip.Classes.Logger.LogAction("FILE SYNC", $"Uploading '{Path.GetFileName(capturedFile)}' ({fSize / 1024}KB) to Firebase Storage...");
-                                        string fbDownloadUrl = await AdvanceClip.Classes.FirebaseSyncManager.UploadFileToStorageAsync(capturedFile);
-                                        if (!string.IsNullOrEmpty(fbDownloadUrl))
-                                        {
-                                            var syncItem = capturedItem.CloneForSync(fbDownloadUrl);
-                                            await AdvanceClip.Classes.FirebaseSyncManager.PushToGlobalSync(syncItem);
-                                            Application.Current.Dispatcher.Invoke(() =>
-                                                AdvanceClip.Windows.ToastWindow.ShowToast($"File synced via Firebase Storage \u2601\ufe0f"));
-                                        }
-                                        else
-                                        {
-                                            AdvanceClip.Classes.Logger.LogAction("FILE SYNC", "Firebase Storage upload failed — file only available on LAN");
-                                        }
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        AdvanceClip.Classes.Logger.LogAction("FILE SYNC", $"Upload failed: {ex.Message}");
-                                    }
-                                });
-                            }
-                            else
-                            {
-                                // File too large for Firebase Storage and no working Cloudflare tunnel
-                                AdvanceClip.Classes.Logger.LogAction("FILE SYNC", $"File '{Path.GetFileName(file)}' ({FormatFileSize(fSize)}) — no verified Cloudflare, too large for Firebase Storage.");
-                                AdvanceClip.Windows.ToastWindow.ShowToast($"⚠️ {Path.GetFileName(file)} ({FormatFileSize(fSize)}) — waiting for Cloudflare tunnel. Copy again when tunnel is active.");
+                                _ = System.Threading.Tasks.Task.Run(async () => await SyncFileToDevicesAsync(capturedFile, capturedItem, label: "FILE"));
                             }
                             SkipFileSync:;
                         }
@@ -664,6 +741,7 @@ namespace AdvanceClip.ViewModels
                     
                     // Pushing natively to the top of the Stack (LIFO format)
                     DroppedItems.Insert(0, item);
+                    PruneOldItems();
                     
                     if (forceClipboardSync)
                     {
@@ -716,6 +794,7 @@ namespace AdvanceClip.ViewModels
                     
                     // Standard Stack Logic (Index 0)
                     DroppedItems.Insert(0, item);
+                    PruneOldItems();
                     var capturedBmp = bmp.Clone(); 
                     capturedBmp.Freeze(); 
 
@@ -760,51 +839,12 @@ namespace AdvanceClip.ViewModels
                                     catch { }
                                     finally { MainWindow._isWritingClipboard = false; }
                                 }
-
-                                // Upload image to Firebase ONLY if tunnel/mesh is available (zero quota)
-                                // Firebase Storage upload is reserved for Force Send only
+                                // Sync image to devices via unified helper
                                 if (AdvanceClip.Classes.SettingsManager.Current.EnableGlobalFirebaseSync)
                                 {
-                                    var srv = LocalServer;
-                                    bool synced = false;
-                                    bool tunnelOk = AdvanceClip.Classes.FirebaseSyncManager.CachedTunnelVerified;
-                                    
-                                    if (srv != null && !string.IsNullOrEmpty(srv.GlobalUrl) && srv.GlobalUrl.Contains("trycloudflare.com") && tunnelOk)
-                                    {
-                                        string dlUrl = $"{srv.GlobalUrl}/download?path={Uri.EscapeDataString(tempFile)}";
-                                        var syncItem = item.CloneForSync(dlUrl);
-                                        _ = AdvanceClip.Classes.FirebaseSyncManager.PushToGlobalSync(syncItem);
-                                        synced = true;
-                                    }
-                                    else if (srv != null && !string.IsNullOrEmpty(srv.GlobalUrl) && srv.GlobalUrl.Contains("trycloudflare.com") && !tunnelOk)
-                                    {
-                                        AdvanceClip.Classes.Logger.LogAction("IMAGE SYNC", "⚠️ Cloudflare tunnel exists but NOT verified — using Firebase Storage for screenshot");
-                                    }
-                                    
-                                    // No working Cloudflare — upload screenshot to Firebase Storage (< 5MB)
-                                    if (!synced && new FileInfo(tempFile).Length < 5 * 1024 * 1024)
-                                    {
-                                        string capturedTempFile = tempFile;
-                                        var capturedItem = item;
-                                        _ = System.Threading.Tasks.Task.Run(async () =>
-                                        {
-                                            try
-                                            {
-                                                string fbUrl = await AdvanceClip.Classes.FirebaseSyncManager.UploadFileToStorageAsync(capturedTempFile);
-                                                if (!string.IsNullOrEmpty(fbUrl))
-                                                {
-                                                    var syncItem = capturedItem.CloneForSync(fbUrl);
-                                                    await AdvanceClip.Classes.FirebaseSyncManager.PushToGlobalSync(syncItem);
-                                                    AdvanceClip.Classes.Logger.LogAction("IMAGE SYNC", $"Screenshot uploaded to Firebase Storage");
-                                                }
-                                                else
-                                                {
-                                                    AdvanceClip.Classes.Logger.LogAction("IMAGE SYNC", "Firebase Storage upload failed — screenshot only available on LAN");
-                                                }
-                                            }
-                                            catch (Exception ex) { AdvanceClip.Classes.Logger.LogAction("IMAGE SYNC", $"Firebase Storage upload error: {ex.Message}"); }
-                                        });
-                                    }
+                                    string capturedTempFile = tempFile;
+                                    var capturedItem = item;
+                                    _ = System.Threading.Tasks.Task.Run(async () => await SyncFileToDevicesAsync(capturedTempFile, capturedItem, maxFirebaseBytes: 5 * 1024 * 1024, label: "IMAGE"));
                                 }
                             });
                         }
@@ -927,8 +967,6 @@ namespace AdvanceClip.ViewModels
                             else
                             {
                                 item.ItemType = ClipboardItemType.Text;
-                                string shortText = capturedText.Trim();
-                                item.FileName = shortText.Length > 800 ? shortText.Substring(0, 800) + "..." : shortText;
                                 item.Extension = "TEXT";
                             }
                         }
@@ -948,6 +986,7 @@ namespace AdvanceClip.ViewModels
                             if (existingText != null) DroppedItems.Remove(existingText);
                             
                             DroppedItems.Insert(0, item);
+                            PruneOldItems();
                             
                             if (item.SmartActionType == "SetTimer" && System.Text.RegularExpressions.Regex.IsMatch(item.RawContent.Trim(), @"^\/\d+$"))
                             {
