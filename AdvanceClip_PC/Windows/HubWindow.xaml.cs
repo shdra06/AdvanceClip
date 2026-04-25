@@ -87,6 +87,12 @@ namespace AdvanceClip.Windows
             });
 
             // No auto-update at startup — manual only via the button
+
+            // Auto-refresh device list every 30 seconds + on initial load
+            var deviceRefreshTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
+            deviceRefreshTimer.Tick += (s, ev) => RefreshDevices_Click(null, null);
+            deviceRefreshTimer.Start();
+            Loaded += (s, ev) => RefreshDevices_Click(null, null);
         }
 
         private void DroppedItems_CollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)

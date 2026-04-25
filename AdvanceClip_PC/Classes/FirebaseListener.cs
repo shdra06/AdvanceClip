@@ -218,12 +218,14 @@ namespace AdvanceClip.Classes
                 InjectCloudItem(cloudItem);
             }
             
-            // Memory safety: prune old IDs to prevent unbounded growth
+            // Memory safety: sliding window to prevent unbounded growth
+            // Keep the newest 250 IDs instead of clearing all (which could re-process items)
             if (_processedIds.Count > 500)
             {
-                _processedIds.Clear();
-                // Re-seed with the latest items only
-                foreach (var ci in newItems.TakeLast(50)) _processedIds.Add(ci.Id);
+                var recentIds = new HashSet<string>(newItems.TakeLast(250).Select(ci => ci.Id));
+                _processedIds.IntersectWith(recentIds);
+                // Ensure all latest items are still tracked
+                foreach (var ci in newItems.TakeLast(250)) _processedIds.Add(ci.Id);
             }
         }
 
@@ -371,18 +373,30 @@ namespace AdvanceClip.Classes
                     clip.EvaluateSmartActions();
                     _viewModel.DroppedItems.Insert(0, clip);
                     _viewModel.OnPropertyChanged(nameof(_viewModel.ShelfVisibility));
+                    
+                    // Mark as cloud-sourced so HandleDrop doesn't re-push to Firebase
+                    string txtFp = $"TXT::{(cloudItem.Raw ?? "").Substring(0, Math.Min(200, (cloudItem.Raw ?? "").Length))}";
+                    _viewModel.MarkAsCloudSourced(txtFp);
 
                     // Auto-copy text to system clipboard for instant paste
                     // CRITICAL: Must guard with _isWritingClipboard to prevent echo loop
                     // (clipboard change → recapture → push back to Firebase → infinite loop)
-                    try
+                    _ = Task.Run(async () =>
                     {
-                        MainWindow.SetWritingClipboard(true);
-                        if (!string.IsNullOrEmpty(cloudItem.Raw))
-                            System.Windows.Clipboard.SetText(cloudItem.Raw);
-                    }
-                    catch { }
-                    finally { MainWindow.SetWritingClipboard(false); }
+                        await System.Windows.Application.Current.Dispatcher.InvokeAsync(async () =>
+                        {
+                            try
+                            {
+                                MainWindow.SetWritingClipboard(true);
+                                if (!string.IsNullOrEmpty(cloudItem.Raw))
+                                    System.Windows.Clipboard.SetText(cloudItem.Raw);
+                                // Delay clearing — WM_CLIPBOARDUPDATE is dispatched async by Windows
+                                await System.Threading.Tasks.Task.Delay(500);
+                            }
+                            catch { }
+                            finally { MainWindow.SetWritingClipboard(false); }
+                        });
+                    });
 
                     AdvanceClip.Windows.ToastWindow.ShowToast($"⚡ {cloudItem.SourceDeviceName}: {(cloudItem.Raw?.Length > 40 ? cloudItem.Raw.Substring(0, 40) + "..." : cloudItem.Raw)}");
                 }
@@ -579,7 +593,7 @@ namespace AdvanceClip.Classes
                     }
                 }
 
-                System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                System.Windows.Application.Current.Dispatcher.InvokeAsync(async () =>
                 {
                     if (progressClip != null)
                     {
@@ -591,7 +605,7 @@ namespace AdvanceClip.Classes
                         ? $"{fileInfo.Length / 1_073_741_824.0:F1} GB"
                         : $"{fileInfo.Length / 1_048_576.0:F1} MB";
 
-                    try { MainWindow.SetWritingClipboard(true); System.Windows.Clipboard.SetFileDropList(new System.Collections.Specialized.StringCollection { filePath }); } catch { } finally { MainWindow.SetWritingClipboard(false); }
+                    try { MainWindow.SetWritingClipboard(true); System.Windows.Clipboard.SetFileDropList(new System.Collections.Specialized.StringCollection { filePath }); await System.Threading.Tasks.Task.Delay(500); } catch { } finally { MainWindow.SetWritingClipboard(false); }
                     AdvanceClip.Windows.ToastWindow.ShowToast($"✅ {cloudItem.Title} ({sizeStr}) from {cloudItem.SourceDeviceName}");
 
                     var clip = new ClipboardItem(filePath);
@@ -623,6 +637,10 @@ namespace AdvanceClip.Classes
                     clip.EvaluateSmartActions();
                     _viewModel.DroppedItems.Insert(0, clip);
                     _viewModel.OnPropertyChanged(nameof(_viewModel.ShelfVisibility));
+                    
+                    // Mark as cloud-sourced so clipboard echo doesn't re-push to Firebase
+                    string fileFp = $"IMG::{(clip.FormattedSize ?? "")}";
+                    _viewModel.MarkAsCloudSourced(fileFp);
                 });
             }
             catch (Exception ex)

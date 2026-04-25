@@ -131,12 +131,12 @@ export const resolveOptimalUrl = async (
 
 /** Build absolute media URL from a clip item */
 export const getMediaUrl = (item: any, activeDevices: any[], pcLocalIp: string): string => {
-  // Already absolute URL
+  // PRIORITY 1: Local cached file (already downloaded — most reliable)
+  if (item.CachedUri && (item.CachedUri.startsWith('file://') || item.CachedUri.startsWith('/'))) return item.CachedUri;
+  // PRIORITY 2: Absolute URL (Cloudflare or Firebase)
   if (item.Raw && item.Raw.startsWith('http')) return item.Raw;
   if (item.DownloadUrl && item.DownloadUrl.startsWith('http')) return item.DownloadUrl;
   if (item.PreviewUrl && item.PreviewUrl.startsWith('http')) return item.PreviewUrl;
-  // Local file path
-  if (item.CachedUri && (item.CachedUri.startsWith('file://') || item.CachedUri.startsWith('/'))) return item.CachedUri;
 
   // Relative URL — needs a base
   const relUrl = item.PreviewUrl || item.DownloadUrl || item.Raw || '';

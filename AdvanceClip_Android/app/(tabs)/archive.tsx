@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, ActivityIndicator, Dimensions, Modal, Alert, ScrollView, Image, Platform, FlatList, ToastAndroid, Linking, TextInput } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, ActivityIndicator, Dimensions, Modal, Alert, ScrollView, Image, Platform, FlatList, ToastAndroid, Linking, TextInput, NativeModules } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import * as Sharing from 'expo-sharing';
@@ -10,9 +10,8 @@ import * as DocumentPicker from 'expo-document-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSettings } from '../../context/SettingsContext';
-import { database, storage } from '../../firebaseConfig';
+import { database } from '../../firebaseConfig';
 import { ref as dbRef, push, set, onValue, query } from 'firebase/database';
-import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { colors, font, radius, shadows, space } from '../../styles/theme';
 import AnimatedCard from '../../components/AnimatedCard';
 import AnimatedPressable from '../../components/AnimatedPressable';
@@ -25,7 +24,7 @@ const THUMB_SIZE = (width - 50) / 4;
 type SourceFilter = 'Camera' | 'WhatsApp' | 'Downloads' | 'All';
 
 export default function ConnectScreen() {
-  const { pcLocalIp, deviceName, defaultTargetDeviceName } = useSettings();
+  const { pcLocalIp, deviceName, defaultTargetDeviceName, pairingKey } = useSettings();
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   
   // Transfer state
@@ -33,8 +32,8 @@ export default function ConnectScreen() {
   const isPausedRef = useRef(false);
   const isCancelledRef = useRef(false);
   
-  // Date range — default 7 days
-  const [startDate, setStartDate] = useState(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)); 
+  // Date range — default 1 year (so images/videos load broadly)
+  const [startDate, setStartDate] = useState(new Date(Date.now() - 365 * 24 * 60 * 60 * 1000)); 
   const [endDate, setEndDate] = useState(new Date());
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
@@ -149,7 +148,8 @@ export default function ConnectScreen() {
       return null;
     };
 
-    const nodesRef = query(dbRef(database, 'active_devices'));
+    if (!pairingKey) { setLocalDevices([]); setGlobalDevices([]); setAllFirebaseDevices([]); return; }
+    const nodesRef = query(dbRef(database, `active_devices/${pairingKey}`));
     const unsubscribeNodes = onValue(nodesRef, async (snapshot) => {
       const locals: any[] = [];
       const globals: any[] = [];
@@ -234,17 +234,46 @@ export default function ConnectScreen() {
     return () => unsubscribeNodes();
   }, [deviceName, pcLocalIp]);
 
-  // Permissions
+  // Permissions + auto-scan on mount
+  const hasScannedRef = useRef(false);
   useEffect(() => {
     (async () => {
       try {
         const { status } = await MediaLibrary.requestPermissionsAsync(false, ['photo', 'video']);
         setHasPermission(status === 'granted');
+        
+        // On Android 11+, also check/prompt for All Files Access (needed for documents)
+        if (Platform.OS === 'android') {
+          try {
+            const { DocumentScanner } = NativeModules;
+            if (DocumentScanner) {
+              const hasAllFiles = await DocumentScanner.hasAllFilesPermission();
+              if (!hasAllFiles) {
+                Alert.alert(
+                  'File Access Required',
+                  'FlyShelf needs "All Files Access" to scan your PDFs, documents, and other files.\n\nTap "Grant" to open settings and enable it.',
+                  [
+                    { text: 'Later', style: 'cancel' },
+                    { text: 'Grant', onPress: () => DocumentScanner.requestAllFilesPermission() }
+                  ]
+                );
+              }
+            }
+          } catch {}
+        }
       } catch { setHasPermission(false); }
     })();
   }, []);
 
-  // Media scan — full device scan for PDFs/docs, date-filtered for media
+  // Auto-scan when permission is available and haven't scanned yet
+  useEffect(() => {
+    if (hasPermission && !hasScannedRef.current && mediaAssets.length === 0 && !isScanning) {
+      hasScannedRef.current = true;
+      scanMedia();
+    }
+  }, [hasPermission]);
+
+  // Media scan — uses native MediaStore for instant document discovery
   const scanMedia = async () => {
     if (hasPermission === false) return;
     setIsScanning(true);
@@ -254,10 +283,10 @@ export default function ConnectScreen() {
     
     try {
       let allFound: any[] = [];
+
+      // 1. Gallery scan for images/videos with date filter (via expo-media-library)
       let hasNextPage = true;
       let after = undefined;
-
-      // Gallery scan for images/videos with date filter
       while (hasNextPage) {
         let media = await MediaLibrary.getAssetsAsync({
           first: 100,
@@ -272,70 +301,26 @@ export default function ConnectScreen() {
         after = media.endCursor;
       }
 
-      // Full device scan for PDFs, docs, and other files (NO date filter)
-      if (Platform.OS !== 'web') {
-        const scanRoots: { path: string, source: SourceFilter, recursive?: boolean }[] = [
-          { path: 'file:///storage/emulated/0/Download/', source: 'Downloads', recursive: true },
-          { path: 'file:///storage/emulated/0/Documents/', source: 'Downloads', recursive: true },
-          { path: 'file:///storage/emulated/0/DCIM/', source: 'Camera' },
-          { path: 'file:///storage/emulated/0/Pictures/', source: 'Camera' },
-          { path: 'file:///storage/emulated/0/WhatsApp/Media/WhatsApp Images/', source: 'WhatsApp' },
-          { path: 'file:///storage/emulated/0/WhatsApp/Media/WhatsApp Images/Sent/', source: 'WhatsApp' },
-          { path: 'file:///storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Images/', source: 'WhatsApp' },
-          { path: 'file:///storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Video/', source: 'WhatsApp' },
-          // Additional common paths for PDFs and documents
-          { path: 'file:///storage/emulated/0/WhatsApp/Media/WhatsApp Documents/', source: 'WhatsApp', recursive: true },
-          { path: 'file:///storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Documents/', source: 'WhatsApp', recursive: true },
-          { path: 'file:///storage/emulated/0/Telegram/', source: 'Downloads', recursive: true },
-          { path: 'file:///storage/emulated/0/Android/media/org.telegram.messenger/', source: 'Downloads', recursive: true },
-          { path: 'file:///storage/emulated/0/Desktop/', source: 'Downloads', recursive: true },
-          { path: 'file:///storage/emulated/0/', source: 'Downloads', recursive: false }, // Top-level files only
-        ];
-
-        const scanDir = async (dirPath: string, source: SourceFilter, depth: number = 0, maxDepth: number = 2) => {
-          if (depth > maxDepth) return;
-          try {
-            const check = await FileSystem.getInfoAsync(dirPath);
-            if (!check.exists || !check.isDirectory) return;
-            const files = await FileSystem.readDirectoryAsync(dirPath);
-            for (const file of files) {
-              if (file === '.nomedia' || file.startsWith('.') || file === 'Android' || file === 'node_modules') continue;
-              const fullPath = dirPath + file;
-              try {
-                const fInfo = await FileSystem.getInfoAsync(fullPath);
-                if (fInfo.exists && fInfo.isDirectory && depth < maxDepth) {
-                  await scanDir(fullPath + '/', source, depth + 1, maxDepth);
-                } else if (fInfo.exists && !fInfo.isDirectory) {
-                  const lowerFile = file.toLowerCase();
-                  let mediaType = '';
-                  const fileSize = (fInfo as any).size || 0;
-                  
-                  if (lowerFile.endsWith('.pdf')) mediaType = 'pdf';
-                  else if (lowerFile.match(/\.(doc|docx|txt|xlsx|xls|pptx|ppt|odt|rtf|csv)$/)) mediaType = 'doc';
-                  else if (lowerFile.match(/\.(mp4|avi|mkv|mov|3gp|webm)$/)) mediaType = 'video';
-                  else if (lowerFile.match(/\.(jpg|jpeg|png|gif|webp|bmp|heic)$/)) mediaType = 'photo';
-                  else if (lowerFile.match(/\.(apk|zip|rar|7z|tar|gz)$/)) mediaType = 'doc';
-                  
-                  if (!mediaType) continue;
-                  
-                  const modTimeMs = (fInfo.modificationTime || 0) * 1000;
-                  
-                  if (mediaType === 'pdf' || mediaType === 'doc') {
-                    allFound.push({ id: fullPath, uri: fullPath, filename: file, creationTime: modTimeMs, mediaType, source, fileSize });
-                  } else if (modTimeMs >= startDate.getTime() && modTimeMs <= endDate.getTime()) {
-                    allFound.push({ id: fullPath, uri: fullPath, filename: file, creationTime: modTimeMs, mediaType, source, fileSize });
-                  }
-                }
-              } catch {}
+      // 2. Native MediaStore scan for PDFs, docs, archives (instant — same as Android file manager)
+      if (Platform.OS === 'android') {
+        try {
+          const { DocumentScanner } = NativeModules;
+          if (DocumentScanner) {
+            const docs: any[] = await DocumentScanner.scanDocuments();
+            if (docs && docs.length > 0) {
+              allFound = [...allFound, ...docs];
+              if (Platform.OS === 'android') {
+                ToastAndroid.show(`Found ${docs.length} documents`, ToastAndroid.SHORT);
+              }
             }
-          } catch {}
-        };
-
-        for (const { path, source, recursive } of scanRoots) {
-          // Use deeper recursion for Download/Documents folders
-          const maxDepth = recursive ? 4 : 0;
-          await scanDir(path, source, 0, maxDepth);
+          }
+        } catch (e: any) {
+          // Fallback: manual filesystem scan if native module fails
+          console.warn('DocumentScanner native module failed, falling back:', e.message);
+          await fallbackFileScan(allFound);
         }
+      } else {
+        await fallbackFileScan(allFound);
       }
 
       const uniqueAssets = Array.from(new Map(allFound.map(item => [item.id, item])).values());
@@ -343,6 +328,49 @@ export default function ConnectScreen() {
       setMediaAssets(uniqueAssets);
     } catch (e) { console.error(e); }
     setIsScanning(false);
+  };
+
+  // Fallback filesystem scan (for non-Android or if native module fails)
+  const fallbackFileScan = async (allFound: any[]) => {
+    if (Platform.OS === 'web') return;
+    const scanRoots: { path: string, source: SourceFilter, recursive?: boolean }[] = [
+      { path: 'file:///storage/emulated/0/Download/', source: 'Downloads', recursive: true },
+      { path: 'file:///storage/emulated/0/Documents/', source: 'Downloads', recursive: true },
+      { path: 'file:///storage/emulated/0/WhatsApp/Media/WhatsApp Documents/', source: 'WhatsApp', recursive: true },
+      { path: 'file:///storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Documents/', source: 'WhatsApp', recursive: true },
+    ];
+
+    const scanDir = async (dirPath: string, source: SourceFilter, depth: number = 0, maxDepth: number = 2) => {
+      if (depth > maxDepth) return;
+      try {
+        const check = await FileSystem.getInfoAsync(dirPath);
+        if (!check.exists || !check.isDirectory) return;
+        const files = await FileSystem.readDirectoryAsync(dirPath);
+        for (const file of files) {
+          if (file === '.nomedia' || file.startsWith('.') || file === 'Android' || file === 'node_modules') continue;
+          const fullPath = dirPath + file;
+          try {
+            const fInfo = await FileSystem.getInfoAsync(fullPath);
+            if (fInfo.exists && fInfo.isDirectory && depth < maxDepth) {
+              await scanDir(fullPath + '/', source, depth + 1, maxDepth);
+            } else if (fInfo.exists && !fInfo.isDirectory) {
+              const lowerFile = file.toLowerCase();
+              let mediaType = '';
+              if (lowerFile.endsWith('.pdf')) mediaType = 'pdf';
+              else if (lowerFile.match(/\.(doc|docx|txt|xlsx|xls|pptx|ppt|odt|rtf|csv)$/)) mediaType = 'doc';
+              else if (lowerFile.match(/\.(apk|zip|rar|7z|tar|gz)$/)) mediaType = 'doc';
+              if (!mediaType) continue;
+              const modTimeMs = (fInfo.modificationTime || 0) * 1000;
+              allFound.push({ id: fullPath, uri: fullPath, filename: file, creationTime: modTimeMs, mediaType, source, fileSize: (fInfo as any).size || 0 });
+            }
+          } catch {}
+        }
+      } catch {}
+    };
+
+    for (const { path, source, recursive } of scanRoots) {
+      await scanDir(path, source, 0, recursive ? 4 : 0);
+    }
   };
 
   // Browse Android files
@@ -773,11 +801,21 @@ export default function ConnectScreen() {
 
         {/* Type Tabs */}
         <View style={s.tabRow}>
-          {(['All', 'Images', 'Videos', 'PDFs', 'Docs'] as const).map(t => (
-            <TouchableOpacity key={t} style={[s.tab, activeTab === t && s.tabActive]} onPress={() => setActiveTab(t)}>
-              <Text style={[s.tabText, activeTab === t && s.tabTextActive]}>{t}</Text>
-            </TouchableOpacity>
-          ))}
+          {(['All', 'Images', 'Videos', 'PDFs', 'Docs'] as const).map(t => {
+            const count = mediaAssets.filter(a => {
+              if (t === 'All') return true;
+              if (t === 'Images') return a.mediaType === 'photo';
+              if (t === 'Videos') return a.mediaType === 'video';
+              if (t === 'PDFs') return a.mediaType === 'pdf';
+              if (t === 'Docs') return a.mediaType === 'doc';
+              return true;
+            }).length;
+            return (
+              <TouchableOpacity key={t} style={[s.tab, activeTab === t && s.tabActive]} onPress={() => setActiveTab(t)}>
+                <Text style={[s.tabText, activeTab === t && s.tabTextActive]}>{t} ({count})</Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         {/* Count + Select All */}
@@ -875,13 +913,44 @@ export default function ConnectScreen() {
       if (!uri) { Alert.alert('Error', 'No file path available'); return; }
       const fileUri = uri.startsWith('file://') ? uri : `file://${uri}`;
       if (Platform.OS === 'android') {
-        const contentUri = await FileSystem.getContentUriAsync(fileUri);
+        // Copy to app-local cache first — getContentUriAsync only works on paths within the app's configured FileProvider roots
+        const fileName = (asset.filename || uri.split('/').pop() || `file_${Date.now()}`).replace(/[^a-zA-Z0-9.-]/g, '_');
+        const appLocalPath = `${(FileSystem as any).cacheDirectory}open_${fileName}`;
+        try {
+          await FileSystem.copyAsync({ from: fileUri, to: appLocalPath });
+        } catch (copyErr) {
+          // Try direct content URI as fallback for some Android versions
+          try {
+            await Sharing.shareAsync(fileUri);
+            return;
+          } catch { throw copyErr; }
+        }
+        const contentUri = await FileSystem.getContentUriAsync(appLocalPath);
+        // Determine MIME type from extension
+        const ext = fileName.split('.').pop()?.toLowerCase() || '';
+        const mimeType = ext === 'pdf' ? 'application/pdf'
+          : ext === 'doc' || ext === 'docx' ? 'application/msword'
+          : ext === 'xls' || ext === 'xlsx' ? 'application/vnd.ms-excel'
+          : ext === 'ppt' || ext === 'pptx' ? 'application/vnd.ms-powerpoint'
+          : ext === 'txt' ? 'text/plain'
+          : ext === 'apk' ? 'application/vnd.android.package-archive'
+          : ext === 'zip' || ext === 'rar' ? 'application/zip'
+          : ext === 'mp4' ? 'video/mp4'
+          : ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg'
+          : ext === 'png' ? 'image/png'
+          : '*/*';
         await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
-          data: contentUri, flags: 1,
+          data: contentUri, flags: 1, type: mimeType,
         });
       }
     } catch (e: any) {
-      Alert.alert('Cannot Open', e?.message || 'No app available to open this file.');
+      // Fallback: use share sheet
+      try {
+        const uri = asset.uri || asset.localUri;
+        if (uri) await Sharing.shareAsync(uri.startsWith('file://') ? uri : `file://${uri}`);
+      } catch {
+        Alert.alert('Cannot Open', e?.message || 'No app available to open this file.');
+      }
     }
   };
 
@@ -1119,11 +1188,11 @@ const s = StyleSheet.create({
   sourceChipActive: { backgroundColor: colors.accent.successDim, borderColor: colors.accent.success },
   sourceChipText: { color: colors.text.secondary, fontSize: 12, fontFamily: font.semibold },
   sourceChipTextActive: { color: colors.accent.success },
-  tabRow: { flexDirection: 'row', paddingHorizontal: space.xl, marginBottom: 6, gap: 4 },
-  tab: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 10 },
-  tabActive: { backgroundColor: colors.bg.cardHover },
-  tabText: { color: colors.text.disabled, fontSize: 12, fontFamily: font.bold },
-  tabTextActive: { color: colors.text.primary },
+  tabRow: { flexDirection: 'row', paddingHorizontal: space.xl, marginBottom: 6, gap: 4, flexWrap: 'wrap' },
+  tab: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 10, backgroundColor: '#1C202B', minHeight: 36, justifyContent: 'center' },
+  tabActive: { backgroundColor: '#4A62EB' },
+  tabText: { color: '#8A8F98', fontSize: 12, fontFamily: font.bold },
+  tabTextActive: { color: '#FFFFFF' },
   checkCircle: { position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(0,0,0,0.5)', borderWidth: 2, borderColor: '#FFF', alignItems: 'center', justifyContent: 'center' },
   checkCircleActive: { backgroundColor: colors.accent.success },
   sendButton: { backgroundColor: colors.accent.success, paddingVertical: 18, borderRadius: 18, alignItems: 'center', ...shadows.glow(colors.accent.success) },

@@ -1,8 +1,8 @@
 {
-  "pc_version": "2.1.0",
-  "pc_download": "https://github.com/shdra06/AdvanceClip/releases/download/v2.1.0-pc/AdvanceClip.exe",
-  "android_version": "2.2.0",
-  "android_download": "https://github.com/shdra06/AdvanceClip/releases/download/v2.2.0/FlyShelf_Mobile.apk",
-  "pc_changelog": "v2.1.0: Cloud sync now requires explicit device pairing. No sync without QR/code pairing. Paired device management, echo loop fixes, stability improvements.",
-  "android_changelog": "v2.2.0: Premium UI overhaul — Inter font, animated card entrances, spring press feedback, gradient backgrounds, refined color system, soft shadows, and visual depth."
+  "pc_version": "2.5.0",
+  "pc_download": "https://github.com/shdra06/AdvanceClip/releases/download/v2.5.0/FlyShelf.exe",
+  "android_version": "2.5.0",
+  "android_download": "https://github.com/shdra06/AdvanceClip/releases/download/v2.5.0/FlyShelf_Mobile.apk",
+  "pc_changelog": "v2.5.0: Full sync audit — fixed clipboard write race conditions (6 locations), scoped device discovery to pairing key for privacy, Firebase echo prevention for 3-device setups, adaptive poll intervals, memory leak fixes.",
+  "android_changelog": "v2.5.0: Full sync audit — scoped device discovery to pairing key, adaptive poll intervals (2s LAN/5s Cloud), fingerprint cleanup, overlay dedup, stale closure fix, reduced battery usage."
 }

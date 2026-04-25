@@ -33,7 +33,7 @@ type SettingsContextType = {
 };
 
 const SettingsContext = createContext<SettingsContextType>({
-  pcLocalIp: '192.168.1.5:3000',
+  pcLocalIp: '',
   setPcLocalIp: async () => {},
   deviceName: '',
   setDeviceName: async () => {},
@@ -66,7 +66,7 @@ const generatePairingKey = (): string => {
 };
 
 export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [pcLocalIp, setPcLocalIpState] = useState('192.168.1.5:3000');
+  const [pcLocalIp, setPcLocalIpState] = useState('');
   const [deviceName, setDeviceNameState] = useState('');
   const [deviceId, setDeviceIdState] = useState('');
   const [isGlobalSyncEnabled, setGlobalSyncEnabledState] = useState(true);

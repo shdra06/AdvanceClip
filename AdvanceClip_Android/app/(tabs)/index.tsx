@@ -6,9 +6,9 @@ import * as Sharing from 'expo-sharing';
 import * as IntentLauncher from 'expo-intent-launcher';
 import { useSettings } from '../../context/SettingsContext';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { database, storage } from '../../firebaseConfig';
+import { database } from '../../firebaseConfig';
+import { syncLog } from '../../utils/debugLog';
 import { ref, push, set, get, onValue, query, limitToLast, orderByChild, update, remove } from 'firebase/database';
-import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Clipboard from 'expo-clipboard';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -28,6 +28,8 @@ import { colors, font } from '../../styles/theme';
 import AnimatedCard from '../../components/AnimatedCard';
 import AnimatedPressable from '../../components/AnimatedPressable';
 import CachedImage from '../../components/CachedImage';
+import PdfPageEditor from '../../components/PdfPageEditor';
+import { mergePdfs as localMergePdfs } from '../../utils/pdfUtils';
 
 const { AdvanceOverlay } = NativeModules;
 
@@ -53,6 +55,8 @@ export default function SyncScreen() {
   const lastSyncedImageTsRef = useRef<number>(0);
   const sentContentFingerprintsRef = useRef<Set<string>>(new Set());
   const recentSyncFingerprintsRef = useRef<Map<string, number>>(new Map());
+  // Track items already pushed to native overlay DB
+  const pushedToOverlayRef = useRef<Set<string>>(new Set());
 
   // ─── Scoped Clipboard (only paired devices see each other) ───
   const pairingKeyRef = useRef<string>('');
@@ -94,8 +98,8 @@ export default function SyncScreen() {
       }
     } catch {}
 
-    // Priority 3: Firebase auto-discovered devices
-    const pc = activeDevices.find(d => d.DeviceType === 'PC');
+    // Priority 3: Firebase auto-discovered devices (use REF to avoid stale closure)
+    const pc = activeDevicesRef.current.find((d: any) => d.DeviceType === 'PC');
     if (pc) {
       const urls = getDeviceUrls(pc);
       const resolved = urls.length === 1 ? urls[0] : await resolveOptimalUrl(pc);
@@ -105,13 +109,41 @@ export default function SyncScreen() {
         return resolved;
       }
     }
-    // Priority 4: manual IP from Settings (legacy fallback)
+
+    // Priority 4: Direct Firebase query for PC nodes (handles cold start / stale state)
+    const pk = pairingKeyRef.current;
+    if (pk) {
+      try {
+        const nodesSnap = await get(ref(database, `nodes/${pk}`));
+        if (nodesSnap.exists()) {
+          const nodes = nodesSnap.val();
+          for (const key of Object.keys(nodes)) {
+            const node = nodes[key];
+            if (node.DeviceType === 'PC') {
+              const urls = getDeviceUrls(node);
+              for (const url of urls) {
+                try {
+                  const res = await fetchWithTimeout(`${url}/api/health`, { headers: { 'X-Advance-Client': 'MobileCompanion' } }, 2500);
+                  if (res.ok) {
+                    cachedPcUrlRef.current = url;
+                    cachedPcUrlTimestampRef.current = now;
+                    return url;
+                  }
+                } catch {}
+              }
+            }
+          }
+        }
+      } catch {}
+    }
+
+    // Priority 5: manual IP from Settings (legacy fallback)
     const raw = pcLocalIp?.trim();
     if (raw) {
       const fallback = raw.startsWith('http') ? raw.replace(/\/$/, '') : `http://${raw.includes(':') ? raw : raw + ':8999'}`;
       return fallback;
     }
-    return 'http://localhost:8999';
+    return '';
   };
 
   // ─── Overlay Sync ───
@@ -131,7 +163,13 @@ export default function SyncScreen() {
         return true;
       });
       if (deduped.length > 0) {
-        const mapped = deduped.slice(0, 20).map(c => {
+        // Only push items NOT already in native DB
+        const mapped = deduped.slice(0, 20).filter(c => {
+          const overlayFp = `overlay::${(c.Raw || c.Title || '').substring(0, 100)}`;
+          if (pushedToOverlayRef.current.has(overlayFp)) return false;
+          pushedToOverlayRef.current.add(overlayFp);
+          return true;
+        }).map(c => {
           let rawData = c.Raw;
           if (c.Type === 'Pdf' || c.Type === 'Document' || c.Type === 'Archive') {
             const safeName = c.Title.replace(/[^a-zA-Z0-9.-]/g, '_');
@@ -143,10 +181,12 @@ export default function SyncScreen() {
             DownloadUrl: c.Raw?.startsWith?.('http') ? c.Raw : '',
           };
         });
-        try { AdvanceOverlay.syncNativeDB(JSON.stringify(mapped)); } catch(e) {}
-      } else {
-        try { AdvanceOverlay.syncNativeDB("[]"); } catch(e) {}
+        if (mapped.length > 0) {
+          try { AdvanceOverlay.syncNativeDB(JSON.stringify(mapped)); } catch(e) {}
+        }
       }
+      // Cap overlay tracker to prevent unbounded growth
+      if (pushedToOverlayRef.current.size > 500) pushedToOverlayRef.current.clear();
     }
   }, [clips, isFloatingBallEnabled, localWipeTimestamp, localDeletedIds]);
 
@@ -174,132 +214,16 @@ export default function SyncScreen() {
 
   // ─── Device Discovery ───
   const [activeDevices, setActiveDevices] = useState<any[]>([]);
+  const activeDevicesRef = useRef<any[]>([]);
+  // Keep ref in sync with state so interval callbacks never use stale data
+  useEffect(() => { activeDevicesRef.current = activeDevices; }, [activeDevices]);
 
-  // ─── Screenshot Detection (ONLY when overlay service is NOT running) ───
-  // When floating ball is active, OverlayService.startScreenshotPoll() handles detection.
+  // ─── Screenshot Detection ───
+  // SINGLE source of truth: handled by handleForegroundMediaCheck + pollAndSyncScreenshot in the main useEffect below.
+  // This avoids duplicate detectors that cause infinite loops.
   const lastScreenshotTsRef = useRef<number>(Date.now());
-  useEffect(() => {
-    if (Platform.OS !== 'android') return;
-    // Skip — OverlayService handles screenshot detection when floating ball is active
-    if (isFloatingBallEnabled && AdvanceOverlay) return;
-    const screenshotPoll = setInterval(async () => {
-      // Try native overlay first, fallback to MediaLibrary polling
-      if (AdvanceOverlay) {
-      try {
-        const result = await AdvanceOverlay.getLatestScreenshot();
-        if (result && result.path && result.timestamp > lastScreenshotTsRef.current) {
-          lastScreenshotTsRef.current = result.timestamp;
-
-          // Step 1: Copy screenshot to app-local storage (scoped storage blocks raw paths)
-          const fileName = result.name || `screenshot_${Date.now()}.png`;
-          const safeName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
-          await FileSystem.makeDirectoryAsync(IMAGE_CACHE_BASE, { intermediates: true }).catch(() => {});
-          const localCopy = `${IMAGE_CACHE_BASE}${safeName}`;
-          const sourceUri = result.path.startsWith('file://') ? result.path : `file://${result.path}`;
-
-          // Try content URI approach first (more reliable on Android 11+)
-          let localUri = localCopy;
-          try {
-            // Try reading from MediaLibrary instead of raw path
-            const media = await MediaLibrary.getAssetsAsync({ first: 1, mediaType: ['photo'], sortBy: [[MediaLibrary.SortBy.creationTime, false]] });
-            if (media.assets.length > 0) {
-              const latestAsset = media.assets[0];
-              const assetInfo = await MediaLibrary.getAssetInfoAsync(latestAsset.id);
-              const assetUri = assetInfo.localUri || assetInfo.uri;
-              if (assetUri) {
-                await FileSystem.copyAsync({ from: assetUri, to: localCopy });
-                localUri = localCopy;
-              }
-            }
-          } catch (copyErr) {
-            // Fallback: try direct file copy from raw path
-            try { await FileSystem.copyAsync({ from: sourceUri, to: localCopy }); } catch (e2) {
-              // Last resort: try downloading as content URI
-              try {
-                const contentUri = await FileSystem.getContentUriAsync(sourceUri);
-                await FileSystem.copyAsync({ from: contentUri, to: localCopy });
-              } catch (e3) { localUri = sourceUri; /* Use raw path as final fallback */ }
-            }
-          }
-
-          // Step 2: Create clip item with local app-accessible path
-          const screenshotItem: ClipItem = {
-            Title: fileName, Type: 'ImageLink', Raw: localUri,
-            Time: new Date().toLocaleString(), SourceDeviceName: deviceName || 'Phone',
-            SourceDeviceType: 'Mobile', Timestamp: Date.now(), CachedUri: localUri,
-          };
-          setClips(prev => [screenshotItem, ...prev]);
-          if (Platform.OS === 'android') ToastAndroid.show(`📸 Screenshot captured!`, ToastAndroid.SHORT);
-
-          // Step 3: Copy to clipboard
-          try {
-            const base64 = await FileSystem.readAsStringAsync(localUri, { encoding: FileSystem.EncodingType.Base64 });
-            await Clipboard.setImageAsync(base64);
-          } catch(e) {}
-
-          // Step 4: Upload to Firebase if global sync enabled
-          if (isGlobalSyncEnabled) {
-            try {
-              const sRef = storageRef(storage, `clipboard_images/${safeName}`);
-              const fileResp = await fetch(localUri);
-              const blob = await fileResp.blob();
-              await uploadBytesResumable(sRef, blob);
-              const downloadURL = await getDownloadURL(sRef);
-              screenshotItem.Raw = downloadURL;
-              const clipRef = push(ref(database, clipboardPath()));
-              await set(clipRef, screenshotItem);
-              setClips(prev => prev.map(c => c.Title === fileName && c.Type === 'ImageLink' ? { ...c, Raw: downloadURL } : c));
-            } catch(e) {}
-          }
-
-          // Step 5: Relay to PC
-          try {
-            const optimal = await getCachedPcUrl();
-            if (optimal) {
-              await FileSystem.uploadAsync(
-                `${optimal}/api/sync_file?name=${encodeURIComponent(fileName)}&type=ImageLink&sourceDevice=${encodeURIComponent(deviceName || 'Phone')}`,
-                localUri,
-                { httpMethod: 'POST', uploadType: 0 as any, headers: { 'X-Advance-Client': 'MobileCompanion', 'X-Original-Date': Date.now().toString() } }
-              );
-            }
-          } catch(e) {}
-        }
-      } catch(e) {}
-      } else {
-        // Fallback: poll MediaLibrary for new screenshots when overlay isn't active
-        try {
-          const media = await MediaLibrary.getAssetsAsync({ first: 1, mediaType: ['photo'], sortBy: [[MediaLibrary.SortBy.creationTime, false]] });
-          if (media.assets.length > 0) {
-            const latest = media.assets[0];
-            const createdMs = latest.creationTime * 1000;
-            if (createdMs > lastScreenshotTsRef.current && (latest.filename || '').toLowerCase().includes('screenshot')) {
-              lastScreenshotTsRef.current = createdMs;
-              const assetInfo = await MediaLibrary.getAssetInfoAsync(latest.id);
-              const assetUri = assetInfo.localUri || assetInfo.uri;
-              if (assetUri) {
-                const safeName = (latest.filename || `screenshot_${Date.now()}.png`).replace(/[^a-zA-Z0-9.-]/g, '_');
-                await FileSystem.makeDirectoryAsync(IMAGE_CACHE_BASE, { intermediates: true }).catch(() => {});
-                const localCopy = `${IMAGE_CACHE_BASE}${safeName}`;
-                await FileSystem.copyAsync({ from: assetUri, to: localCopy });
-                const screenshotItem: ClipItem = {
-                  Title: latest.filename || safeName, Type: 'ImageLink', Raw: localCopy,
-                  Time: new Date().toLocaleString(), SourceDeviceName: deviceName || 'Phone',
-                  SourceDeviceType: 'Mobile', Timestamp: Date.now(), CachedUri: localCopy,
-                };
-                setClips(prev => [screenshotItem, ...prev]);
-                ToastAndroid.show(`📸 Screenshot captured!`, ToastAndroid.SHORT);
-                try {
-                  const base64 = await FileSystem.readAsStringAsync(localCopy, { encoding: FileSystem.EncodingType.Base64 });
-                  await Clipboard.setImageAsync(base64);
-                } catch {}
-              }
-            }
-          }
-        } catch {}
-      }
-    }, 3000);
-    return () => clearInterval(screenshotPoll);
-  }, [deviceName, isGlobalSyncEnabled, activeDevices, isFloatingBallEnabled]);
+  // Local screenshots are stored in a ref so Firebase listener can merge them into the feed
+  const localScreenshotsRef = useRef<ClipItem[]>([]);
 
   // ─── UI State ───
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -330,15 +254,19 @@ export default function SyncScreen() {
   const [myPairingCode, setMyPairingCode] = useState<string | null>(null);
   const [isPairing, setIsPairing] = useState(false);
   const [pairedPcName, setPairedPcName] = useState<string | null>(null);
+  // ── PDF Page Editor ──
+  const [pageEditorVisible, setPageEditorVisible] = useState(false);
+  const [pageEditorUri, setPageEditorUri] = useState('');
+  const [pageEditorTitle, setPageEditorTitle] = useState('');
 
   // ─── Persistence ───
   useEffect(() => {
     AsyncStorage.getItem('localWipeTimestamp').then(val => {
       if (val) { setLocalWipeTimestamp(parseInt(val)); }
-      else { const now = Date.now(); setLocalWipeTimestamp(now); AsyncStorage.setItem('localWipeTimestamp', now.toString()); }
+      else { setLocalWipeTimestamp(0); AsyncStorage.setItem('localWipeTimestamp', '0'); }
     });
     AsyncStorage.getItem('localDeletedIds').then(val => {
-      if (val) { try { setLocalDeletedIds(new Set(JSON.parse(val))); } catch(e) {} }
+      if (val) { try { const arr = JSON.parse(val); setLocalDeletedIds(new Set(arr.slice(-500))); } catch(e) {} }
     });
   }, []);
 
@@ -415,9 +343,28 @@ export default function SyncScreen() {
     const unsubscribeFeed = onValue(clipsRef, (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.val();
-        const parsed = Object.keys(data).map(k => ({ id: k, ...data[k] })).reverse();
+        const allParsed: ClipItem[] = Object.keys(data).map(k => ({ id: k, ...data[k] } as ClipItem)).reverse();
+        // Filter out items sent by THIS device — they have local paths that can't render
+        const myName = deviceName || '';
+        const parsed = allParsed.filter(c => {
+          if (c.SourceDeviceType === 'Mobile' && myName && c.SourceDeviceName === myName) {
+            // Only filter out own IMAGE items (they have local file paths that can't render)
+            // Text/URL/Code items sent by this phone are fine to show
+            const isImageType = c.Type === 'Image' || c.Type === 'ImageLink' || c.Type === 'QRCode';
+            const hasLocalPath = (c.Raw || '').startsWith('/') || (c.Raw || '').startsWith('file://') || (c.Raw || '').startsWith('flyshelf://');
+            if (isImageType || hasLocalPath) {
+              syncLog('FIREBASE', `Filtered own image: ${(c.Title || '').substring(0, 40)}`);
+              return false;
+            }
+            // Own text items are valid — keep them
+          }
+          return true;
+        });
+        syncLog('FIREBASE', `Feed: ${allParsed.length} total, ${parsed.length} after self-filter`);
         const now = Date.now();
         recentSyncFingerprintsRef.current.forEach((ts, fp) => { if (now - ts > 30_000) recentSyncFingerprintsRef.current.delete(fp); });
+
+        // Push text/url items to floating ball overlay
         if (Platform.OS === 'android' && AdvanceOverlay) {
           parsed.slice(0, 5).forEach((c: any) => {
             const fp = `${c.Type}::${(c.Raw || '').substring(0, 150)}`;
@@ -430,43 +377,154 @@ export default function SyncScreen() {
             }
           });
         }
-        // Auto-download files with absolute HTTP URLs from Firebase (remote PC via Cloudflare)
+
+        // ─── Process ALL image/file items from Firebase ───
+        // Download images locally so they render reliably, then set clips ONCE with enriched data
         if (Platform.OS === 'android') {
-          const latest = parsed[0];
-          if (latest && latest.Raw?.startsWith('http') && ['Pdf', 'Document', 'File', 'Video', 'Audio', 'Archive', 'Presentation', 'Image', 'ImageLink'].includes(latest.Type)) {
-            const fp = `dl::${latest.Raw.substring(0, 100)}`;
-            if (!recentSyncFingerprintsRef.current.has(fp)) {
-              recentSyncFingerprintsRef.current.set(fp, Date.now());
-              // Fire-and-forget download
-              (async () => {
+          const imageItems = parsed.filter(c =>
+            (c.Type === 'Image' || c.Type === 'ImageLink') && c.Raw?.startsWith('http')
+          );
+          const fileItems = parsed.filter(c =>
+            c.Raw?.startsWith('http') && ['Pdf', 'Document', 'File', 'Video', 'Audio', 'Archive', 'Presentation'].includes(c.Type || '')
+          );
+
+          if (imageItems.length > 0 || fileItems.length > 0) {
+            // Set clips immediately with Firebase data (images will show loading spinners via CachedImage)
+            setClips(parsed);
+
+            // Background: download all images and update clips with local URIs
+            (async () => {
+              const updatedItems: Record<string, { Raw: string; CachedUri: string }> = {};
+
+              // Download all images in parallel — prefer LAN over Cloudflare
+              await Promise.all(imageItems.map(async (imgItem) => {
+                const fp = `dl::${(imgItem.Raw || '').substring(0, 100)}`;
+                if (recentSyncFingerprintsRef.current.has(fp)) return;
+                // DON'T record fingerprint yet — only after successful download
                 try {
-                  if (latest.Type === 'Image' || latest.Type === 'ImageLink') {
-                    const localUri = `${SYNC_CACHE_BASE}fb_img_${Date.now()}.png`;
-                    const { uri } = await FileSystem.downloadAsync(latest.Raw, localUri, { headers: { 'X-Advance-Client': 'MobileCompanion' } });
-                    const b64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
-                    await Clipboard.setImageAsync(b64);
-                    ToastAndroid.show(`🖼️ Image synced from ${latest.SourceDeviceName || 'PC'}`, ToastAndroid.SHORT);
-                  } else {
-                    const subfolder = latest.Type === 'Pdf' ? 'PDFs' : latest.Type === 'Video' ? 'Videos' : 'Documents';
-                    const safeName = (latest.Title || `file_${Date.now()}`).replace(/[^a-zA-Z0-9._-]/g, '_');
+                  await FileSystem.makeDirectoryAsync(SYNC_CACHE_BASE, { intermediates: true }).catch(() => {});
+                  const localUri = `${SYNC_CACHE_BASE}fb_img_${imgItem.id || Date.now()}.png`;
+                  // Check if already cached
+                  const existing = await FileSystem.getInfoAsync(localUri);
+                  if (existing.exists && (existing as any).size > 100) {
+                    updatedItems[imgItem.id!] = { Raw: localUri, CachedUri: localUri };
+                    return;
+                  }
+
+                  // Build download URLs: LAN first, then Cloudflare original
+                  const urls: string[] = [];
+                  const rawUrl = imgItem.Raw || '';
+
+                  // Try to build a LAN URL from the cached PC URL
+                  if (rawUrl.includes('?path=')) {
+                    const pathPart = rawUrl.substring(rawUrl.indexOf('?path='));
+                    // Get LAN URL from cached PC URL or active devices
+                    try {
+                      const cachedUrl = await getCachedPcUrl();
+                      if (cachedUrl && !cachedUrl.includes('trycloudflare.com') && !cachedUrl.includes('localhost')) {
+                        urls.push(`${cachedUrl}/download${pathPart}`);
+                      }
+                    } catch {}
+                    // Also try any PC device's local IP from the Url field
+                    const pcDev = activeDevicesRef.current.find((d: any) => d.DeviceType === 'PC');
+                    if (pcDev?.Url) {
+                      pcDev.Url.split(',').forEach((u: string) => {
+                        const cleaned = u.trim().replace(/\/$/, '');
+                        if (cleaned.startsWith('http') && !cleaned.includes('trycloudflare.com') && !urls.includes(`${cleaned}/download${pathPart}`)) {
+                          urls.push(`${cleaned}/download${pathPart}`);
+                        }
+                      });
+                    }
+                  }
+                  urls.push(rawUrl); // Original Cloudflare URL as fallback
+
+                  let downloaded = false;
+                  for (const dlUrl of urls) {
+                    if (downloaded) break;
+                    try {
+                      const { uri, status } = await FileSystem.downloadAsync(dlUrl, localUri, {
+                        headers: { 'X-Advance-Client': 'MobileCompanion' }
+                      });
+                      if (status === 200) {
+                        const info = await FileSystem.getInfoAsync(uri);
+                        if (info.exists && (info as any).size > 100) {
+                          updatedItems[imgItem.id!] = { Raw: uri, CachedUri: uri };
+                          downloaded = true;
+                          recentSyncFingerprintsRef.current.set(fp, Date.now()); // Record fingerprint AFTER success
+                          // Copy to clipboard (only the most recent image)
+                          if (imgItem === imageItems[0]) {
+                            try {
+                              const b64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+                              await Clipboard.setImageAsync(b64);
+                            } catch {}
+                          }
+                          // Push to floating ball overlay
+                          if (AdvanceOverlay && isFloatingBallEnabled) {
+                            try { AdvanceOverlay.pushClipToNativeDB(uri, imgItem.SourceDeviceName || 'PC'); } catch {}
+                          }
+                        }
+                      }
+                    } catch {}
+                    // Delete failed download before retrying with next URL
+                    if (!downloaded) {
+                      try { await FileSystem.deleteAsync(localUri, { idempotent: true }); } catch {}
+                    }
+                  }
+                } catch {}
+              }));
+
+              // Auto-download latest file (non-image)
+              if (fileItems.length > 0) {
+                const latestFile = fileItems[0];
+                const fp = `dl::${(latestFile.Raw || '').substring(0, 100)}`;
+                if (!recentSyncFingerprintsRef.current.has(fp)) {
+                  recentSyncFingerprintsRef.current.set(fp, Date.now());
+                  try {
+                    const subfolder = latestFile.Type === 'Pdf' ? 'PDFs' : latestFile.Type === 'Video' ? 'Videos' : 'Documents';
+                    const safeName = (latestFile.Title || `file_${Date.now()}`).replace(/[^a-zA-Z0-9._-]/g, '_');
                     const destPath = await getDownloadPath(subfolder, safeName);
                     const existing = await FileSystem.getInfoAsync(destPath);
                     if (!existing.exists) {
-                      ToastAndroid.show(`⬇️ Downloading ${latest.Title}...`, ToastAndroid.SHORT);
-                      const dl = await FileSystem.downloadAsync(latest.Raw, destPath, { headers: { 'X-Advance-Client': 'MobileCompanion' } });
-                      if (dl.status === 200) ToastAndroid.show(`✅ ${latest.Title} saved`, ToastAndroid.SHORT);
+                      ToastAndroid.show(`⬇️ Downloading ${latestFile.Title}...`, ToastAndroid.SHORT);
+                      const dl = await FileSystem.downloadAsync(latestFile.Raw!, destPath, { headers: { 'X-Advance-Client': 'MobileCompanion' } });
+                      if (dl.status === 200) ToastAndroid.show(`✅ ${latestFile.Title} saved`, ToastAndroid.SHORT);
                     }
+                  } catch {}
+                }
+              }
+
+              // If any images were downloaded, update clips with local URIs
+              if (Object.keys(updatedItems).length > 0) {
+                setClips(prev => prev.map(c => {
+                  if (c.id && updatedItems[c.id]) {
+                    return { ...c, Raw: updatedItems[c.id].Raw, CachedUri: updatedItems[c.id].CachedUri };
                   }
-                } catch (e) {}
-              })();
-            }
+                  return c;
+                }));
+                if (imageItems.length > 0) {
+                  ToastAndroid.show(`🖼️ ${Object.keys(updatedItems).length} image(s) synced from PC`, ToastAndroid.SHORT);
+                }
+              }
+            })();
+          } else {
+            // No image/file items — just set clips directly, merging local screenshots
+            const merged = [...localScreenshotsRef.current.filter(ls => !parsed.some(p => p.Title === ls.Title)), ...parsed];
+            setClips(merged);
           }
+        } else {
+          // Merge local screenshots even when no Firebase image items
+          const merged = [...localScreenshotsRef.current.filter(ls => !parsed.some(p => p.Title === ls.Title)), ...parsed];
+          setClips(merged);
         }
-        setClips(parsed);
-      } else { setClips([]); }
+      } else {
+        // No Firebase data — show only local screenshots
+        setClips(localScreenshotsRef.current);
+      }
     });
 
-    const nodesRef = query(ref(database, 'active_devices'));
+    // pk already declared above at line 340
+    if (!pk) { setActiveDevices([]); return; }
+    const nodesRef = query(ref(database, `active_devices/${pk}`));
     const unsubscribeNodes = onValue(nodesRef, async (snapshot) => {
       let rawDevices: any[] = [];
       if (snapshot.exists()) {
@@ -518,11 +576,11 @@ export default function SyncScreen() {
     });
 
     return () => { unsubscribeFeed(); unsubscribeNodes(); };
-  }, [isGlobalSyncEnabled]);
+  }, [isGlobalSyncEnabled, contextPairingKey]);
 
   // ─── Local PC Polling ───
   useEffect(() => {
-    const interval = setInterval(async () => {
+    const pollFn = async () => {
       const targetUrl = await getCachedPcUrl();
       if (Platform.OS === 'android' && AdvanceOverlay && targetUrl) {
         try { AdvanceOverlay.setPcUrl(targetUrl); } catch(e) {}
@@ -544,6 +602,7 @@ export default function SyncScreen() {
               const isOwnEcho = (latest.SourceDeviceName && deviceName && latest.SourceDeviceName === deviceName) || (latest.SourceDeviceType === 'Mobile') || sentContentFingerprintsRef.current.has(rawFingerprint);
 
               if (!isOwnEcho) {
+                syncLog('PC-POLL', `New from PC: ${latest.Type} - ${(latest.Title || '').substring(0, 50)}`);
                 if (latest.Type === 'Text' || latest.Type === 'Code' || latest.Type === 'Url') {
                   const latestRaw = latest.Raw;
                   if (latestRaw) {
@@ -558,17 +617,23 @@ export default function SyncScreen() {
                     }
                   }
                 } else if (latest.Type === 'Image' || latest.Type === 'ImageLink' || latest.Type === 'QRCode') {
+                  // Only copy image to clipboard here — the Firebase listener handles the feed entry
+                  // This polling path is faster (LAN) so clipboard gets updated quickly
                   try {
                     let mediaUrl = '';
                     if (latest.DownloadUrl?.startsWith('/')) mediaUrl = `${targetUrl}${latest.DownloadUrl}`;
                     else if (latest.PreviewUrl?.startsWith('/')) mediaUrl = `${targetUrl}${latest.PreviewUrl}`;
                     else if (latest.Raw?.startsWith('http')) mediaUrl = latest.Raw;
                     if (mediaUrl) {
+                      await FileSystem.makeDirectoryAsync(SYNC_CACHE_BASE, { intermediates: true }).catch(() => {});
                       const localUri = `${SYNC_CACHE_BASE}clip_sync_${Date.now()}.png`;
-                      const { uri } = await FileSystem.downloadAsync(mediaUrl, localUri, { headers: { 'X-Advance-Client': 'MobileCompanion' } });
-                      const b64 = await FileSystem.readAsStringAsync(uri, { encoding: (FileSystem as any).EncodingType.Base64 });
-                      await Clipboard.setImageAsync(b64);
-                      if (Platform.OS === 'android') ToastAndroid.show(`🖼️ Screenshot synced from PC!`, ToastAndroid.SHORT);
+                      const { uri, status } = await FileSystem.downloadAsync(mediaUrl, localUri, { headers: { 'X-Advance-Client': 'MobileCompanion' } });
+                      if (status === 200) {
+                        const b64 = await FileSystem.readAsStringAsync(uri, { encoding: (FileSystem as any).EncodingType.Base64 });
+                        await Clipboard.setImageAsync(b64);
+                        syncLog('PC-POLL', `Image copied to clipboard via ${targetUrl.includes('trycloudflare') ? 'Cloud' : 'LAN'}`);
+                        if (Platform.OS === 'android') ToastAndroid.show(`🖼️ Screenshot copied from PC!`, ToastAndroid.SHORT);
+                      }
                     }
                   } catch (imgErr) {}
                 } else if (['Pdf', 'Document', 'File', 'Video', 'Audio', 'Archive', 'Presentation'].includes(latest.Type)) {
@@ -621,7 +686,17 @@ export default function SyncScreen() {
           });
         }
       } catch (e) { cachedPcUrlRef.current = null; }
-    }, 1000);
+    };
+    // Adaptive poll interval: fast on LAN, slower on Cloud, very slow if no PC
+    const getInterval = () => {
+      const url = cachedPcUrlRef.current || '';
+      if (!url) return 8000; // No PC found
+      if (url.includes('trycloudflare')) return 5000; // Cloud
+      return 2000; // LAN
+    };
+    // Initial poll
+    pollFn();
+    const interval = setInterval(pollFn, getInterval());
     return () => clearInterval(interval);
   }, [isGlobalSyncEnabled, activeDevices, pcLocalIp]);
 
@@ -629,13 +704,32 @@ export default function SyncScreen() {
   useEffect(() => {
     if (!deviceName) return;
     const myDeviceId = `Mobile_${deviceName.replace(/[^a-zA-Z0-9_]/g, '_')}`;
+    const pk = pairingKeyRef.current;
+    if (!pk) return;
     const registerSelf = async () => {
-      try { await set(ref(database, `active_devices/${myDeviceId}`), { DeviceId: myDeviceId, DeviceName: deviceName, DeviceType: 'Mobile', IsOnline: true, Timestamp: Date.now() }); } catch(e) {}
+      try { await set(ref(database, `active_devices/${pk}/${myDeviceId}`), { DeviceId: myDeviceId, DeviceName: deviceName, DeviceType: 'Mobile', IsOnline: true, Timestamp: Date.now() }); } catch(e) {}
     };
     registerSelf();
     const heartbeat = setInterval(registerSelf, 30000);
-    return () => { clearInterval(heartbeat); if (!isFloatingBallEnabled) set(ref(database, `active_devices/${myDeviceId}/IsOnline`), false).catch(() => {}); };
+    return () => { clearInterval(heartbeat); if (!isFloatingBallEnabled) set(ref(database, `active_devices/${pk}/${myDeviceId}/IsOnline`), false).catch(() => {}); };
   }, [deviceName, isFloatingBallEnabled]);
+
+  // ─── Periodic fingerprint cleanup (every 60s) ───
+  useEffect(() => {
+    const cleanup = setInterval(() => {
+      // Clean sentContentFingerprintsRef — cap at 200 entries
+      if (sentContentFingerprintsRef.current.size > 200) {
+        sentContentFingerprintsRef.current.clear();
+        syncLog('CLEANUP', 'Cleared sentContentFingerprints (exceeded 200)');
+      }
+      // Clean recentSyncFingerprintsRef — remove entries older than 60s
+      const now = Date.now();
+      recentSyncFingerprintsRef.current.forEach((ts, fp) => {
+        if (now - ts > 60_000) recentSyncFingerprintsRef.current.delete(fp);
+      });
+    }, 60_000);
+    return () => clearInterval(cleanup);
+  }, []);
 
   // ─── Clear All ───
   const clearAllClips = async () => {
@@ -666,11 +760,59 @@ export default function SyncScreen() {
       const hasText = await Clipboard.hasStringAsync();
       if (hasText) {
         const text = await Clipboard.getStringAsync();
-        if (text && text !== lastCopiedRef.current) { setLastCopiedText(text); await transmitTextSecurely(text); }
+        // NEVER send flyshelf:// scheme strings — these are internal markers
+        if (text && text.startsWith('flyshelf://')) return;
+        if (text && text !== lastCopiedRef.current) {
+          lastCopiedRef.current = text; // Set BEFORE transmit to prevent re-entry
+          setLastCopiedText(text);
+          await transmitTextSecurely(text);
+        }
       }
     } catch(e) {}
   };
 
+  // ─── Screenshot Poller: polls native ScreenshotObserver for new screenshots ───
+  const lastSyncedScreenshotRef = useRef<string>('');
+  const pollAndSyncScreenshot = async () => {
+    if (Platform.OS !== 'android' || !AdvanceOverlay) return;
+    try {
+      const result = await AdvanceOverlay.getLatestScreenshot();
+      const screenshotPath = typeof result === 'string' ? result : result?.path;
+      if (screenshotPath && screenshotPath !== lastSyncedScreenshotRef.current) {
+        // Check if handleForegroundMediaCheck already handled this
+        const fileName = screenshotPath.split('/').pop() || '';
+        if (sentContentFingerprintsRef.current.has(`screenshot::${fileName}`)) {
+          syncLog('SCREENSHOT', `Already sent by MediaCheck: ${fileName}`);
+          lastSyncedScreenshotRef.current = screenshotPath;
+          return;
+        }
+        // Add fingerprint IMMEDIATELY to prevent race with handleForegroundMediaCheck
+        sentContentFingerprintsRef.current.add(`screenshot::${fileName}`);
+        lastSyncedScreenshotRef.current = screenshotPath;
+        syncLog('SCREENSHOT', `Native detected: ${fileName}`);
+        const activePc = activeDevicesRef.current.find((d: any) => d.DeviceType === 'PC');
+        let targetUrl = activePc ? ((activePc._lanVerified && activePc._lanUrl) ? activePc._lanUrl : (await resolveOptimalUrl(activePc))) : await getCachedPcUrl();
+        if (targetUrl) {
+          const uploadUri = screenshotPath.startsWith('file://') ? screenshotPath : `file://${screenshotPath}`;
+          try {
+            const upRes = await FileSystem.uploadAsync(
+              `${targetUrl}/api/sync_file?name=${encodeURIComponent(fileName)}&type=Image&sourceDevice=${encodeURIComponent(deviceName || 'Mobile')}`,
+              uploadUri,
+              { httpMethod: 'POST', uploadType: 0 as any, headers: { 'X-Original-Date': Date.now().toString(), 'X-Advance-Client': 'MobileCompanion' } }
+            );
+            if (upRes.status === 200) {
+              syncLog('SCREENSHOT', `Sent to PC via ${targetUrl.includes('trycloudflare') ? 'Cloud' : 'LAN'}: ${fileName}`);
+              ToastAndroid.show(`Screenshot synced to PC ✨`, ToastAndroid.SHORT);
+            }
+          } catch (e: any) { syncLog('SCREENSHOT', `Upload failed: ${e?.message}`); }
+        } else {
+          syncLog('SCREENSHOT', `No PC URL available`);
+        }
+      }
+    } catch {}
+  };
+
+  const lastProcessedScreenshotRef = useRef<string>('');
   const handleForegroundMediaCheck = async () => {
     try {
       let perm = await MediaLibrary.getPermissionsAsync();
@@ -679,33 +821,87 @@ export default function SyncScreen() {
       if (media.assets.length > 0) {
         const latest = media.assets[0];
         const isRecent = (Date.now() - latest.creationTime) < 2 * 60 * 1000;
-        if (isRecent && latest.id !== lastScannedImageId) {
+        // ONLY detect screenshots — skip random photos/downloads
+        const isScreenshot = (latest.filename || '').toLowerCase().includes('screenshot');
+        if (isRecent && isScreenshot && latest.id !== lastScannedImageId) {
+          // Ref-based dedup: prevents triple-fire from concurrent interval/AppState/MediaLibrary triggers
+          if (lastProcessedScreenshotRef.current === latest.id) return;
+          lastProcessedScreenshotRef.current = latest.id;
+          // Check if pollAndSyncScreenshot already handled this
+          const fp = `screenshot::${latest.filename}`;
+          if (sentContentFingerprintsRef.current.has(fp)) {
+            syncLog('MEDIA', `Already sent by NativePoll: ${latest.filename}`);
+            setLastScannedImageId(latest.id);
+            return;
+          }
           setLastScannedImageId(latest.id);
+          // Add fingerprint IMMEDIATELY to prevent race with pollAndSyncScreenshot
+          sentContentFingerprintsRef.current.add(fp);
           setIsSending(true);
+          syncLog('MEDIA', `Screenshot detected: ${latest.filename}`);
           try {
             const assetInfo = await MediaLibrary.getAssetInfoAsync(latest.id);
-            if (assetInfo.localUri || assetInfo.uri) {
-              let targetUrl = `http://${pcLocalIp}`;
-              const activePc = activeDevices.find(d => d.DeviceType === 'PC' && d.Url);
-              if (activePc) targetUrl = (await resolveOptimalUrl(activePc)) ?? targetUrl;
-              let localSuccess = false;
-              try {
-                const upRes = await FileSystem.uploadAsync(`${targetUrl}/api/sync_file?name=${encodeURIComponent(assetInfo.filename || 'screenshot.jpg')}&type=ImageLink&sourceDevice=${encodeURIComponent(deviceName || 'Mobile')}`, assetInfo.localUri || assetInfo.uri, {
-                  httpMethod: 'POST', uploadType: 0 as any,
-                  headers: { 'X-Original-Date': Date.now().toString(), 'X-Advance-Client': 'MobileCompanion' }
-                });
-                localSuccess = upRes.status === 200;
-              } catch(e) {}
-              if (!localSuccess && isGlobalSyncEnabled) {
-                const response = await fetch(assetInfo.localUri || assetInfo.uri);
-                const blob = await response.blob();
-                const sf = storageRef(storage, `archives/Screenshot_${Date.now()}.jpg`);
-                await uploadBytesResumable(sf, blob);
-                const downloadUrl = await getDownloadURL(sf);
-                const newRef = push(ref(database, clipboardPath()));
-                await set(newRef, { Title: `Screenshot_${Date.now()}.jpg`, Type: 'ImageLink', Raw: downloadUrl, Time: new Date().toLocaleTimeString(), Timestamp: Date.now(), SourceDeviceName: deviceName || 'Mobile', SourceDeviceType: 'Mobile' });
+            const assetUri = assetInfo.localUri || assetInfo.uri;
+            if (assetUri) {
+              // Step 1: Create local cached copy for preview
+              const safeName = (assetInfo.filename || `ss_${Date.now()}.png`).replace(/[^a-zA-Z0-9.-]/g, '_');
+              await FileSystem.makeDirectoryAsync(IMAGE_CACHE_BASE, { intermediates: true }).catch(() => {});
+              const localCopy = `${IMAGE_CACHE_BASE}${safeName}`;
+              try { await FileSystem.copyAsync({ from: assetUri, to: localCopy }); } catch { /* use asset URI directly */ }
+              const previewUri = localCopy;
+
+              // Step 2: Create local clip entry (visible immediately in feed)
+              const screenshotItem: ClipItem = {
+                Title: assetInfo.filename || safeName,
+                Type: 'ImageLink',
+                Raw: previewUri,
+                CachedUri: previewUri,
+                Time: new Date().toLocaleString(),
+                SourceDeviceName: deviceName || 'Phone',
+                SourceDeviceType: 'Mobile',
+                Timestamp: Date.now(),
+              };
+              // Store in ref so Firebase listener can merge it
+              localScreenshotsRef.current = [screenshotItem, ...localScreenshotsRef.current].slice(0, 10);
+              setClips(prev => [screenshotItem, ...prev.filter(c => c.Title !== screenshotItem.Title)]);
+              syncLog('MEDIA', `Local preview created: ${safeName}`);
+              // Push to floating ball overlay with image type info
+              if (Platform.OS === 'android' && AdvanceOverlay && isFloatingBallEnabled) {
+                try { AdvanceOverlay.pushClipToNativeDB(previewUri, deviceName || 'Phone'); } catch {}
               }
-              Platform.OS === 'android' ? ToastAndroid.show("Extracted Screenshot ✨", ToastAndroid.SHORT) : null;
+
+              // Step 3: Copy to clipboard
+              try {
+                const base64 = await FileSystem.readAsStringAsync(previewUri, { encoding: FileSystem.EncodingType.Base64 });
+                await Clipboard.setImageAsync(base64);
+              } catch {}
+
+              // Step 4: Upload to PC — ONLY if native AdvanceOverlay is NOT available
+              // When native is available, pollAndSyncScreenshot handles the upload
+              if (!AdvanceOverlay) {
+                let targetUrl = await getCachedPcUrl();
+                let localSuccess = false;
+                if (targetUrl) {
+                  try {
+                    const upRes = await FileSystem.uploadAsync(`${targetUrl}/api/sync_file?name=${encodeURIComponent(assetInfo.filename || 'screenshot.jpg')}&type=ImageLink&sourceDevice=${encodeURIComponent(deviceName || 'Mobile')}`, assetUri, {
+                      httpMethod: 'POST', uploadType: 0 as any,
+                      headers: { 'X-Original-Date': Date.now().toString(), 'X-Advance-Client': 'MobileCompanion' }
+                    });
+                    localSuccess = upRes.status === 200;
+                    if (localSuccess) {
+                      syncLog('MEDIA', `Sent to PC via ${targetUrl.includes('trycloudflare') ? 'Cloud' : 'LAN'}: ${assetInfo.filename}`);
+                    }
+                  } catch(e: any) { syncLog('MEDIA', `Upload failed: ${e?.message}`); }
+                }
+                if (!localSuccess) {
+                  syncLog('MEDIA', `Could not reach PC`);
+                  if (Platform.OS === 'android') ToastAndroid.show(`⚠️ Could not reach PC to send screenshot`, ToastAndroid.SHORT);
+                } else {
+                  if (Platform.OS === 'android') ToastAndroid.show(`📸 Screenshot sent to PC!`, ToastAndroid.SHORT);
+                }
+              } else {
+                syncLog('MEDIA', `Upload delegated to native SCREENSHOT handler`);
+              }
             }
           } catch(e) {}
           setIsSending(false);
@@ -715,21 +911,24 @@ export default function SyncScreen() {
   };
 
   useEffect(() => {
-    // Skip foreground media check when floating ball is active — OverlayService handles it
-    if (isFloatingBallEnabled && AdvanceOverlay) return;
+    // Always run clipboard + media checks (don't skip when floating ball is on)
     handleForegroundClipboardCheck();
     handleForegroundMediaCheck();
     const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
       if (nextAppState === 'active') { handleForegroundClipboardCheck(); handleForegroundMediaCheck(); }
     });
+    // Poll for new media every 3 seconds
     let screenshotPollInterval: ReturnType<typeof setInterval> | null = null;
     if (Platform.OS !== 'web') { screenshotPollInterval = setInterval(() => handleForegroundMediaCheck(), 3000); }
+    // Poll native ScreenshotObserver every 2 seconds
+    let nativeScreenshotPoll: ReturnType<typeof setInterval> | null = null;
+    if (Platform.OS === 'android') { nativeScreenshotPoll = setInterval(() => pollAndSyncScreenshot(), 2000); }
     let mediaSub: any = null;
     if (Platform.OS !== 'web' && typeof MediaLibrary.addListener === 'function') {
       mediaSub = MediaLibrary.addListener((event) => { if (event.hasIncrementalChanges || (event as any).insertedMedia?.length > 0) handleForegroundMediaCheck(); });
     }
-    return () => { subscription.remove(); if (mediaSub) mediaSub.remove(); if (screenshotPollInterval) clearInterval(screenshotPollInterval); };
-  }, []);
+    return () => { subscription.remove(); if (mediaSub) mediaSub.remove(); if (screenshotPollInterval) clearInterval(screenshotPollInterval); if (nativeScreenshotPoll) clearInterval(nativeScreenshotPoll); };
+  }, [deviceName, isGlobalSyncEnabled, activeDevices]);
 
   // ─── Auto-Copy Incoming ───
   useEffect(() => {
@@ -810,6 +1009,22 @@ export default function SyncScreen() {
         const response = await fetchWithTimeout(`${targetUrl}/api/sync_text`, { method: 'POST', headers: hdrs, body: finalRaw }, 1500);
         localSuccess = response.ok;
       } catch(e) { cachedPcUrlRef.current = null; }
+      // Always add sent text to local clips so it appears in the feed
+      const sentItem: ClipItem = {
+        id: `local_${Date.now()}`,
+        Title: payloadText.length > 50 ? payloadText.substring(0, 50) + '...' : payloadText,
+        Type: finalType,
+        Raw: finalRaw,
+        Time: new Date().toLocaleTimeString(),
+        Timestamp: Date.now(),
+        SourceDeviceName: deviceName || 'Mobile',
+        SourceDeviceType: 'Mobile',
+      };
+      setClips(prev => {
+        const exists = prev.some(c => c.Raw === finalRaw);
+        return exists ? prev : [sentItem, ...prev];
+      });
+
       if (!localSuccess && isGlobalSyncEnabled) {
         const newRef = push(ref(database, clipboardPath()));
         set(newRef, { Title: payloadText.length > 50 ? payloadText.substring(0, 50) + '...' : payloadText, Type: finalType, Raw: finalRaw, Time: new Date().toLocaleTimeString(), Timestamp: Date.now(), SourceDeviceName: deviceName || 'Unknown Mobile', SourceDeviceType: 'Mobile' }).catch(() => {});
@@ -829,14 +1044,38 @@ export default function SyncScreen() {
   const executePdfMerge = async () => {
     try {
       setIsMergeModalVisible(false);
-      if (Platform.OS === 'android') ToastAndroid.show('Sending PDFs to PC for merge...', ToastAndroid.LONG);
-      let targetUrl = `http://${pcLocalIp}`;
-      const activePc = activeDevices.find((d: any) => d.DeviceType === 'PC');
-      if (activePc) { const opt = await resolveOptimalUrl(activePc); if (opt) targetUrl = opt; }
-      const pdfUrls = mergeQueue.map(item => getMediaUrlForItem(item)).filter(u => u.startsWith('http'));
-      if (pdfUrls.length < 2) { Alert.alert('Error', 'Could not resolve PDF URLs.'); return; }
-      const res = await fetchWithTimeout(`${targetUrl}/api/merge_pdfs`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Advance-Client': 'MobileCompanion' }, body: JSON.stringify({ urls: pdfUrls, sourceDevice: deviceName || 'Mobile' }) }, 30000);
-      if (res.ok) { const body = await res.json(); if (body.downloadUrl) { const mergedUrl = body.downloadUrl.startsWith('http') ? body.downloadUrl : `${targetUrl}${body.downloadUrl}`; const localUri = CONVERTED_BASE + `merged_${Date.now()}.pdf`; await FileSystem.downloadAsync(mergedUrl, localUri, { headers: { 'X-Advance-Client': 'MobileCompanion' } }); await Sharing.shareAsync(localUri, { mimeType: 'application/pdf', UTI: 'com.adobe.pdf', dialogTitle: 'Merged PDF' }); } } else Alert.alert('Merge Failed');
+      if (Platform.OS === 'android') ToastAndroid.show('Merging PDFs on device...', ToastAndroid.LONG);
+
+      // Resolve PDF URIs (local cached or remote URLs)
+      const pdfUris = mergeQueue.map(item => {
+        const mUrl = getMediaUrlForItem(item);
+        // Prefer local cached version
+        if (item.CachedUri) return item.CachedUri;
+        const safeName = (item.Title || '').replace(/[^a-zA-Z0-9.-]/g, '_');
+        const localPath = DOWNLOAD_BASE + safeName;
+        return mUrl || localPath;
+      }).filter(u => u && u.length > 0);
+
+      if (pdfUris.length < 2) { Alert.alert('Error', 'Could not resolve PDF files.'); return; }
+
+      const outputPath = CONVERTED_BASE + `merged_${Date.now()}.pdf`;
+
+      try {
+        // Try local merge first (on-device, no PC needed)
+        await localMergePdfs(pdfUris, outputPath);
+        if (Platform.OS === 'android') ToastAndroid.show('✅ PDFs merged on device!', ToastAndroid.SHORT);
+        await Sharing.shareAsync(outputPath, { mimeType: 'application/pdf', UTI: 'com.adobe.pdf', dialogTitle: 'Merged PDF' });
+      } catch (localErr: any) {
+        // Fallback: try PC merge
+        if (Platform.OS === 'android') ToastAndroid.show('Local merge failed, trying PC...', ToastAndroid.SHORT);
+        let targetUrl = `http://${pcLocalIp}`;
+        const activePc = activeDevices.find((d: any) => d.DeviceType === 'PC');
+        if (activePc) { const opt = await resolveOptimalUrl(activePc); if (opt) targetUrl = opt; }
+        const pdfUrls = mergeQueue.map(item => getMediaUrlForItem(item)).filter(u => u.startsWith('http'));
+        if (pdfUrls.length < 2) { Alert.alert('Error', `Local: ${localErr.message}\nPC: No HTTP URLs available.`); return; }
+        const res = await fetchWithTimeout(`${targetUrl}/api/merge_pdfs`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Advance-Client': 'MobileCompanion' }, body: JSON.stringify({ urls: pdfUrls, sourceDevice: deviceName || 'Mobile' }) }, 30000);
+        if (res.ok) { const body = await res.json(); if (body.downloadUrl) { const mergedUrl = body.downloadUrl.startsWith('http') ? body.downloadUrl : `${targetUrl}${body.downloadUrl}`; const localUri = CONVERTED_BASE + `merged_${Date.now()}.pdf`; await FileSystem.downloadAsync(mergedUrl, localUri, { headers: { 'X-Advance-Client': 'MobileCompanion' } }); await Sharing.shareAsync(localUri, { mimeType: 'application/pdf', UTI: 'com.adobe.pdf', dialogTitle: 'Merged PDF' }); } } else Alert.alert('Merge Failed');
+      }
     } catch (e) { Alert.alert('Merge Error'); }
     exitMultiSelect();
   };
@@ -844,13 +1083,15 @@ export default function SyncScreen() {
   // ─── Force Sync ───
   const openForceSyncModal = async () => {
     if (selectedItemIds.size === 0) { Alert.alert('Nothing Selected'); return; }
-    try { const { get: firebaseGet } = await import('firebase/database'); const snapshot = await firebaseGet(ref(database, 'active_devices')); if (snapshot.exists()) { const data = snapshot.val(); setForceSyncDevices(Object.keys(data).map(k => ({ key: k, ...data[k] })).filter(d => d.DeviceName !== deviceName)); } else setForceSyncDevices([]); } catch (e) { setForceSyncDevices([]); }
+    try { const pk = pairingKeyRef.current; if (!pk) { setForceSyncDevices([]); setIsForceSyncModalVisible(true); return; } const { get: firebaseGet } = await import('firebase/database'); const snapshot = await firebaseGet(ref(database, `active_devices/${pk}`)); if (snapshot.exists()) { const data = snapshot.val(); setForceSyncDevices(Object.keys(data).map(k => ({ key: k, ...data[k] })).filter(d => d.DeviceName !== deviceName)); } else setForceSyncDevices([]); } catch (e) { setForceSyncDevices([]); }
     setIsForceSyncModalVisible(true);
   };
   const executeForcedSync = async (targetDeviceKeys: string[]) => {
+    try {
     setIsForceSyncModalVisible(false);
     const selected = getSelectedClips();
-    if (selected.length === 0) return;
+    if (selected.length === 0) { syncLog('FORCE-SYNC', 'No items selected'); return; }
+    syncLog('FORCE-SYNC', `Syncing ${selected.length} items to ${targetDeviceKeys.length} devices`);
     if (Platform.OS === 'android') ToastAndroid.show(`Force syncing ${selected.length} items...`, ToastAndroid.LONG);
     try {
       for (const deviceKey of targetDeviceKeys) { for (const item of selected) { const forcedRef = push(ref(database, `forced_sync/${deviceKey}`)); await set(forcedRef, { ...item, ForcedBy: deviceName, ForcedAt: Date.now(), SourceDeviceName: item.SourceDeviceName || deviceName }); } }
@@ -860,7 +1101,8 @@ export default function SyncScreen() {
         if (dev?.LocalIp) { try { const url = await resolveOptimalUrl(dev); if (url) { for (const item of selected) { await fetchWithTimeout(`${url}/api/sync`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Advance-Client': 'MobileCompanion' }, body: JSON.stringify({ title: item.Title, content: item.Raw, type: item.Type, sourceDevice: deviceName }) }, 5000).catch(() => {}); } } } catch (e) {} }
       }
       if (Platform.OS === 'android') ToastAndroid.show('Force sync complete ✅', ToastAndroid.SHORT);
-    } catch (e) { Alert.alert('Sync Error'); }
+    } catch (e: any) { syncLog('FORCE-SYNC', `ERROR: ${e?.message}`); Alert.alert('Sync Error', e?.message || 'Unknown error'); }
+    } catch (outerErr: any) { syncLog('FORCE-SYNC', `CRASH: ${outerErr?.message}`); Alert.alert('Error', outerErr?.message || 'Unexpected error'); }
     exitMultiSelect();
   };
 
@@ -881,7 +1123,15 @@ export default function SyncScreen() {
       else if (['doc','docx','txt'].includes(ext)) assignedType = 'Document';
       else assignedType = 'File';
       setPendingUploadPayload({ uri: file.uri, name: file.name, size: file.size, type: assignedType });
-      setIsTargetModalVisible(true);
+      // Auto-send to PC via LAN/Cloudflare if available, skip Firebase
+      const pc = activeDevices.find((d: any) => d.DeviceType === 'PC');
+      if (pc) {
+        setPendingUploadPayload({ uri: file.uri, name: file.name, size: file.size, type: assignedType });
+        executeHeavyUpload(pc);
+      } else {
+        setPendingUploadPayload({ uri: file.uri, name: file.name, size: file.size, type: assignedType });
+        setIsTargetModalVisible(true);
+      }
     } catch (err) { Alert.alert('Upload Failed'); }
   };
   const launchDirectCamera = async () => {
@@ -890,8 +1140,10 @@ export default function SyncScreen() {
     if (!result.canceled) {
       const file = result.assets[0];
       try { const b64 = await FileSystem.readAsStringAsync(file.uri, { encoding: (FileSystem as any).EncodingType.Base64 }); await Clipboard.setImageAsync(b64); Platform.OS === 'android' ? ToastAndroid.show("Captured & Copied", ToastAndroid.SHORT) : null; } catch (e) {}
-      setPendingUploadPayload({ uri: file.uri, name: file.fileName || `camera_${Date.now()}.jpg`, size: file.fileSize, type: 'Image' });
-      setIsTargetModalVisible(true);
+      const payload = { uri: file.uri, name: file.fileName || `camera_${Date.now()}.jpg`, size: file.fileSize, type: 'Image' };
+      const pc = activeDevices.find((d: any) => d.DeviceType === 'PC');
+      setPendingUploadPayload(payload);
+      if (pc) { executeHeavyUpload(pc); } else { setIsTargetModalVisible(true); }
     }
   };
   const pickImageAndSend = async () => {
@@ -899,8 +1151,10 @@ export default function SyncScreen() {
     if (!result.canceled) {
       const file = result.assets[0];
       try { if (file.type === 'image') { const b64 = await FileSystem.readAsStringAsync(file.uri, { encoding: (FileSystem as any).EncodingType.Base64 }); await Clipboard.setImageAsync(b64); } } catch (e) {}
-      setPendingUploadPayload({ uri: file.uri, name: file.fileName || `media_${Date.now()}`, size: file.fileSize, type: file.type === 'video' ? 'Video' : 'Image' });
-      setIsTargetModalVisible(true);
+      const payload = { uri: file.uri, name: file.fileName || `media_${Date.now()}`, size: file.fileSize, type: file.type === 'video' ? 'Video' : 'Image' };
+      const pc = activeDevices.find((d: any) => d.DeviceType === 'PC');
+      setPendingUploadPayload(payload);
+      if (pc) { executeHeavyUpload(pc); } else { setIsTargetModalVisible(true); }
     }
   };
   const launchQRScanner = async () => { setIsConnectModalVisible(false); setIsCameraOptionsVisible(false); if (!cameraPermission?.granted) { const perm = await requestCameraPermission(); if (!perm.granted) { Alert.alert("Permission Required"); return; } } setIsQRScannerActive(true); };
@@ -930,40 +1184,44 @@ export default function SyncScreen() {
       } catch {}
     }
 
-    if (paired) {
-      await AsyncStorage.multiSet([
-        ['pairingKey', key || ''], ['pairedPcName', pcName || ''], ['pairedPcId', pcId || ''],
-        ['pairedLocalUrl', local || ''], ['pairedGlobalUrl', globalUrl || ''],
-        ['pairedPin', pin || ''],
-      ]);
-      pairingKeyRef.current = key || '';
+    // ═══ ALWAYS save pairing info — the key is what matters for cloud sync ═══
+    // Even if we can't reach the PC right now, the shared key enables Firebase sync.
+    await AsyncStorage.multiSet([
+      ['pairingKey', key || ''], ['pairedPcName', pcName || ''], ['pairedPcId', pcId || ''],
+      ['pairedLocalUrl', local || ''], ['pairedGlobalUrl', globalUrl || ''],
+      ['pairedPin', pin || ''],
+    ]);
+    pairingKeyRef.current = key || '';
+    if (workingUrl) {
       cachedPcUrlRef.current = workingUrl;
       cachedPcUrlTimestampRef.current = Date.now();
-      setPairedPcName(pcName || 'Device');
-      if (!isGlobalSyncEnabled) setGlobalSyncEnabled(true);
+    }
+    setPairedPcName(pcName || 'Device');
+    if (!isGlobalSyncEnabled) setGlobalSyncEnabled(true);
 
-      // Register the remote device in the paired devices list
-      const deviceType = (pairInfo as any).deviceType || 'PC';
-      await addPairedDevice({
-        deviceId: pcId || `${pcName}_${Date.now()}`,
-        deviceName: pcName || 'Unknown Device',
-        deviceType: deviceType as 'PC' | 'Mobile' | 'Browser',
-        pairedAt: Date.now(),
-      });
+    // Register the remote device in the paired devices list
+    const deviceType = (pairInfo as any).deviceType || 'PC';
+    await addPairedDevice({
+      deviceId: pcId || `${pcName}_${Date.now()}`,
+      deviceName: pcName || 'Unknown Device',
+      deviceType: deviceType as 'PC' | 'Mobile' | 'Browser',
+      pairedAt: Date.now(),
+    });
 
-      setIsPairing(false);
+    setIsPairing(false);
 
+    if (paired) {
       if (Platform.OS === 'android') ToastAndroid.show(`✅ Paired with ${pcName}!`, ToastAndroid.LONG);
       Alert.alert('Connected! 🎉',
         `Paired with ${pcName}.\n\nAnything you copy or drop on your PC will appear here instantly — from anywhere in the world.`,
         [{ text: 'Got it!' }]
       );
     } else {
-      if (local) await AsyncStorage.setItem('pairedLocalUrl', local);
-      if (globalUrl) await AsyncStorage.setItem('pairedGlobalUrl', globalUrl);
-      setIsPairing(false);
-      Alert.alert('Connection Issue',
-        `Could not reach ${pcName || 'device'}.\nMake sure FlyShelf is running and try again.\nThe connection info has been saved — it will auto-connect when available.`
+      // Pairing key is saved — sync will work once the PC is reachable
+      if (Platform.OS === 'android') ToastAndroid.show(`✅ Paired with ${pcName} (deferred)`, ToastAndroid.LONG);
+      Alert.alert('Paired! 🔑',
+        `Paired with ${pcName}.\n\nThe PC isn't reachable right now, but your pairing key is saved.\nClipboard sync will start automatically once FlyShelf is running.`,
+        [{ text: 'OK' }]
       );
     }
   };
@@ -1021,9 +1279,57 @@ export default function SyncScreen() {
         body: JSON.stringify(payload),
       });
       setMyPairingCode(code);
-      if (Platform.OS === 'android') ToastAndroid.show(`Code: ${code} (5 min)`, ToastAndroid.SHORT);
-      // Auto-expire
+      if (Platform.OS === 'android') ToastAndroid.show(`Code: ${code} (5 min) — Waiting for device...`, ToastAndroid.SHORT);
+
+      // ── Poll for incoming connections ──
+      // When the PC enters our code, it appears in active_devices with our pairing key.
+      // We poll every 3s to detect this and auto-register the paired device.
+      const pollForConnection = setInterval(async () => {
+        try {
+          const pk = pairingKeyRef.current;
+          const devicesRes = await fetch(`https://advance-sync-default-rtdb.firebaseio.com/active_devices/${pk}.json`);
+          const devices = await devicesRes.json();
+          if (!devices) return;
+
+          for (const key of Object.keys(devices)) {
+            const dev = devices[key];
+            // Look for a recently-active PC that's online
+            if (dev.DeviceType === 'PC' && dev.IsOnline && dev.Timestamp && (Date.now() - dev.Timestamp) < 120000) {
+              // Check if this PC is NOT already in our paired list
+              const alreadyPaired = (await AsyncStorage.getItem('@pairedDevices') || '[]');
+              const pairedList = JSON.parse(alreadyPaired);
+              const exists = pairedList.some((d: any) => d.deviceId === key);
+              if (!exists) {
+                await addPairedDevice({
+                  deviceId: key,
+                  deviceName: dev.DeviceName || 'PC',
+                  deviceType: 'PC',
+                  pairedAt: Date.now(),
+                });
+                // Save their connection URLs for fast LAN sync
+                if (dev.LocalIp) await AsyncStorage.setItem('pairedLocalUrl', dev.LocalIp.startsWith('http') ? dev.LocalIp : `http://${dev.LocalIp}`);
+                if (dev.GlobalUrl) await AsyncStorage.setItem('pairedGlobalUrl', dev.GlobalUrl);
+                if (dev.Url) {
+                  cachedPcUrlRef.current = dev.Url;
+                  cachedPcUrlTimestampRef.current = Date.now();
+                }
+                setPairedPcName(dev.DeviceName || 'PC');
+                if (!isGlobalSyncEnabled) setGlobalSyncEnabled(true);
+                if (Platform.OS === 'android') ToastAndroid.show(`✅ ${dev.DeviceName || 'PC'} connected!`, ToastAndroid.LONG);
+                clearInterval(pollForConnection);
+                setMyPairingCode(null);
+                // Clean up the pairing code from Firebase
+                try { await fetch(`https://advance-sync-default-rtdb.firebaseio.com/pairing_codes/${code}.json`, { method: 'DELETE' }); } catch {}
+                break;
+              }
+            }
+          }
+        } catch {}
+      }, 3000);
+
+      // Auto-expire after 5 min
       setTimeout(async () => {
+        clearInterval(pollForConnection);
         try { await fetch(`https://advance-sync-default-rtdb.firebaseio.com/pairing_codes/${code}.json`, { method: 'DELETE' }); } catch {}
         if (myPairingCode === code) setMyPairingCode(null);
       }, 5 * 60 * 1000);
@@ -1059,24 +1365,25 @@ export default function SyncScreen() {
   const CHUNK_SIZE = 50 * 1024 * 1024; // 50MB (under Cloudflare 100MB limit)
 
   const executeHeavyUpload = async (targetDeviceOrGlobal: any) => {
-    if (!pendingUploadPayload) return;
+    try {
+    if (!pendingUploadPayload) { syncLog('UPLOAD', 'No payload — skipping'); return; }
     setIsTargetModalVisible(false);
     setIsSending(true);
     const { uri: physicalPath, name, size, type } = pendingUploadPayload;
+    syncLog('UPLOAD', `Starting: ${name} (${type}) size=${size || '?'}`);
     try {
       const safeName = `sync_${Date.now()}_` + name.replace(/[^a-zA-Z0-9.-]/g, '_');
       const hydratedPath = `${SYNC_CACHE_BASE}${safeName}`;
       await FileSystem.copyAsync({ from: physicalPath, to: hydratedPath });
 
       if (targetDeviceOrGlobal === 'Global') {
-        // Firebase Storage path (100MB limit enforced)
-        if (!isGlobalSyncEnabled) { Alert.alert("Global Sync Disabled"); setIsTargetModalVisible(false); setPendingUploadPayload(null); return; }
-        if (size && size > 100 * 1024 * 1024) { Alert.alert("Too Large", "100MB limit for Firebase."); setIsSending(false); return; }
-        const response = await fetch(hydratedPath); const blob = await response.blob();
-        const sf = storageRef(storage, `archives/${name}_${Date.now()}`); await uploadBytesResumable(sf, blob); const downloadUrl = await getDownloadURL(sf);
-        const newRef = push(ref(database, clipboardPath()));
-        const ext = name.split('.').pop()?.toLowerCase() || '';
-        await set(newRef, { Title: name, Type: (() => { if (type === 'Image' || type === 'Video') return type; if (['apk','zip','rar'].includes(ext)) return 'Archive'; if (['doc','docx','txt'].includes(ext)) return 'Document'; if (ext === 'pdf') return 'Pdf'; if (['mp4','avi','mkv'].includes(ext)) return 'Video'; if (['ppt','pptx'].includes(ext)) return 'Presentation'; if (['jpg','jpeg','png','gif','webp'].includes(ext)) return 'Image'; return 'File'; })(), Raw: downloadUrl, Time: new Date().toLocaleTimeString(), Timestamp: Date.now(), SourceDeviceName: deviceName || 'Unknown Mobile', SourceDeviceType: 'Mobile' });
+        // Send to PC via LAN/Cloudflare (no Firebase Storage)
+        const pc = activeDevices.find((d: any) => d.DeviceType === 'PC');
+        if (!pc) { Alert.alert('No PC Found', 'No paired PC is online. Connect a PC first.'); setIsSending(false); setPendingUploadPayload(null); return; }
+        const resolved = await resolveOptimalUrl(pc);
+        if (!resolved) { Alert.alert('PC Unreachable', 'Could not reach your PC. Make sure FlyShelf is running.'); setIsSending(false); setPendingUploadPayload(null); return; }
+        const uploadUrl = `${resolved}/api/sync_file?name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}&sourceDevice=${encodeURIComponent(deviceName || 'Mobile')}`;
+        await FileSystem.uploadAsync(uploadUrl, hydratedPath, { httpMethod: 'POST', uploadType: 0 as any, headers: { 'X-Original-Date': Date.now().toString(), 'X-Advance-Client': 'MobileCompanion' } });
       } else {
         // Direct device transfer (LAN or Cloudflare)
         const resolved = await resolveOptimalUrl(targetDeviceOrGlobal);
@@ -1150,7 +1457,8 @@ export default function SyncScreen() {
         }
       }
       if (Platform.OS === 'android') ToastAndroid.show(`✅ ${name} sent!`, ToastAndroid.SHORT);
-    } catch (err: any) { Alert.alert('Upload Failed', err.message); }
+    } catch (err: any) { syncLog('UPLOAD', `FAILED: ${err?.message}`); Alert.alert('Upload Failed', err?.message || 'Unknown error'); }
+    } catch (outerErr: any) { syncLog('UPLOAD', `CRASH: ${outerErr?.message}`); Alert.alert('Error', outerErr?.message || 'Unexpected error'); }
     setIsSending(false);
     setPendingUploadPayload(null);
   };
@@ -1159,7 +1467,8 @@ export default function SyncScreen() {
   const clipFilter = (c: ClipItem) => {
     const isVisible = (c.IsPinned || (c.Timestamp || 0) >= localWipeTimestamp) && (!c.id || !localDeletedIds.has(c.id)) && (c.Raw || c.Title);
     if (!isVisible) return false;
-    if ((c.Type === 'Image' || c.Type === 'ImageLink') && !c.Raw && !c.CachedUri) return false;
+    // Show image clips even if download pending — they have a Title at minimum
+    if ((c.Type === 'Image' || c.Type === 'ImageLink') && !c.Raw && !c.CachedUri && !c.Title) return false;
     if (!c.Raw && !c.Title) return false;
     return true;
   };
@@ -1379,10 +1688,11 @@ export default function SyncScreen() {
                 const isHeavyFile = heavyFileTypes.includes(item.Type) || (item.Title || '').toLowerCase().endsWith('.apk');
 
                 return (
+                  <View style={{ position: 'relative' }}>
                   <AnimatedCard
                     index={itemIndex}
                     style={[styles.clipCard, isMultiSelectMode && selectedItemIds.has(item.id || '') && { borderColor: colors.accent.primary, borderWidth: 1.5 }]}
-                    onPress={() => { if (isMultiSelectMode) toggleSelectItem(item.id || ''); else if (activeOptionsId === item.id) setActiveOptionsId(null); else setActiveOptionsId(item.id!); }}
+                    onPress={() => { const itemKey = item.id || `idx_${itemIndex}`; if (isMultiSelectMode) toggleSelectItem(item.id || ''); else if (activeOptionsId === itemKey) setActiveOptionsId(null); else setActiveOptionsId(itemKey); }}
                     onLongPress={() => { if (!isMultiSelectMode) { setIsMultiSelectMode(true); setSelectedItemIds(new Set([item.id || ''])); setActiveOptionsId(null); } }}
                     skipEntrance={itemIndex > 12}
                   >
@@ -1434,8 +1744,9 @@ export default function SyncScreen() {
                         </View>
                       )}
                     </View>
-                    {activeOptionsId === item.id && !(isIncomingTransfer && isHeavyFile) && (
-                      <View style={{ position: 'absolute', right: 10, top: 10, flexDirection: 'row', backgroundColor: 'rgba(20,24,36,0.9)', borderRadius: 12, padding: 8, gap: 8 }}>
+                  </AnimatedCard>
+                    {activeOptionsId === (item.id || `idx_${itemIndex}`) && !(isIncomingTransfer && isHeavyFile) && (
+                      <View style={{ position: 'absolute', right: 10, top: 10, flexDirection: 'row', backgroundColor: 'rgba(20,24,36,0.95)', borderRadius: 12, padding: 8, gap: 8, zIndex: 50 }}>
                         <TouchableOpacity onPress={async () => {
                           try {
                             if (!item.id) { ToastAndroid.show("Pinning is restricted to Global Cloud payloads.", ToastAndroid.SHORT); return; }
@@ -1443,13 +1754,14 @@ export default function SyncScreen() {
                             setClips(prev => prev.map(c => c.id === item.id ? {...c, IsPinned: !c.IsPinned} : c));
                             ToastAndroid.show(item.IsPinned ? "Unpinned" : "Pinned!", ToastAndroid.SHORT);
                           } catch(e) {}
+                          setActiveOptionsId(null);
                         }} style={[styles.actionBtnIcon, {backgroundColor: item.IsPinned ? '#F59E0B33' : '#2A2F3A'}]}>
                           <IconSymbol name={item.IsPinned ? "pin.fill" : "pin"} size={18} color={item.IsPinned ? "#F59E0B" : "#8A8F98"} />
                         </TouchableOpacity>
                         <TouchableOpacity onPress={async () => {
                           const contentStr = item.Raw || item.Title || '';
                           if (item.Type === 'Image' || item.Type === 'ImageLink') {
-                            try { const src = mediaUrl || item.CachedUri || item.Raw; if (src) { const localUri = `${SYNC_CACHE_BASE}copy_${Date.now()}.png`; const dl = await FileSystem.downloadAsync(src, localUri, { headers: { 'X-Advance-Client': 'MobileCompanion' } }); const b64 = await FileSystem.readAsStringAsync(dl.uri, { encoding: (FileSystem as any).EncodingType.Base64 }); await Clipboard.setImageAsync(b64); if (Platform.OS === 'android') ToastAndroid.show("Image Copied", ToastAndroid.SHORT); } } catch(e) { await Clipboard.setStringAsync(contentStr); if (Platform.OS === 'android') ToastAndroid.show("URL Copied", ToastAndroid.SHORT); }
+                            try { const src = item.CachedUri || mediaUrl || item.Raw; if (src) { if (src.startsWith('file://') || src.startsWith('/')) { const b64 = await FileSystem.readAsStringAsync(src.startsWith('file://') ? src : `file://${src}`, { encoding: FileSystem.EncodingType.Base64 }); await Clipboard.setImageAsync(b64); } else { const localUri = `${SYNC_CACHE_BASE}copy_${Date.now()}.png`; const dl = await FileSystem.downloadAsync(src, localUri, { headers: { 'X-Advance-Client': 'MobileCompanion' } }); const b64 = await FileSystem.readAsStringAsync(dl.uri, { encoding: FileSystem.EncodingType.Base64 }); await Clipboard.setImageAsync(b64); } if (Platform.OS === 'android') ToastAndroid.show("Image Copied", ToastAndroid.SHORT); } } catch(e) { await Clipboard.setStringAsync(contentStr); if (Platform.OS === 'android') ToastAndroid.show("URL Copied", ToastAndroid.SHORT); }
                           } else { await Clipboard.setStringAsync(contentStr); if (Platform.OS === 'android') ToastAndroid.show("Copied!", ToastAndroid.SHORT); }
                           setActiveOptionsId(null);
                         }} style={[styles.actionBtnIcon, {backgroundColor: '#4A62EB33'}]}>
@@ -1460,32 +1772,13 @@ export default function SyncScreen() {
                             <IconSymbol name="arrow.up.right" size={18} color="#0EA5E9" />
                           </TouchableOpacity>
                         )}
-                        {isPdf && mediaUrl.startsWith('http') && (() => {
-                          const safeName = (item.Title || `file_${Date.now()}`).replace(/[^a-zA-Z0-9.-]/g, '_');
-                          const localUri = DOWNLOAD_BASE + safeName;
-                          const dlId = item.id || safeName;
-                          const prog = downloadProgress[dlId];
-                          const dlNow = prog !== undefined && prog < 1;
-                          const dlDone = downloadedItems.has(item.id!) || (prog !== undefined && prog >= 1);
-                          const doPdfDownload = async () => {
-                            const fi = await FileSystem.getInfoAsync(localUri);
-                            if (fi.exists) { setDownloadedItems(prev => { const u = new Set(prev); u.add(item.id!); return u; }); setDownloadProgress(p => ({...p, [dlId]: 1})); return localUri; }
-                            setDownloadProgress(p => ({...p, [dlId]: 0}));
-                            const res = FileSystem.createDownloadResumable(mediaUrl, localUri, { headers: { 'X-Advance-Client': 'MobileCompanion' } }, (dp) => { const pct = dp.totalBytesExpectedToWrite > 0 ? dp.totalBytesWritten / dp.totalBytesExpectedToWrite : 0; setDownloadProgress(p => ({...p, [dlId]: pct})); });
-                            const result = await res.downloadAsync();
-                            setDownloadProgress(p => ({...p, [dlId]: 1})); setDownloadedItems(prev => { const u = new Set(prev); u.add(item.id!); return u; });
-                            return result?.uri || localUri;
-                          };
-                          return (<>
-                            <TouchableOpacity onPress={async () => { try { const uri = await doPdfDownload(); const contentUri = await FileSystem.getContentUriAsync(uri); await IntentLauncher.startActivityAsync('android.intent.action.VIEW', { data: contentUri, flags: 1 }); } catch(e) { ToastAndroid.show('Could not open PDF', ToastAndroid.SHORT); } }} style={[styles.actionBtnIcon, {backgroundColor: dlDone ? '#10B98133' : '#EF444433'}]}>
-                              {dlNow ? <ActivityIndicator size="small" color="#EF4444" /> : <IconSymbol name={dlDone ? "doc.fill" : "arrow.down"} size={18} color={dlDone ? "#10B981" : "#EF4444"} />}
-                            </TouchableOpacity>
-                          </>);
-                        })()}
                         <TouchableOpacity onPress={async () => {
-                          if (!item.id) return;
-                          setLocalDeletedIds(prev => { const n = new Set(prev); n.add(item.id!); AsyncStorage.setItem('localDeletedIds', JSON.stringify([...n])).catch(() => {}); return n; });
-                          if (isGlobalSyncEnabled && pairingKeyRef.current) { try { await remove(ref(database, `${clipboardPath()}/${item.id}`)); } catch(e) {} }
+                          if (item.id) {
+                            setLocalDeletedIds(prev => { const n = new Set(prev); n.add(item.id!); AsyncStorage.setItem('localDeletedIds', JSON.stringify([...n])).catch(() => {}); return n; });
+                            if (isGlobalSyncEnabled && pairingKeyRef.current) { try { await remove(ref(database, `${clipboardPath()}/${item.id}`)); } catch(e) {} }
+                          } else {
+                            setClips(prev => prev.filter(c => !(c.Title === item.Title && c.Raw === item.Raw && c.Timestamp === item.Timestamp)));
+                          }
                           setActiveOptionsId(null);
                           if (Platform.OS === 'android') ToastAndroid.show("Deleted", ToastAndroid.SHORT);
                         }} style={[styles.actionBtnIcon, {backgroundColor: '#EF444433'}]}>
@@ -1493,7 +1786,7 @@ export default function SyncScreen() {
                         </TouchableOpacity>
                       </View>
                     )}
-                  </AnimatedCard>
+                  </View>
                 );
               }}
             />
@@ -1537,6 +1830,23 @@ export default function SyncScreen() {
             <TouchableOpacity style={{backgroundColor: '#2A2F3A', paddingVertical: 14, borderRadius: 14, alignItems: 'center', marginTop: 8}} onPress={() => setIsMergeModalVisible(false)}><Text style={{color: '#FFF', fontSize: 14, fontWeight: '600'}}>Cancel</Text></TouchableOpacity>
           </View></View>
         </Modal>
+
+        {/* PDF Page Editor */}
+        <PdfPageEditor
+          visible={pageEditorVisible}
+          onClose={() => setPageEditorVisible(false)}
+          pdfUri={pageEditorUri}
+          pdfTitle={pageEditorTitle}
+          outputDir={CONVERTED_BASE}
+          onSaved={(newUri, title) => {
+            const newItem: ClipItem = {
+              Title: title, Type: 'Pdf', Raw: newUri,
+              Time: new Date().toLocaleString(), SourceDeviceName: deviceName || 'Phone',
+              SourceDeviceType: 'Mobile', Timestamp: Date.now(), CachedUri: newUri,
+            };
+            setClips(prev => [newItem, ...prev]);
+          }}
+        />
 
         {/* Force Sync Modal */}
         <Modal visible={isForceSyncModalVisible} animationType="slide" transparent={true}>

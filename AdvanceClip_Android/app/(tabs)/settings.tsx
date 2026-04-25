@@ -8,6 +8,8 @@ import * as IntentLauncher from 'expo-intent-launcher';
 import Constants from 'expo-constants';
 import { colors, font, radius, shadows, space } from '../../styles/theme';
 import AnimatedPressable from '../../components/AnimatedPressable';
+import { getDebugLogs, clearDebugLogs } from '../../utils/debugLog';
+import * as Clipboard from 'expo-clipboard';
 
 const APP_VERSION = Constants.expoConfig?.version || '1.0.0';
 const VERSION_URL = 'https://raw.githubusercontent.com/shdra06/AdvanceClip/main/version.json';
@@ -615,6 +617,36 @@ export default function SettingsScreen() {
                 Downloads the latest APK from GitHub and opens the Android installer. Make sure "Install from Unknown Sources" is enabled for this app.
               </Text>
             </View>
+          </View>
+
+          {/* Debug Logs */}
+          <View style={{ backgroundColor: '#141824', borderRadius: 20, padding: 20, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.04)' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <IconSymbol name="doc.text.fill" size={20} color="#6B7280" />
+              <Text style={{ color: '#F0F2F5', fontSize: 16, fontWeight: '700' }}>Debug Logs</Text>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+              <TouchableOpacity
+                style={{ flex: 1, backgroundColor: '#2A2F3A', borderRadius: 12, padding: 14, alignItems: 'center', borderWidth: 1, borderColor: '#3B4252' }}
+                onPress={async () => {
+                  const logs = getDebugLogs();
+                  if (!logs) { Alert.alert('No Logs', 'No sync activity logged yet.'); return; }
+                  await Clipboard.setStringAsync(logs);
+                  Alert.alert('Copied!', `${logs.split('\n').length} log entries copied to clipboard.`);
+                }}
+              >
+                <Text style={{ color: '#8B5CF6', fontWeight: '700', fontSize: 13 }}>📋 Copy Sync Logs</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{ backgroundColor: '#2A2F3A', borderRadius: 12, padding: 14, alignItems: 'center', borderWidth: 1, borderColor: '#3B4252' }}
+                onPress={() => { clearDebugLogs(); Alert.alert('Cleared', 'Debug logs cleared.'); }}
+              >
+                <Text style={{ color: '#EF4444', fontWeight: '700', fontSize: 13 }}>🗑️</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.helperText}>
+              Copies recent sync events (screenshots, Firebase, downloads) to clipboard. Share with developer for troubleshooting.
+            </Text>
           </View>
 
           {/* Bottom padding so scroll doesn't cut off */}

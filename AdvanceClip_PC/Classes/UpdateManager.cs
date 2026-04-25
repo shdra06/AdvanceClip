@@ -106,7 +106,7 @@ namespace AdvanceClip.Classes
 
             string tempDir = Path.Combine(Path.GetTempPath(), "AdvanceClip_Update");
             Directory.CreateDirectory(tempDir);
-            string tempExePath = Path.Combine(tempDir, "AdvanceClip_new.exe");
+            string tempExePath = Path.Combine(tempDir, "FlyShelf_new.exe");
 
             try
             {
@@ -175,7 +175,7 @@ namespace AdvanceClip.Classes
         public void ApplyUpdateAndRestart()
         {
             string tempDir = Path.Combine(Path.GetTempPath(), "AdvanceClip_Update");
-            string tempExePath = Path.Combine(tempDir, "AdvanceClip_new.exe");
+            string tempExePath = Path.Combine(tempDir, "FlyShelf_new.exe");
 
             if (!File.Exists(tempExePath))
             {
@@ -188,7 +188,7 @@ namespace AdvanceClip.Classes
             string currentExePath = Process.GetCurrentProcess().MainModule?.FileName ?? "";
             if (string.IsNullOrEmpty(currentExePath) || !File.Exists(currentExePath))
             {
-                currentExePath = Path.Combine(AppContext.BaseDirectory, "AdvanceClip.exe");
+                currentExePath = Path.Combine(AppContext.BaseDirectory, "FlyShelf.exe");
             }
             if (string.IsNullOrEmpty(currentExePath) || !File.Exists(currentExePath))
             {
@@ -210,7 +210,7 @@ namespace AdvanceClip.Classes
             // Create a robust batch script with retry logic
             string batchPath = Path.Combine(tempDir, "update.bat");
             string batchContent = $@"@echo off
-echo AdvanceClip Auto-Updater
+echo FlyShelf Auto-Updater
 echo Waiting for app to close (PID {pid})...
 :waitloop
 tasklist /fi ""PID eq {pid}"" 2>nul | find ""{pid}"" >nul

@@ -770,7 +770,8 @@ namespace AdvanceClip.Classes
                     var dataObj = new System.Windows.DataObject();
                     var dropList = new System.Collections.Specialized.StringCollection { finalPath };
                     dataObj.SetFileDropList(dropList);
-                    _viewModel.HandleDrop(dataObj, true);
+                    // skipFirebaseSync=true — file came FROM a mobile device, don't echo it back
+                    _viewModel.HandleDrop(dataObj, true, skipFirebaseSync: true);
                     AdvanceClip.Windows.ToastWindow.ShowToast($"Saved: {Path.GetFileName(finalPath)} ✅");
                 });
 

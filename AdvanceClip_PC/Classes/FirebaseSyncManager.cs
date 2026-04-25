@@ -80,8 +80,12 @@ namespace AdvanceClip.Classes
             {
 
                 // For files: always wait for Cloudflare tunnel first — it's the only reliable cross-network URL
-                bool isFile = !string.IsNullOrEmpty(item.FilePath) && File.Exists(item.FilePath);
-                string downloadUrl = "";
+                // BUT: if RawContent is already an HTTP URL (set by SyncFileToDevicesAsync via CloneForSync),
+                // then this item already has a resolved download URL — treat it as pre-resolved, not a local file.
+                bool rawIsPreResolved = !string.IsNullOrEmpty(item.RawContent) && (item.RawContent.StartsWith("http://") || item.RawContent.StartsWith("https://"));
+                bool isFile = !rawIsPreResolved && !string.IsNullOrEmpty(item.FilePath) && File.Exists(item.FilePath);
+                bool isFilePayload = isFile || rawIsPreResolved; // True for any file/image with download URL — used for auto-delete timing
+                string downloadUrl = rawIsPreResolved ? item.RawContent : "";
                 string raw = item.RawContent ?? "";
 
                 if (isFile)
@@ -152,10 +156,10 @@ namespace AdvanceClip.Classes
                     Title = string.IsNullOrEmpty(item.FileName) ? (item.RawContent?.Length > 30 ? item.RawContent.Substring(0, 30) + "..." : item.RawContent) : item.FileName,
                     Type = item.ItemType.ToString(),
                     Raw = raw,
-                    PreviewUrl = isFile && downloadUrl != "" ? downloadUrl : "",
+                    PreviewUrl = downloadUrl != "" ? downloadUrl : "",
                     DownloadUrl = downloadUrl,
                     FileName = item.FileName ?? "",
-                    FileSize = isFile ? new FileInfo(item.FilePath).Length : 0,
+                    FileSize = !string.IsNullOrEmpty(item.FilePath) && File.Exists(item.FilePath) ? new FileInfo(item.FilePath).Length : 0,
                     SenderUrl = !string.IsNullOrEmpty(CachedGlobalUrl) ? CachedGlobalUrl : CachedLocalUrl ?? "", // Cloudflare or LAN URL so receivers can build download links
                     Time = item.DateCopied.ToString("HH:mm:ss"),
                     Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
@@ -182,7 +186,7 @@ namespace AdvanceClip.Classes
                         {
                             _ = Task.Run(async () =>
                             {
-                                int deleteDelay = isFile ? AUTO_DELETE_FILE_MS : AUTO_DELETE_TEXT_MS;
+                                int deleteDelay = isFilePayload ? AUTO_DELETE_FILE_MS : AUTO_DELETE_TEXT_MS;
                                 await Task.Delay(deleteDelay);
                                 try
                                 {
@@ -265,8 +269,10 @@ namespace AdvanceClip.Classes
                 string json = JsonSerializer.Serialize(payload);
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-                // Use PUT to register or update our specific Device node
-                string tunnelNodeUrl = $"https://advance-sync-default-rtdb.firebaseio.com/active_devices/{SettingsManager.Current.DeviceId}.json";
+                // Use PUT to register or update our specific Device node (scoped to pairing key)
+                string pairingKey = DevicePairingManager.EnsurePairingKey();
+                if (string.IsNullOrEmpty(pairingKey)) { Logger.LogAction("FIREBASE SYNC", "Skipped device registration — no pairing key"); return; }
+                string tunnelNodeUrl = $"https://advance-sync-default-rtdb.firebaseio.com/active_devices/{pairingKey}/{SettingsManager.Current.DeviceId}.json";
                 var response = await _client.PutAsync(tunnelNodeUrl, content);
                 
                 if (response.IsSuccessStatusCode)
@@ -388,7 +394,9 @@ namespace AdvanceClip.Classes
             var devices = new List<(string Id, string Name, string Type, bool IsOnline, string LocalIp, string GlobalUrl)>();
             try
             {
-                string url = "https://advance-sync-default-rtdb.firebaseio.com/active_devices.json";
+                string pairingKey = DevicePairingManager.EnsurePairingKey();
+                if (string.IsNullOrEmpty(pairingKey)) return devices;
+                string url = $"https://advance-sync-default-rtdb.firebaseio.com/active_devices/{pairingKey}.json";
                 var response = await _client.GetAsync(url);
                 if (response.IsSuccessStatusCode)
                 {
@@ -434,7 +442,9 @@ namespace AdvanceClip.Classes
         {
             try
             {
-                string url = "https://advance-sync-default-rtdb.firebaseio.com/active_devices.json";
+                string pairingKey = DevicePairingManager.EnsurePairingKey();
+                if (string.IsNullOrEmpty(pairingKey)) return;
+                string url = $"https://advance-sync-default-rtdb.firebaseio.com/active_devices/{pairingKey}.json";
                 var response = await _client.GetAsync(url);
                 if (response.IsSuccessStatusCode)
                 {
@@ -464,7 +474,7 @@ namespace AdvanceClip.Classes
                                 }
 
                                 // Stale GUID-based entry — safe to remove
-                                string deleteUrl = $"https://advance-sync-default-rtdb.firebaseio.com/active_devices/{prop.Name}.json";
+                                string deleteUrl = $"https://advance-sync-default-rtdb.firebaseio.com/active_devices/{pairingKey}/{prop.Name}.json";
                                 await _client.DeleteAsync(deleteUrl);
                                 Logger.LogAction("FIREBASE CLEANUP", $"Removed stale device: {prop.Name}");
                             }

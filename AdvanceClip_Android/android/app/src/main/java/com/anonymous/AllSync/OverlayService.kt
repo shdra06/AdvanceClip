@@ -281,52 +281,85 @@ class OverlayService : Service() {
                 val obj = arr.getJSONObject(i)
                 val raw = obj.optString("Raw", obj.optString("Title", "Unknown"))
                 val clipTitle = obj.optString("Title", raw.take(55))
+                val clipType = obj.optString("Type", "Text")
                 val lowerTitle = clipTitle.lowercase()
                 val isWordFile = lowerTitle.endsWith(".doc") || lowerTitle.endsWith(".docx")
                 val isPdfFile = lowerTitle.endsWith(".pdf")
+                val isImage = clipType == "Image" || clipType == "ImageLink" || clipType == "QRCode"
+                val isLocalImage = isImage && (raw.startsWith("/") || raw.startsWith("file://"))
 
                 val clipCard = LinearLayout(this)
                 clipCard.orientation = LinearLayout.HORIZONTAL
                 clipCard.gravity = Gravity.CENTER_VERTICAL
                 val cardBg = GradientDrawable()
                 cardBg.cornerRadius = 12f * density
-                cardBg.setColor(if (isWordFile) 0x203B82F6 else if (isPdfFile) 0x20EF4444 else 0x15FFFFFF)
+                cardBg.setColor(if (isImage) 0x20A78BFA else if (isWordFile) 0x203B82F6 else if (isPdfFile) 0x20EF4444 else 0x15FFFFFF)
                 clipCard.background = cardBg
                 clipCard.setPadding((12 * density).toInt(), (10 * density).toInt(), (12 * density).toInt(), (10 * density).toInt())
 
-                val badge = TextView(this)
-                badge.text = "${i + 1}"
-                badge.textSize = 9f
-                badge.setTextColor(0xFFFFFFFF.toInt())
-                badge.gravity = Gravity.CENTER
-                badge.typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
-                val badgeBg = GradientDrawable()
-                badgeBg.shape = GradientDrawable.OVAL
-                badgeBg.setColor(if (isWordFile) 0xFF3B82F6.toInt() else if (isPdfFile) 0xFFEF4444.toInt() else 0xFF6C63FF.toInt())
-                badge.background = badgeBg
-                val bSize = (20 * density).toInt()
-                val badgeLp = LinearLayout.LayoutParams(bSize, bSize)
-                badgeLp.rightMargin = (8 * density).toInt()
-                clipCard.addView(badge, badgeLp)
+                // Image thumbnail or number badge
+                if (isLocalImage) {
+                    try {
+                        val imgPath = if (raw.startsWith("file://")) raw.removePrefix("file://") else raw
+                        val imgFile = java.io.File(imgPath)
+                        if (imgFile.exists()) {
+                            val imgView = ImageView(this)
+                            val opts = android.graphics.BitmapFactory.Options()
+                            opts.inSampleSize = 4 // Downsample for thumbnail
+                            val bmp = android.graphics.BitmapFactory.decodeFile(imgFile.absolutePath, opts)
+                            if (bmp != null) {
+                                imgView.setImageBitmap(bmp)
+                                imgView.scaleType = ImageView.ScaleType.CENTER_CROP
+                                val imgBg = GradientDrawable()
+                                imgBg.cornerRadius = 8f * density
+                                imgBg.setColor(0x20FFFFFF)
+                                imgView.background = imgBg
+                                imgView.clipToOutline = true
+                                imgView.outlineProvider = object : android.view.ViewOutlineProvider() {
+                                    override fun getOutline(view: View, outline: android.graphics.Outline) {
+                                        outline.setRoundRect(0, 0, view.width, view.height, 8f * density)
+                                    }
+                                }
+                                val thumbSize = (40 * density).toInt()
+                                val thumbLp = LinearLayout.LayoutParams(thumbSize, thumbSize)
+                                thumbLp.rightMargin = (8 * density).toInt()
+                                clipCard.addView(imgView, thumbLp)
+                            } else {
+                                // Bitmap decode failed — show fallback badge
+                                val badge = createBadge(i, density, 0xFF8B5CF6.toInt())
+                                clipCard.addView(badge)
+                            }
+                        } else {
+                            val badge = createBadge(i, density, 0xFF8B5CF6.toInt())
+                            clipCard.addView(badge)
+                        }
+                    } catch (e: Exception) {
+                        val badge = createBadge(i, density, 0xFF8B5CF6.toInt())
+                        clipCard.addView(badge)
+                    }
+                } else {
+                    val badge = createBadge(i, density, if (isWordFile) 0xFF3B82F6.toInt() else if (isPdfFile) 0xFFEF4444.toInt() else if (isImage) 0xFF8B5CF6.toInt() else 0xFF6C63FF.toInt())
+                    clipCard.addView(badge)
+                }
 
                 val clipText = TextView(this)
-                clipText.text = clipTitle.take(48)
+                clipText.text = if (isImage) "📷 ${clipTitle.take(35)}" else clipTitle.take(48)
                 clipText.textSize = 12f
                 clipText.setTextColor(0xDDFFFFFF.toInt())
                 clipText.maxLines = 2
                 clipText.typeface = Typeface.create("sans-serif", Typeface.NORMAL)
                 clipCard.addView(clipText, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
 
-                if (isWordFile || isPdfFile) {
+                if (isWordFile || isPdfFile || isImage) {
                     val typeTag = TextView(this)
-                    typeTag.text = if (isWordFile) "DOC" else "PDF"
+                    typeTag.text = if (isWordFile) "DOC" else if (isPdfFile) "PDF" else "IMG"
                     typeTag.textSize = 8f
                     typeTag.setTextColor(0xFFFFFFFF.toInt())
                     typeTag.gravity = Gravity.CENTER
                     typeTag.typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
                     val tagBg = GradientDrawable()
                     tagBg.cornerRadius = 6f * density
-                    tagBg.setColor(if (isWordFile) 0xFF3B82F6.toInt() else 0xFFEF4444.toInt())
+                    tagBg.setColor(if (isWordFile) 0xFF3B82F6.toInt() else if (isPdfFile) 0xFFEF4444.toInt() else 0xFF8B5CF6.toInt())
                     typeTag.background = tagBg
                     typeTag.setPadding((6 * density).toInt(), (2 * density).toInt(), (6 * density).toInt(), (2 * density).toInt())
                     val tagLp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
@@ -347,6 +380,20 @@ class OverlayService : Service() {
                         clipboard.setPrimaryClip(ClipData.newPlainText("FlyShelf", if (downloadUrl.startsWith("http")) downloadUrl else raw))
                         lastCopiedText = if (downloadUrl.startsWith("http")) downloadUrl else raw
                         Toast.makeText(this, "PDF URL copied! Paste in browser to download.", Toast.LENGTH_LONG).show()
+                    } else if (isLocalImage) {
+                        // Copy image to clipboard as URI for sharing
+                        try {
+                            val imgPath = if (raw.startsWith("file://")) raw.removePrefix("file://") else raw
+                            val imgUri = android.net.Uri.fromFile(java.io.File(imgPath))
+                            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newUri(contentResolver, "FlyShelf Image", imgUri))
+                            Toast.makeText(this, "📷 Image copied to clipboard!", Toast.LENGTH_SHORT).show()
+                        } catch (e: Exception) {
+                            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newPlainText("FlyShelf", raw))
+                            lastCopiedText = raw
+                            Toast.makeText(this, "Path copied!", Toast.LENGTH_SHORT).show()
+                        }
                     } else {
                         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         clipboard.setPrimaryClip(ClipData.newPlainText("FlyShelf", raw))
@@ -441,6 +488,22 @@ class OverlayService : Service() {
         panelView = null; dimView = null; panelParams = null; isPanelVisible = false
         floatingBallView?.animate()?.alpha(1f)?.setDuration(300)?.start()
         scheduleAutoHide()
+    }
+
+    private fun createBadge(index: Int, density: Float, color: Int): View {
+        val badge = TextView(this)
+        badge.text = "${index + 1}"
+        badge.textSize = 9f
+        badge.setTextColor(0xFFFFFFFF.toInt())
+        badge.gravity = Gravity.CENTER
+        badge.typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+        val badgeBg = GradientDrawable()
+        badgeBg.shape = GradientDrawable.OVAL
+        badgeBg.setColor(color)
+        badge.background = badgeBg
+        val bSize = (20 * density).toInt()
+        badge.layoutParams = LinearLayout.LayoutParams(bSize, bSize).apply { rightMargin = (8 * density).toInt() }
+        return badge
     }
 
     fun pulseBall() {

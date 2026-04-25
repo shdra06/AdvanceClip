@@ -280,7 +280,7 @@ namespace AdvanceClip
                         Classes.Logger.LogAction("HOTKEY", $"Target window: 0x{targetWindow:X}");
                         var item = _viewModel.DroppedItems[index];
                         
-                        // Set clipboard directly — no async, no delays
+                        // Set clipboard directly — guard against echo
                         SetWritingClipboard(true);
                         try
                         {
@@ -311,6 +311,7 @@ namespace AdvanceClip
                         keybd_event((byte)VK_MENU, 0, KEYEVENTF_KEYUP, 0);
 
                         // Fire Ctrl+V after a short async pause for key state to propagate
+                        // Also clear the clipboard write guard after delay
                         _ = Task.Run(async () =>
                         {
                             await Task.Delay(50);
@@ -318,6 +319,8 @@ namespace AdvanceClip
                             keybd_event((byte)VK_V, 0, 0, 0);
                             keybd_event((byte)VK_V, 0, KEYEVENTF_KEYUP, 0);
                             keybd_event((byte)VK_CONTROL, 0, KEYEVENTF_KEYUP, 0);
+                            await Task.Delay(500); // Absorb WM_CLIPBOARDUPDATE
+                            SetWritingClipboard(false);
                         });
                     }
                     handled = true;
@@ -1033,8 +1036,8 @@ namespace AdvanceClip
                 // Initialize target on first use
                 if (_scrollTarget < 0) _scrollTarget = sv.VerticalOffset;
 
-                // Accumulate scroll delta — 0.8x for elegant, slower scrolling
-                _scrollTarget -= e.Delta * 0.8;
+                // Accumulate scroll delta — 0.6x for elegant, controlled scrolling
+                _scrollTarget -= e.Delta * 0.6;
                 _scrollTarget = Math.Max(0, Math.Min(_scrollTarget, sv.ScrollableHeight));
 
                 // Start smooth animation loop if not running
@@ -1060,7 +1063,7 @@ namespace AdvanceClip
                         }
 
                         // Lerp for silky smooth deceleration (lower = slower glide)
-                        sv.ScrollToVerticalOffset(current + diff * 0.08);
+                        sv.ScrollToVerticalOffset(current + diff * 0.12);
                     };
                     System.Windows.Media.CompositionTarget.Rendering += _scrollRenderHandler;
                 }

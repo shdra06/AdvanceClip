@@ -386,6 +386,36 @@ namespace AdvanceClip.Classes
                 .Where(u => !string.IsNullOrEmpty(u) && u.StartsWith("http"))
                 .ToArray();
 
+            // ═══ CASE 1: Mobile device with no HTTP server ═══
+            // When a mobile generates a code, it has no localUrl/globalUrl.
+            // We can't POST /api/pair to it — instead, adopt the shared pairing key
+            // directly and register the device locally. The shared key enables cloud sync.
+            if (urls.Length == 0)
+            {
+                Logger.LogAction("PAIR CODE", $"Device {info.deviceName} has no HTTP URLs — performing local-only key adoption");
+                
+                // Adopt the remote device's pairing key as our own (shared room)
+                if (!string.IsNullOrEmpty(info.pairingKey))
+                {
+                    SettingsManager.Current.PairingKey = info.pairingKey;
+                    SettingsManager.Save();
+                    Logger.LogAction("PAIR CODE", $"Adopted pairing key from {info.deviceName}: {info.pairingKey.Substring(0, 8)}...");
+                }
+
+                // Register the remote device in our paired devices list
+                TryPairDevice(info.pairingKey, info.deviceId, info.deviceName, info.deviceType, "cloud");
+
+                // Push our own connection info to Firebase so the mobile can discover us
+                _ = FirebaseSyncManager.PushTunnelUrl(
+                    FirebaseSyncManager.CachedGlobalUrl ?? FirebaseSyncManager.CachedLocalUrl ?? "",
+                    true,
+                    FirebaseSyncManager.CachedLocalUrl ?? "");
+
+                Logger.LogAction("PAIR CODE", $"✅ Local-only paired with {info.deviceName} (key adoption)");
+                return (true, info.deviceName);
+            }
+
+            // ═══ CASE 2: Device has HTTP server — try to reach it ═══
             foreach (var url in urls)
             {
                 try
@@ -421,6 +451,18 @@ namespace AdvanceClip.Classes
                 {
                     Logger.LogAction("PAIR CODE", $"Pair attempt to {url} failed: {ex.Message}");
                 }
+            }
+
+            // ═══ CASE 3: Device has URLs but is unreachable — adopt key anyway ═══
+            // The device was found in Firebase, so the pairing key is valid.
+            // Save it so cloud sync works once the device comes online.
+            if (!string.IsNullOrEmpty(info.pairingKey))
+            {
+                Logger.LogAction("PAIR CODE", $"Device {info.deviceName} unreachable — adopting key for deferred pairing");
+                SettingsManager.Current.PairingKey = info.pairingKey;
+                SettingsManager.Save();
+                TryPairDevice(info.pairingKey, info.deviceId, info.deviceName, info.deviceType, "deferred");
+                return (true, info.deviceName);
             }
 
             return (false, info.deviceName);

@@ -6,13 +6,17 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
-import android.content.ClipboardManager
-import android.content.ClipData
 import android.widget.Toast
 
 class ScreenshotObserver(private val context: Context) : ContentObserver(Handler(Looper.getMainLooper())) {
 
     private var lastScreenshotTime = 0L
+
+    // Latest screenshot path — polled by React Native via AdvanceOverlayModule
+    companion object {
+        @Volatile
+        var latestScreenshotPath: String? = null
+    }
 
     override fun onChange(selfChange: Boolean, uri: Uri?) {
         super.onChange(selfChange, uri)
@@ -36,6 +40,8 @@ class ScreenshotObserver(private val context: Context) : ContentObserver(Handler
                         val lower = path.lowercase()
                         if (lower.contains("screenshot") || lower.contains("screen_shot") || lower.contains("screen shot")) {
                             lastScreenshotTime = now
+                            // Store path for React Native to pick up — NO clipboard touching
+                            latestScreenshotPath = path
                             Toast.makeText(context, "Screenshot detected by FlyShelf", Toast.LENGTH_SHORT).show()
                         }
                     }

@@ -569,6 +569,33 @@ namespace AdvanceClip.ViewModels
             return $"{bytes / (1024.0 * 1024 * 1024):F1}GB";
         }
 
+        // ═══ Cloud Echo Prevention ═══
+        // Tracks content that arrived from Firebase/cloud so HandleDrop doesn't re-push it
+        private static readonly Dictionary<string, long> _recentCloudContent = new();
+        private static readonly object _cloudContentLock = new();
+        
+        /// <summary>Mark content as cloud-sourced so it won't be re-pushed to Firebase.</summary>
+        public void MarkAsCloudSourced(string contentFingerprint)
+        {
+            lock (_cloudContentLock)
+            {
+                _recentCloudContent[contentFingerprint] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                // Prune old entries (older than 30s)
+                var stale = _recentCloudContent.Where(kv => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - kv.Value > 30_000).Select(kv => kv.Key).ToList();
+                foreach (var k in stale) _recentCloudContent.Remove(k);
+            }
+        }
+        
+        /// <summary>Check if content was recently received from cloud (shouldn't be re-pushed).</summary>
+        private bool IsCloudSourced(string contentFingerprint)
+        {
+            lock (_cloudContentLock)
+            {
+                return _recentCloudContent.ContainsKey(contentFingerprint) && 
+                       (DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - _recentCloudContent[contentFingerprint]) < 30_000;
+            }
+        }
+
         /// <summary>
         /// Unified file sync: Cloudflare tunnel → Firebase Storage → log-only fallback.
         /// Replaces 3 previously duplicated sync blocks.
@@ -593,8 +620,9 @@ namespace AdvanceClip.ViewModels
                     return;
                 }
 
-                // PRIORITY 2: Firebase Storage (size-limited)
-                if (fSize > 0 && fSize < maxFirebaseBytes)
+                // PRIORITY 2: Firebase Storage (only for non-image files, size-limited)
+                // Images NEVER go to Firebase Storage — Cloudflare tunnel is required for images
+                if (label != "IMAGE" && fSize > 0 && fSize < maxFirebaseBytes)
                 {
                     AdvanceClip.Classes.Logger.LogAction($"{label} SYNC", $"Uploading '{Path.GetFileName(filePath)}' ({FormatFileSize(fSize)}) to Firebase Storage");
                     string fbUrl = await AdvanceClip.Classes.FirebaseSyncManager.UploadFileToStorageAsync(filePath);
@@ -643,7 +671,7 @@ namespace AdvanceClip.ViewModels
 
         public Visibility ShelfVisibility => DroppedItems.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
 
-        public void HandleDrop(IDataObject data, bool forceClipboardSync = false)
+        public void HandleDrop(IDataObject data, bool forceClipboardSync = false, bool skipFirebaseSync = false)
         {
             string[] files = null;
             
@@ -740,7 +768,7 @@ namespace AdvanceClip.ViewModels
                         });
                     }
                     
-                    if (AdvanceClip.Classes.SettingsManager.Current.EnableGlobalFirebaseSync)
+                    if (AdvanceClip.Classes.SettingsManager.Current.EnableGlobalFirebaseSync && !skipFirebaseSync)
                     {
                         var archPath = AdvanceClip.Classes.SettingsManager.Current.CustomArchiveExtractionPath;
                         if (string.IsNullOrWhiteSpace(archPath)) archPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "AdvanceClip", "Extracted");
@@ -809,7 +837,7 @@ namespace AdvanceClip.ViewModels
                     
                     if (forceClipboardSync)
                     {
-                        Application.Current.Dispatcher.InvokeAsync(() =>
+                        Application.Current.Dispatcher.InvokeAsync(async () =>
                         {
                             try
                             {
@@ -817,6 +845,10 @@ namespace AdvanceClip.ViewModels
                                 var dropList = new System.Collections.Specialized.StringCollection();
                                 dropList.Add(file);
                                 System.Windows.Clipboard.SetFileDropList(dropList);
+                                // Delay clearing the flag — Windows dispatches clipboard change
+                                // notifications asynchronously, so OnClipboardChanged fires AFTER
+                                // SetWritingClipboard(false) if we clear immediately.
+                                await System.Threading.Tasks.Task.Delay(500);
                             }
                             catch { }
                             finally { MainWindow.SetWritingClipboard(false); }
@@ -903,14 +935,28 @@ namespace AdvanceClip.ViewModels
                                         System.Windows.Clipboard.SetImage(bitmapImage);
                                     }
                                     catch { }
-                                    finally { MainWindow.SetWritingClipboard(false); }
+                                    // Delay clearing — absorb async WM_CLIPBOARDUPDATE
+                                    _ = System.Threading.Tasks.Task.Run(async () =>
+                                    {
+                                        await System.Threading.Tasks.Task.Delay(500);
+                                        MainWindow.SetWritingClipboard(false);
+                                    });
                                 }
                                 // Sync image to devices via unified helper
-                                if (AdvanceClip.Classes.SettingsManager.Current.EnableGlobalFirebaseSync)
+                                if (AdvanceClip.Classes.SettingsManager.Current.EnableGlobalFirebaseSync && !skipFirebaseSync)
                                 {
-                                    string capturedTempFile = tempFile;
-                                    var capturedItem = item;
-                                    _ = System.Threading.Tasks.Task.Run(async () => await SyncFileToDevicesAsync(capturedTempFile, capturedItem, maxFirebaseBytes: 5 * 1024 * 1024, label: "IMAGE"));
+                                    // Check if this image came from cloud — don't re-push
+                                    string imgFp = $"IMG::{item.FormattedSize}";
+                                    if (!IsCloudSourced(imgFp))
+                                    {
+                                        string capturedTempFile = tempFile;
+                                        var capturedItem = item;
+                                        _ = System.Threading.Tasks.Task.Run(async () => await SyncFileToDevicesAsync(capturedTempFile, capturedItem, maxFirebaseBytes: 5 * 1024 * 1024, label: "IMAGE"));
+                                    }
+                                    else
+                                    {
+                                        AdvanceClip.Classes.Logger.LogAction("IMAGE SYNC", "Skipped — image arrived from cloud (echo prevention)");
+                                    }
                                 }
                             });
                         }
@@ -1071,9 +1117,18 @@ namespace AdvanceClip.ViewModels
                         item.EvaluateSmartActions();
                         
                         // Sync to all devices via Firebase + Cloudflare
-                        if (AdvanceClip.Classes.SettingsManager.Current.EnableGlobalFirebaseSync)
+                        if (AdvanceClip.Classes.SettingsManager.Current.EnableGlobalFirebaseSync && !skipFirebaseSync)
                         {
-                            _ = AdvanceClip.Classes.FirebaseSyncManager.PushToGlobalSync(item);
+                            // Check if this text came from cloud — don't re-push
+                            string txtFp = $"TXT::{(item.RawContent ?? "").Substring(0, Math.Min(200, (item.RawContent ?? "").Length))}";
+                            if (!IsCloudSourced(txtFp))
+                            {
+                                _ = AdvanceClip.Classes.FirebaseSyncManager.PushToGlobalSync(item);
+                            }
+                            else
+                            {
+                                AdvanceClip.Classes.Logger.LogAction("TEXT SYNC", "Skipped — text arrived from cloud (echo prevention)");
+                            }
                         }
 
                         // Dispatch ONLY the UI mutations back to the UI thread
@@ -1099,7 +1154,12 @@ namespace AdvanceClip.ViewModels
                                     System.Windows.Clipboard.SetText(item.RawContent);
                                 }
                                 catch { }
-                                finally { MainWindow.SetWritingClipboard(false); }
+                                // Delay clearing — absorb async WM_CLIPBOARDUPDATE
+                                _ = System.Threading.Tasks.Task.Run(async () =>
+                                {
+                                    await System.Threading.Tasks.Task.Delay(500);
+                                    MainWindow.SetWritingClipboard(false);
+                                });
                             }
                             
                             OnPropertyChanged(nameof(ShelfVisibility));
