@@ -36,6 +36,7 @@ namespace AdvanceClip.Windows
             _timer.Start();
 
             Show();
+            Classes.Logger.LogAction("WIDGET", "TaskbarWindow created and Show() called");
         }
 
         protected override void OnActivated(EventArgs e)
@@ -56,10 +57,7 @@ namespace AdvanceClip.Windows
         {
             switch (msg)
             {
-                case 0x003D: // WM_GETOBJECT
-                case 0x0018: // WM_SHOWWINDOW
-                case 0x0046: // WM_WINDOWPOSCHANGING
-                case 0x0083: // WM_NCCALCSIZE
+                case 0x003D: // WM_GETOBJECT — suppress accessibility queries
                 case 0x0281: // WM_IME_SETCONTEXT
                 case 0x0282: // WM_IME_NOTIFY
                     handled = true;
@@ -135,6 +133,14 @@ namespace AdvanceClip.Windows
                 IntPtr taskbarWindowHandle = interop.Handle;
                 IntPtr taskbarHandle = GetSelectedTaskbarHandle(out bool isMainTaskbarSelected);
 
+                Classes.Logger.LogAction("WIDGET", $"SetupWindow: widgetHwnd={taskbarWindowHandle}, taskbarHwnd={taskbarHandle}, isMain={isMainTaskbarSelected}");
+
+                if (taskbarHandle == IntPtr.Zero)
+                {
+                    Classes.Logger.LogAction("WIDGET", "ERROR: Could not find taskbar window handle — widget will not embed");
+                    return;
+                }
+
                 int style = GetWindowLong(taskbarWindowHandle, GWL_STYLE);
                 style = (style & ~WS_POPUP) | WS_CHILD;
                 SetWindowLong(taskbarWindowHandle, GWL_STYLE, style);
@@ -146,8 +152,12 @@ namespace AdvanceClip.Windows
                 SetParent(taskbarWindowHandle, taskbarHandle); 
 
                 CalculateAndSetPosition(taskbarHandle, taskbarWindowHandle);
+                Classes.Logger.LogAction("WIDGET", "SetupWindow complete — widget embedded in taskbar");
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Classes.Logger.LogAction("WIDGET", $"SetupWindow FAILED: {ex.Message}");
+            }
         }
 
         private void UpdateWindowRegion(IntPtr windowHandle, params Rect[] rects)

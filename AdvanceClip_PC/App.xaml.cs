@@ -259,8 +259,6 @@ public partial class App : Application
                 // registers in the Loaded event — hiding immediately kills the registration.
                 await System.Threading.Tasks.Task.Delay(500);
                 MainWindow.Hide();
-                
-                var taskbar = new AdvanceClip.Windows.TaskbarWindow();
             }, System.Windows.Threading.DispatcherPriority.Background);
         }
         catch (Exception ex)
