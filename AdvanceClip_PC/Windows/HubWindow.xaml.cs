@@ -1163,6 +1163,11 @@ namespace AdvanceClip.Windows
                     Windows.ToastWindow.ShowToast($"✅ Paired with {deviceName}!");
                     RefreshPairedDevicesList();
                     RemoteCodeInput.Text = "";
+
+                    // Restart Firebase listener so it reads from the newly adopted pairing key scope
+                    _viewModel.CloudListener?.StopPolling();
+                    _viewModel.CloudListener?.StartPolling();
+                    Logger.LogAction("PAIR CODE", "Firebase listener restarted for new pairing key scope");
                 }
                 else if (!string.IsNullOrEmpty(deviceName))
                 {

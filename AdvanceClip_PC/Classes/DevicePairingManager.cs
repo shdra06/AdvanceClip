@@ -437,10 +437,25 @@ namespace AdvanceClip.Classes
 
                     if (response.IsSuccessStatusCode)
                     {
-                        // Also register the remote device locally
+                        // CRITICAL: Adopt the remote device's pairing key so both PCs
+                        // share the same Firebase scope for clipboard sync and device discovery
+                        if (!string.IsNullOrEmpty(info.pairingKey))
+                        {
+                            SettingsManager.Current.PairingKey = info.pairingKey;
+                            SettingsManager.Save();
+                            Logger.LogAction("PAIR CODE", $"Adopted pairing key from {info.deviceName}: {info.pairingKey.Substring(0, 8)}...");
+                        }
+
+                        // Now register the remote device locally (TryPairDevice checks key match)
                         TryPairDevice(info.pairingKey, info.deviceId, info.deviceName, info.deviceType,
                             url.Contains("trycloudflare") ? "cloudflare" : "lan");
                         
+                        // Re-register ourselves in Firebase under the shared pairing key scope
+                        _ = FirebaseSyncManager.PushTunnelUrl(
+                            FirebaseSyncManager.CachedGlobalUrl ?? FirebaseSyncManager.CachedLocalUrl ?? "",
+                            true,
+                            FirebaseSyncManager.CachedLocalUrl ?? "");
+
                         Logger.LogAction("PAIR CODE", $"✅ Paired with {info.deviceName} via {url}");
                         return (true, info.deviceName);
                     }
