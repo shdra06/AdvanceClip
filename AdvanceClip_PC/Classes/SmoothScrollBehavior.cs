@@ -7,13 +7,9 @@ using System.Windows.Media;
 namespace AdvanceClip.Classes
 {
     /// <summary>
-    /// Smooth scrolling via a single CompositionTarget.Rendering loop per ScrollViewer.
-    /// Uses time-based exponential decay for buttery smooth, consistent deceleration
-    /// regardless of frame rate. Only one handler is ever active per ScrollViewer.
-    /// 
-    /// Trackpad-aware: keeps the render loop alive for a grace period after reaching
-    /// the target, so late-arriving fling events merge into the current animation
-    /// instead of causing a "pause → jitter" restart.
+    /// Velocity-based smooth scrolling (like iOS/Android physics).
+    /// Each wheel event adds velocity. Each frame moves by velocity × deltaTime,
+    /// then decays velocity with friction. No "long tail" — stops cleanly.
     /// </summary>
     public static class SmoothScrollBehavior
     {
@@ -30,27 +26,25 @@ namespace AdvanceClip.Classes
         private static readonly DependencyProperty ScrollDataProperty =
             DependencyProperty.RegisterAttached("ScrollData", typeof(ScrollData), typeof(SmoothScrollBehavior));
 
-        // Pixels per wheel notch — controls how far each scroll tick moves
-        private const double PIXELS_PER_NOTCH = 70.0;
+        // Velocity added per wheel notch (pixels/second)
+        private const double VELOCITY_PER_NOTCH = 800.0;
 
-        // Decay half-life in seconds — how quickly the scroll decelerates
-        private const double DECAY_HALF_LIFE = 0.10;
+        // Friction coefficient per second — velocity is multiplied by this^dt each frame
+        // 0.01 means velocity drops to 1% after 1 second (stops in ~0.3s)
+        private const double FRICTION_PER_SECOND = 0.005;
 
-        // Stop threshold in pixels — snap to target when closer than this
-        private const double SNAP_THRESHOLD = 0.4;
+        // Maximum velocity cap — prevents insane accumulation from rapid flinging
+        private const double MAX_VELOCITY = 5000.0;
 
-        // Grace period after reaching target — absorbs late trackpad fling events
-        // without restarting the animation (prevents pause-jitter at end of fling)
-        private const double GRACE_PERIOD_SECONDS = 0.25;
+        // Stop when velocity drops below this (pixels/second)
+        private const double STOP_VELOCITY = 15.0;
 
         private class ScrollData
         {
-            public double TargetOffset;
+            public double Velocity;       // Current scroll velocity in pixels/second
             public EventHandler? RenderHandler;
             public bool IsActive;
             public DateTime LastFrameTime;
-            public DateTime LastWheelTime;    // When the last wheel event arrived
-            public bool IsInGracePeriod;      // True when animation reached target but grace window is open
         }
 
         private static void OnIsEnabledChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
@@ -79,10 +73,9 @@ namespace AdvanceClip.Classes
             {
                 var data = new ScrollData
                 {
-                    TargetOffset = sv.VerticalOffset,
+                    Velocity = 0,
                     IsActive = false,
-                    LastFrameTime = DateTime.UtcNow,
-                    LastWheelTime = DateTime.UtcNow
+                    LastFrameTime = DateTime.UtcNow
                 };
                 sv.SetValue(ScrollDataProperty, data);
             }
@@ -103,25 +96,23 @@ namespace AdvanceClip.Classes
                 var data = sv.GetValue(ScrollDataProperty) as ScrollData;
                 if (data == null)
                 {
-                    data = new ScrollData { TargetOffset = sv.VerticalOffset };
+                    data = new ScrollData { Velocity = 0 };
                     sv.SetValue(ScrollDataProperty, data);
                 }
 
-                data.LastWheelTime = DateTime.UtcNow;
+                // Each notch = 120 delta units. Convert to velocity.
+                // Negative delta = scroll down (positive velocity moves content up)
+                double notches = -(e.Delta / 120.0);
+                double addedVelocity = notches * VELOCITY_PER_NOTCH;
 
-                // If we were in grace period, exit it — new input means real scrolling
-                data.IsInGracePeriod = false;
+                // If scrolling in the same direction, add velocity. If reversing, reset.
+                if (Math.Sign(addedVelocity) == Math.Sign(data.Velocity))
+                    data.Velocity += addedVelocity;
+                else
+                    data.Velocity = addedVelocity;
 
-                // Sync target with current position if animation was fully idle
-                if (!data.IsActive)
-                    data.TargetOffset = sv.VerticalOffset;
-
-                // Accumulate: negative delta = scroll down, positive = scroll up
-                double delta = -(e.Delta / 120.0) * PIXELS_PER_NOTCH;
-                data.TargetOffset += delta;
-
-                // Clamp to valid range
-                data.TargetOffset = Math.Max(0, Math.Min(data.TargetOffset, sv.ScrollableHeight));
+                // Cap velocity
+                data.Velocity = Math.Max(-MAX_VELOCITY, Math.Min(data.Velocity, MAX_VELOCITY));
 
                 // Start the render loop if not already running
                 if (!data.IsActive)
@@ -137,55 +128,45 @@ namespace AdvanceClip.Classes
         private static void OnRenderFrame(ScrollViewer sv, ScrollData data)
         {
             var now = DateTime.UtcNow;
-            double dtSeconds = (now - data.LastFrameTime).TotalSeconds;
+            double dt = (now - data.LastFrameTime).TotalSeconds;
             data.LastFrameTime = now;
 
-            // Clamp delta-time to avoid huge jumps after app freeze/sleep
-            if (dtSeconds > 0.1) dtSeconds = 0.016;
+            // Clamp dt to avoid huge jumps after app freeze/sleep
+            if (dt > 0.1) dt = 0.016;
+            if (dt <= 0) return;
 
-            double current = sv.VerticalOffset;
-            double diff = data.TargetOffset - current;
+            // Apply friction: velocity decays exponentially over time
+            // v' = v * friction^dt
+            data.Velocity *= Math.Pow(FRICTION_PER_SECOND, dt);
 
-            if (Math.Abs(diff) < SNAP_THRESHOLD)
+            // Stop when velocity is negligible
+            if (Math.Abs(data.Velocity) < STOP_VELOCITY)
             {
-                // Close enough — snap to target
-                if (Math.Abs(diff) > 0.01)
-                    sv.ScrollToVerticalOffset(data.TargetOffset);
-
-                // Enter grace period instead of stopping immediately.
-                // This absorbs late trackpad fling events that arrive after
-                // the animation visually completed.
-                if (!data.IsInGracePeriod)
-                {
-                    data.IsInGracePeriod = true;
-                }
-
-                // Check if grace period has expired (no new wheel events)
-                double sinceLastWheel = (now - data.LastWheelTime).TotalSeconds;
-                if (sinceLastWheel > GRACE_PERIOD_SECONDS)
-                {
-                    StopAnimation(sv);
-                }
+                StopAnimation(sv);
                 return;
             }
 
-            // If we were in grace period but diff grew (new input arrived), exit grace
-            data.IsInGracePeriod = false;
+            // Move: position += velocity * dt
+            double displacement = data.Velocity * dt;
+            double newOffset = sv.VerticalOffset + displacement;
 
-            // Exponential decay: move a fraction of the remaining distance each frame
-            // fraction = 1 - 2^(-dt/halfLife) — frame-rate independent
-            double fraction = 1.0 - Math.Pow(2.0, -dtSeconds / DECAY_HALF_LIFE);
-            double next = current + diff * fraction;
-            sv.ScrollToVerticalOffset(next);
+            // Clamp to valid range
+            newOffset = Math.Max(0, Math.Min(newOffset, sv.ScrollableHeight));
+
+            // If we hit the edge, kill velocity (no bounce)
+            if (newOffset <= 0 || newOffset >= sv.ScrollableHeight)
+                data.Velocity = 0;
+
+            sv.ScrollToVerticalOffset(newOffset);
         }
 
         private static void StopAnimation(ScrollViewer sv)
         {
             var data = sv.GetValue(ScrollDataProperty) as ScrollData;
-            if (data != null && data.IsActive)
+            if (data != null)
             {
                 data.IsActive = false;
-                data.IsInGracePeriod = false;
+                data.Velocity = 0;
                 if (data.RenderHandler != null)
                 {
                     CompositionTarget.Rendering -= data.RenderHandler;
