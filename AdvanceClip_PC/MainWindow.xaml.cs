@@ -1007,67 +1007,20 @@ namespace AdvanceClip
             else return FindVisualParent<T>(parentObject);
         }
 
-        // Smooth scroll state for main clipboard list
-        private double _scrollTarget = -1;
-        private bool _scrollAnimating = false;
-        private EventHandler? _scrollRenderHandler;
-
         /// <summary>
-        /// Resets the smooth scroll target so it doesn't fight ScrollIntoView from keyboard nav.
+        /// Called by keyboard navigation to prevent scroll fight with ScrollIntoView.
+        /// The global SmoothScrollBehavior handles scroll animation automatically.
         /// </summary>
         internal void ResetSmoothScroll()
         {
-            _scrollTarget = -1;
-            if (_scrollRenderHandler != null)
-            {
-                System.Windows.Media.CompositionTarget.Rendering -= _scrollRenderHandler;
-                _scrollRenderHandler = null;
-                _scrollAnimating = false;
-            }
+            // No-op: SmoothScrollBehavior auto-syncs target on next wheel input
         }
 
         private void ShelfListView_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
         {
-            var sv = FindVisualChild<System.Windows.Controls.ScrollViewer>((DependencyObject)sender);
-            if (sv != null)
-            {
-                e.Handled = true;
-
-                // Initialize target on first use
-                if (_scrollTarget < 0) _scrollTarget = sv.VerticalOffset;
-
-                // Accumulate scroll delta — 0.6x for elegant, controlled scrolling
-                _scrollTarget -= e.Delta * 0.6;
-                _scrollTarget = Math.Max(0, Math.Min(_scrollTarget, sv.ScrollableHeight));
-
-                // Start smooth animation loop if not running
-                if (!_scrollAnimating)
-                {
-                    _scrollAnimating = true;
-                    _scrollRenderHandler = (s2, e2) =>
-                    {
-                        double current = sv.VerticalOffset;
-                        double diff = _scrollTarget - current;
-
-                        if (Math.Abs(diff) < 0.3)
-                        {
-                            sv.ScrollToVerticalOffset(_scrollTarget);
-                            _scrollAnimating = false;
-                            // CRITICAL: Unsubscribe so we don't fight ScrollIntoView from keyboard nav
-                            if (_scrollRenderHandler != null)
-                            {
-                                System.Windows.Media.CompositionTarget.Rendering -= _scrollRenderHandler;
-                                _scrollRenderHandler = null;
-                            }
-                            return;
-                        }
-
-                        // Lerp for silky smooth deceleration (lower = slower glide)
-                        sv.ScrollToVerticalOffset(current + diff * 0.12);
-                    };
-                    System.Windows.Media.CompositionTarget.Rendering += _scrollRenderHandler;
-                }
-            }
+            // Handled by global SmoothScrollBehavior via App.xaml attached property.
+            // This handler exists only to satisfy the XAML event binding.
+            // Do NOT set e.Handled here — let the ScrollViewer's behavior handle it.
         }
 
         private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject

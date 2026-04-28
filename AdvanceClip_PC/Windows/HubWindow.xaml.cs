@@ -263,17 +263,9 @@ namespace AdvanceClip.Windows
         // Smooth scrolling for clipboard ListView
         private void HubListView_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
         {
-            if (sender is ListView listView)
-            {
-                var scrollViewer = FindVisualChild<ScrollViewer>(listView);
-                if (scrollViewer != null)
-                {
-                    // Scroll 60 pixels per wheel tick for smooth feel
-                    double scrollAmount = e.Delta > 0 ? -60 : 60;
-                    scrollViewer.ScrollToVerticalOffset(scrollViewer.VerticalOffset + scrollAmount);
-                    e.Handled = true;
-                }
-            }
+            // Handled by global SmoothScrollBehavior via App.xaml attached property.
+            // This handler exists only to satisfy the XAML event binding.
+            // Do NOT set e.Handled here — let the ScrollViewer's behavior handle it.
         }
 
         private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject

@@ -52,16 +52,12 @@ namespace AdvanceClip.ViewModels
                 {
                     try
                     {
-                        var bmp = new BitmapImage();
-                        bmp.BeginInit();
-                        bmp.CacheOption = BitmapCacheOption.OnLoad;
-                        bmp.DecodePixelWidth = 250;
-                        bmp.UriSource = new Uri(item.FilePath);
-                        bmp.EndInit();
-                        bmp.Freeze();
-                        item.Icon = bmp;
+                        item.Icon = LoadImageThumbnail(item.FilePath);
                     }
-                    catch { }
+                    catch (Exception imgEx)
+                    {
+                        Classes.Logger.LogAction("ICON LOAD", $"Failed for {item.FilePath}: {imgEx.Message}");
+                    }
                 }
                 else if (item.ItemType == ClipboardItemType.File || item.ItemType == ClipboardItemType.Document ||
                          item.ItemType == ClipboardItemType.Pdf || item.ItemType == ClipboardItemType.Archive ||
@@ -889,12 +885,37 @@ namespace AdvanceClip.ViewModels
                     item.FormattedSize = $"{bmp.PixelWidth}x{bmp.PixelHeight}";
                     
                     item.EvaluateSmartActions();
+
+                    // Set an immediate thumbnail from the raw bitmap so the card
+                    // never renders blank while the background PNG save runs
+                    var capturedBmp = bmp.Clone(); 
+                    capturedBmp.Freeze();
+                    try
+                    {
+                        var immediateThumbnail = new BitmapImage();
+                        using (var ms = new MemoryStream())
+                        {
+                            var enc = new PngBitmapEncoder();
+                            enc.Frames.Add(BitmapFrame.Create(capturedBmp));
+                            enc.Save(ms);
+                            ms.Position = 0;
+                            immediateThumbnail.BeginInit();
+                            immediateThumbnail.CacheOption = BitmapCacheOption.OnLoad;
+                            immediateThumbnail.DecodePixelWidth = 250;
+                            immediateThumbnail.StreamSource = ms;
+                            immediateThumbnail.EndInit();
+                        }
+                        immediateThumbnail.Freeze();
+                        item.Icon = immediateThumbnail;
+                    }
+                    catch (Exception thumbEx)
+                    {
+                        Classes.Logger.LogAction("ICON IMMEDIATE", $"Inline thumbnail failed: {thumbEx.Message}");
+                    }
                     
                     // Standard Stack Logic (Index 0)
                     DroppedItems.Insert(0, item);
                     PruneOldItems();
-                    var capturedBmp = bmp.Clone(); 
-                    capturedBmp.Freeze(); 
 
                     System.Threading.Tasks.Task.Run(() => 
                     {
@@ -914,15 +935,16 @@ namespace AdvanceClip.ViewModels
 
                             Application.Current.Dispatcher.InvokeAsync(() => 
                             {
-                                var bitmapImage = new BitmapImage();
-                                bitmapImage.BeginInit();
-                                bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
-                                bitmapImage.DecodePixelWidth = 250; // Decode at thumbnail size, not full resolution
-                                bitmapImage.UriSource = new Uri(tempFile);
-                                bitmapImage.EndInit();
-                                bitmapImage.Freeze();
-                                
-                                item.Icon = bitmapImage;
+                                try
+                                {
+                                    var bitmapImage = LoadImageThumbnail(tempFile);
+                                    if (bitmapImage != null)
+                                        item.Icon = bitmapImage;
+                                }
+                                catch (Exception iconEx)
+                                {
+                                    Classes.Logger.LogAction("ICON FILE", $"Failed to load saved thumbnail: {iconEx.Message}");
+                                }
                                 item.FilePath = tempFile;
                                 item.ScanForQRCodeAsync(tempFile);
                                 OnPropertyChanged(nameof(ShelfVisibility));
@@ -932,7 +954,7 @@ namespace AdvanceClip.ViewModels
                                     try
                                     {
                                         MainWindow.SetWritingClipboard(true);
-                                        System.Windows.Clipboard.SetImage(bitmapImage);
+                                        System.Windows.Clipboard.SetImage(item.Icon);
                                     }
                                     catch { }
                                     // Delay clearing — absorb async WM_CLIPBOARDUPDATE
@@ -1186,6 +1208,28 @@ namespace AdvanceClip.ViewModels
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         static extern bool DestroyIcon(IntPtr hIcon);
+
+        /// <summary>
+        /// Reliably loads an image file as a 250px-wide thumbnail BitmapImage.
+        /// Uses StreamSource (not UriSource) to avoid URI-related loading failures.
+        /// </summary>
+        private static BitmapImage? LoadImageThumbnail(string filePath)
+        {
+            if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
+                return null;
+
+            var bmp = new BitmapImage();
+            using (var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            {
+                bmp.BeginInit();
+                bmp.CacheOption = BitmapCacheOption.OnLoad;
+                bmp.DecodePixelWidth = 250;
+                bmp.StreamSource = fs;
+                bmp.EndInit();
+            }
+            bmp.Freeze();
+            return bmp;
+        }
 
         private BitmapImage? GetIcon(string filePath)
         {
