@@ -66,7 +66,7 @@ class AdvanceOverlayModule(reactContext: ReactApplicationContext) : ReactContext
             val obj = org.json.JSONObject()
             obj.put("Raw", rawText)
             obj.put("Title", rawText.take(60))
-            obj.put("Source", source)
+            obj.put("SourceDeviceName", source)
             // Auto-detect type: file paths ending in image extensions or local cache paths
             val lower = rawText.lowercase()
             val isImage = lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".webp") || lower.contains("/image_cache/") || lower.contains("/sync_cache/")

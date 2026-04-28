@@ -287,6 +287,7 @@ class OverlayService : Service() {
                 val isPdfFile = lowerTitle.endsWith(".pdf")
                 val isImage = clipType == "Image" || clipType == "ImageLink" || clipType == "QRCode"
                 val isLocalImage = isImage && (raw.startsWith("/") || raw.startsWith("file://"))
+                val isRemoteImage = isImage && raw.startsWith("http")
 
                 val clipCard = LinearLayout(this)
                 clipCard.orientation = LinearLayout.HORIZONTAL
@@ -325,7 +326,6 @@ class OverlayService : Service() {
                                 thumbLp.rightMargin = (8 * density).toInt()
                                 clipCard.addView(imgView, thumbLp)
                             } else {
-                                // Bitmap decode failed — show fallback badge
                                 val badge = createBadge(i, density, 0xFF8B5CF6.toInt())
                                 clipCard.addView(badge)
                             }
@@ -337,13 +337,55 @@ class OverlayService : Service() {
                         val badge = createBadge(i, density, 0xFF8B5CF6.toInt())
                         clipCard.addView(badge)
                     }
+                } else if (isRemoteImage) {
+                    // Show placeholder badge, then async download thumbnail
+                    val imgView = ImageView(this)
+                    imgView.scaleType = ImageView.ScaleType.CENTER_CROP
+                    val imgBg = GradientDrawable()
+                    imgBg.cornerRadius = 8f * density
+                    imgBg.setColor(0x30A78BFA)
+                    imgView.background = imgBg
+                    imgView.clipToOutline = true
+                    imgView.outlineProvider = object : android.view.ViewOutlineProvider() {
+                        override fun getOutline(view: View, outline: android.graphics.Outline) {
+                            outline.setRoundRect(0, 0, view.width, view.height, 8f * density)
+                        }
+                    }
+                    // Set placeholder icon
+                    imgView.setImageResource(android.R.drawable.ic_menu_gallery)
+                    imgView.setColorFilter(0xAAFFFFFF.toInt())
+                    val thumbSize = (40 * density).toInt()
+                    val thumbLp = LinearLayout.LayoutParams(thumbSize, thumbSize)
+                    thumbLp.rightMargin = (8 * density).toInt()
+                    clipCard.addView(imgView, thumbLp)
+                    // Async load from URL
+                    Thread {
+                        try {
+                            val url = java.net.URL(raw)
+                            val conn = url.openConnection()
+                            conn.connectTimeout = 3000
+                            conn.readTimeout = 5000
+                            val input = conn.getInputStream()
+                            val opts = android.graphics.BitmapFactory.Options()
+                            opts.inSampleSize = 4
+                            val bmp = android.graphics.BitmapFactory.decodeStream(input, null, opts)
+                            input.close()
+                            if (bmp != null) {
+                                Handler(Looper.getMainLooper()).post {
+                                    imgView.setImageBitmap(bmp)
+                                    imgView.setColorFilter(null)
+                                }
+                            }
+                        } catch (e: Exception) {}
+                    }.start()
                 } else {
                     val badge = createBadge(i, density, if (isWordFile) 0xFF3B82F6.toInt() else if (isPdfFile) 0xFFEF4444.toInt() else if (isImage) 0xFF8B5CF6.toInt() else 0xFF6C63FF.toInt())
                     clipCard.addView(badge)
                 }
 
                 val clipText = TextView(this)
-                clipText.text = if (isImage) "📷 ${clipTitle.take(35)}" else clipTitle.take(48)
+                // Show a clean label for images instead of raw URL/path
+                clipText.text = if (isImage) "📷 ${obj.optString("SourceDeviceName", "").let { if (it.isNotEmpty()) "from $it" else clipTitle.take(35) }}" else clipTitle.take(48)
                 clipText.textSize = 12f
                 clipText.setTextColor(0xDDFFFFFF.toInt())
                 clipText.maxLines = 2

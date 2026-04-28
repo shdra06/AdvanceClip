@@ -193,10 +193,20 @@ export default function SyncScreen() {
   // ─── Bidirectional Overlay Sync ───
   useEffect(() => {
     if (Platform.OS !== 'android' || !AdvanceOverlay || !isFloatingBallEnabled || !deviceName) return;
+    // Immediately configure overlay with PC URL for seamless sync
+    (async () => {
+      try {
+        const targetUrl = await getCachedPcUrl();
+        if (targetUrl) AdvanceOverlay.setPcUrl(targetUrl);
+        if (deviceName) AdvanceOverlay.setDeviceName(deviceName);
+      } catch {}
+    })();
     const pollInterval = setInterval(async () => {
       try {
         const copiedText = await AdvanceOverlay.getLastCopiedFromOverlay();
         if (copiedText && copiedText.trim().length > 0) {
+          // Fingerprint to prevent echo back from Firebase
+          sentContentFingerprintsRef.current.add(copiedText.substring(0, 200));
           const newItem: ClipItem = {
             Title: copiedText.substring(0, 80), Type: 'Text', Raw: copiedText,
             Time: new Date().toLocaleString(), SourceDeviceName: deviceName,
@@ -339,24 +349,24 @@ export default function SyncScreen() {
     }
     const pk = pairingKeyRef.current;
     if (!pk) { setClips([]); return; }
-    const clipsRef = query(ref(database, `clipboard/${pk}`), orderByChild('Timestamp'), limitToLast(30));
+    const clipsRef = query(ref(database, `clipboard/${pk}`), orderByChild('Timestamp'), limitToLast(5));
     const unsubscribeFeed = onValue(clipsRef, (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.val();
         const allParsed: ClipItem[] = Object.keys(data).map(k => ({ id: k, ...data[k] } as ClipItem)).reverse();
-        // Filter out items sent by THIS device — they have local paths that can't render
+        // Filter out items sent by THIS device to prevent echo loops
         const myName = deviceName || '';
         const parsed = allParsed.filter(c => {
+          // Check 1: If this device sent it (by name match), filter it out
           if (c.SourceDeviceType === 'Mobile' && myName && c.SourceDeviceName === myName) {
-            // Only filter out own IMAGE items (they have local file paths that can't render)
-            // Text/URL/Code items sent by this phone are fine to show
-            const isImageType = c.Type === 'Image' || c.Type === 'ImageLink' || c.Type === 'QRCode';
-            const hasLocalPath = (c.Raw || '').startsWith('/') || (c.Raw || '').startsWith('file://') || (c.Raw || '').startsWith('flyshelf://');
-            if (isImageType || hasLocalPath) {
-              syncLog('FIREBASE', `Filtered own image: ${(c.Title || '').substring(0, 40)}`);
-              return false;
-            }
-            // Own text items are valid — keep them
+            syncLog('FIREBASE', `Filtered own item: ${(c.Title || '').substring(0, 40)}`);
+            return false;
+          }
+          // Check 2: If the raw content matches something we recently sent, it's an echo
+          const rawFp = (c.Raw || '').substring(0, 200);
+          if (rawFp && sentContentFingerprintsRef.current.has(rawFp)) {
+            syncLog('FIREBASE', `Filtered echo (fingerprint match): ${(c.Title || '').substring(0, 40)}`);
+            return false;
           }
           return true;
         });
@@ -602,6 +612,8 @@ export default function SyncScreen() {
               const isOwnEcho = (latest.SourceDeviceName && deviceName && latest.SourceDeviceName === deviceName) || (latest.SourceDeviceType === 'Mobile') || sentContentFingerprintsRef.current.has(rawFingerprint);
 
               if (!isOwnEcho) {
+                // Fingerprint incoming PC content so it doesn't get re-captured and sent back
+                sentContentFingerprintsRef.current.add(rawFingerprint);
                 syncLog('PC-POLL', `New from PC: ${latest.Type} - ${(latest.Title || '').substring(0, 50)}`);
                 if (latest.Type === 'Text' || latest.Type === 'Code' || latest.Type === 'Url') {
                   const latestRaw = latest.Raw;
