@@ -964,8 +964,6 @@ namespace AdvanceClip
                 }
 
                 ShelfListView.SelectedIndex = newIdx;
-                // Kill any running smooth scroll animation so it doesn't fight ScrollIntoView
-                ResetSmoothScroll();
                 // ScrollIntoView MUST come first — it forces the virtualizer to create the container
                 ShelfListView.ScrollIntoView(ShelfListView.Items[newIdx]);
                 // Dispatch focus to next frame so the container is fully realized
@@ -1007,10 +1005,6 @@ namespace AdvanceClip
             else return FindVisualParent<T>(parentObject);
         }
 
-        /// <summary>
-        /// Called by keyboard navigation. No-op — native scrolling handles everything.
-        /// </summary>
-        internal void ResetSmoothScroll() { }
 
         private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
         {
