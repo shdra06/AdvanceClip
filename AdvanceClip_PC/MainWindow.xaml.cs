@@ -1008,20 +1008,9 @@ namespace AdvanceClip
         }
 
         /// <summary>
-        /// Called by keyboard navigation to prevent scroll fight with ScrollIntoView.
-        /// The global SmoothScrollBehavior handles scroll animation automatically.
+        /// Called by keyboard navigation. No-op — native scrolling handles everything.
         /// </summary>
-        internal void ResetSmoothScroll()
-        {
-            // No-op: SmoothScrollBehavior auto-syncs target on next wheel input
-        }
-
-        private void ShelfListView_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
-        {
-            // Handled by global SmoothScrollBehavior via App.xaml attached property.
-            // This handler exists only to satisfy the XAML event binding.
-            // Do NOT set e.Handled here — let the ScrollViewer's behavior handle it.
-        }
+        internal void ResetSmoothScroll() { }
 
         private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
         {

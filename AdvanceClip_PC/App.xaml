@@ -139,9 +139,8 @@
                 </Style.Triggers>
             </Style>
 
-            <!-- Global Smooth Scrolling — applies to ALL ScrollViewers automatically -->
+            <!-- Native pixel-based scrolling — same as settings tab -->
             <Style TargetType="ScrollViewer">
-                <Setter Property="classes:SmoothScrollBehavior.IsEnabled" Value="True"/>
                 <Setter Property="CanContentScroll" Value="False"/>
                 <Setter Property="PanningMode" Value="VerticalOnly"/>
             </Style>

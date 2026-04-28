@@ -89,7 +89,6 @@
                   ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Hidden"
                   ScrollViewer.CanContentScroll="True" VirtualizingPanel.ScrollUnit="Pixel"
                   SelectionMode="Extended" MouseMove="ShelfListView_MouseMove" PreviewMouseLeftButtonDown="ShelfListView_PreviewMouseLeftButtonDown"
-                  PreviewMouseWheel="ShelfListView_PreviewMouseWheel"
                   PreviewMouseLeftButtonUp="ShelfListView_PreviewMouseLeftButtonUp"
                   MouseDoubleClick="ShelfListView_MouseDoubleClick" SelectionChanged="ShelfListView_SelectionChanged"
                   HorizontalContentAlignment="Stretch"
